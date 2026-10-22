@@ -1,14 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { EnvSelector } from "./components/EnvSelector";
 import { RequestEditor } from "./components/request/RequestEditor";
 import { RequestTabs } from "./components/RequestTabs";
+import { RunPanel } from "./components/RunPanel";
 import { Sidebar } from "./components/Sidebar";
+import { useRuns } from "./store/runs";
 import { useTabs } from "./store/tabs";
 import { useWorkspace } from "./store/workspace";
 
 export default function App({ hasToken }: { hasToken: boolean }) {
   const { tabs, active, save } = useTabs();
-  const { collections, error, clearError, init } = useWorkspace();
+  const { collections, activeEnv, error, clearError, init } = useWorkspace();
+  const startRun = useRuns((s) => s.start);
+  const [showRun, setShowRun] = useState(false);
   const tab = tabs.find((t) => t.key === active) ?? null;
   const collectionId = tab?.collectionId ?? collections[0]?.id ?? null;
 
@@ -52,7 +56,12 @@ export default function App({ hasToken }: { hasToken: boolean }) {
         </div>
       )}
       <div className="layout">
-        <Sidebar />
+        <Sidebar
+          onRun={(id, item, label) => {
+            startRun(id, item, activeEnv[id] ?? null, label);
+            setShowRun(true);
+          }}
+        />
         <main className="main">
           <RequestTabs />
           {tab ? (
@@ -62,6 +71,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
               {collections.length ? "Pick a request in the sidebar." : "Open a Bruno collection to start."}
             </p>
           )}
+          {showRun && <RunPanel onClose={() => setShowRun(false)} />}
         </main>
       </div>
     </div>
