@@ -3,6 +3,7 @@ import type { HttpRequestDto } from "../../api/types";
 import { switchBodyMode } from "../../lib/body";
 import { urlWithQuery } from "../../lib/url";
 import { useTabs, type Tab } from "../../store/tabs";
+import { Banner } from "../Banner";
 import { ResponseViewer } from "../ResponseViewer";
 import { AuthTab } from "./AuthTab";
 import { BodyTab } from "./BodyTab";
@@ -40,16 +41,23 @@ export function RequestEditor({ tab }: { tab: Tab }) {
         onSave={() => void save(tab.key)}
       />
       {tab.conflict && (
-        <div className="banner warn" role="alert">
+        <Banner
+          kind="warn"
+          role="alert"
+          actions={
+            <>
+              <button onClick={() => void resolveConflict(tab.key, "reload")}>Reload from disk</button>
+              <button onClick={() => void resolveConflict(tab.key, "overwrite")}>Overwrite with my changes</button>
+            </>
+          }
+        >
           This file changed on disk since you opened it.
-          <button onClick={() => void resolveConflict(tab.key, "reload")}>Reload from disk</button>
-          <button onClick={() => void resolveConflict(tab.key, "overwrite")}>Overwrite with my changes</button>
-        </div>
+        </Banner>
       )}
       {tab.error && (
-        <div className="banner error" role="alert">
+        <Banner kind="error" role="alert">
           {tab.error}
-        </div>
+        </Banner>
       )}
       <div className="split">
         <section className="pane">

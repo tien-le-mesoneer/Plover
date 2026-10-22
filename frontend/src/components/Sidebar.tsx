@@ -21,11 +21,19 @@ export function Sidebar({ onRun }: Props) {
               <strong>{c.name}</strong>
               <span className="spacer" />
               {onRun && (
-                <button className="icon" title="Run collection" onClick={() => onRun(c.id, "", c.name)}>
+                <button
+                  className="icon"
+                  title="Run collection"
+                  aria-label="Run collection"
+                  onClick={() => onRun(c.id, "", c.name)}>
                   ▶
                 </button>
               )}
-              <button className="icon" title="Reload from disk" onClick={() => void reload(c.id)}>
+              <button
+                className="icon"
+                title="Reload from disk"
+                aria-label="Reload from disk"
+                onClick={() => void reload(c.id)}>
                 ⟳
               </button>
             </div>

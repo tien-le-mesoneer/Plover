@@ -41,7 +41,7 @@ export function RunPanel({ onClose }: { onClose: () => void }) {
         {run.error && <span className="err">{run.error}</span>}
         <span className="spacer" />
         {run.status === "running" && <button onClick={() => cancel(run.runId)}>Cancel</button>}
-        <button className="icon" title="Close" onClick={onClose}>
+        <button className="icon" title="Close run panel" aria-label="Close run panel" onClick={onClose}>
           ×
         </button>
       </header>

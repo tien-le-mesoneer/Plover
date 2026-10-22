@@ -44,6 +44,23 @@ Debug builds read `frontend/dist` from disk at runtime; release builds embed it.
 scripts/build-release.sh   # → target/release/bru-rs
 ```
 
+## Browser check (Monaco and page errors)
+
+Unit tests run in jsdom, which cannot create Monaco editors or workers. After
+a release build, run the real-browser check (needs the
+[`agent-browser`](https://www.npmjs.com/package/agent-browser) CLI on `PATH`;
+it is not a project dependency):
+
+```bash
+cd frontend && npm run check:console   # or: BRU_RS=path/to/bru-rs scripts/check-console.sh
+```
+
+It serves a one-request collection on localhost, opens the request (body
+editor) and sends it to the server itself (response editor), types invalid
+JSON and requires a diagnostic from the JSON worker, and fails on any
+uncaught page error. Run it after changing `frontend/src/editor/` or upgrading
+`monaco-editor`.
+
 ## Security model (local only)
 
 - Binds `127.0.0.1` only, random port by default.

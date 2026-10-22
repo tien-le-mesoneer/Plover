@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Banner } from "./components/Banner";
 import { EnvSelector } from "./components/EnvSelector";
 import { RequestEditor } from "./components/request/RequestEditor";
 import { RequestTabs } from "./components/RequestTabs";
@@ -48,12 +49,17 @@ export default function App({ hasToken }: { hasToken: boolean }) {
         <EnvSelector collectionId={collectionId} />
       </header>
       {error && (
-        <div className="banner error" role="alert">
+        <Banner
+          kind="error"
+          role="alert"
+          actions={
+            <button className="icon" title="Dismiss" aria-label="Dismiss" onClick={clearError}>
+              ×
+            </button>
+          }
+        >
           {error}
-          <button className="icon" onClick={clearError}>
-            ×
-          </button>
-        </div>
+        </Banner>
       )}
       <div className="layout">
         <Sidebar

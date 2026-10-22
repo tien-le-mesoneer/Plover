@@ -1,4 +1,5 @@
 import type { KeyValueDto } from "../../api/types";
+import { Banner } from "../Banner";
 
 interface Props {
   rows: KeyValueDto[];
@@ -22,10 +23,10 @@ export function KeyValueTable({ rows, onChange, fixedNames, namePlaceholder, val
   return (
     <>
     {tildeNames && (
-      <p className="banner warn" role="note">
+      <Banner kind="warn" role="note">
         A name starting with <code>~</code> means &ldquo;disabled&rdquo; in <code>.bru</code>; it is saved
         as a disabled entry without the <code>~</code>.
-      </p>
+      </Banner>
     )}
     <table className="kv">
       <tbody>
@@ -62,7 +63,7 @@ export function KeyValueTable({ rows, onChange, fixedNames, namePlaceholder, val
               </td>
               <td className="kv-del">
                 {!isNew && !fixedNames && (
-                  <button className="icon" title="Remove" onClick={() => remove(i)}>
+                  <button className="icon" title="Remove" aria-label="Remove" onClick={() => remove(i)}>
                     ×
                   </button>
                 )}

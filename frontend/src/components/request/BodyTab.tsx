@@ -105,7 +105,7 @@ function MultipartTable({
               )}
             </td>
             <td className="kv-del">
-              <button className="icon" title="Remove" onClick={() => onChange(fields.filter((_, j) => j !== i))}>
+              <button className="icon" title="Remove" aria-label="Remove" onClick={() => onChange(fields.filter((_, j) => j !== i))}>
                 ×
               </button>
             </td>

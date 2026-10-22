@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { KeyValueDto } from "../api/types";
 import { useWorkspace } from "../store/workspace";
+import { Banner } from "./Banner";
 import { KeyValueTable } from "./request/KeyValueTable";
 
 interface Props {
@@ -73,7 +74,11 @@ export function EnvEditor({ collectionId, name, onClose }: Props) {
             })}
           </>
         )}
-        {status && <p className="banner warn">{status}</p>}
+        {status && (
+          <Banner kind="warn" role="alert">
+            {status}
+          </Banner>
+        )}
         <div className="actions">
           <button onClick={onClose}>Cancel</button>
           <button className="primary" onClick={() => void save()}>

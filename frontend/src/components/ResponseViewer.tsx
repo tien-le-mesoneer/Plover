@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ResponseDto } from "../api/types";
 import { CodeEditor } from "../editor/CodeEditor";
+import { Banner } from "./Banner";
 import { formatDuration, formatSize, prettyBody } from "../lib/format";
 
 function statusClass(status: number): string {
@@ -34,11 +35,11 @@ export function ResponseViewer({ response, sending }: { response?: ResponseDto; 
         </nav>
       </div>
       {response.truncated && (
-        <div className="banner warn">
+        <Banner kind="warn" role="status">
           {response.sizeComplete
             ? "Showing the first 10 MB of the body."
             : "Stopped reading after 10 MB; the full size is unknown. Showing the first 10 MB."}
-        </div>
+        </Banner>
       )}
       {view === "body" ? (
         body.language === "binary" ? (

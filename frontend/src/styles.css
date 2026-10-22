@@ -123,6 +123,7 @@ h4 { margin: 6px 0 2px; font-size: 12px; color: var(--muted); text-transform: up
 .editor-box { flex: 1; min-height: 240px; border: 1px solid var(--border); }
 
 .banner { padding: 6px 12px; display: flex; align-items: center; gap: 8px; }
+.banner-text { flex: 1; min-width: 0; }
 .banner.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); }
 .banner.error { background: color-mix(in srgb, var(--err) 15%, transparent); }
 

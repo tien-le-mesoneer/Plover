@@ -23,6 +23,7 @@ export function RequestTabs() {
             <button
               className="icon"
               title="Close"
+              aria-label="Close"
               onClick={(e) => {
                 e.stopPropagation();
                 if (!dirty || window.confirm(`Discard unsaved changes to "${t.draft.name}"?`)) close(t.key);
