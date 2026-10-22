@@ -1,5 +1,19 @@
 # Phase 3 report — scripts & tests (2026-10-22)
 
+## Tóm tắt cho sáng mai (đọc 2 phút)
+
+Phase 3 đã build xong: 9 task đã commit lên `main` (chưa push), chưa sang Phase 4. Toàn bộ check đã được chạy lại và đều pass: 207 test Rust, 47 test frontend, clippy, no-cdn, không lỗi console trên trình duyệt, và bundle thư viện build lại ra đúng bản đã commit.
+
+**Nhưng chưa nên coi Phase 3 là xong.** Review độc lập (bên dưới) tìm ra 3 lỗi nặng:
+
+1. Một script có thể **làm sập cả process**: biến `{{a}}` lồng nhau rất sâu gây tràn stack Rust, exit 134.
+2. Một test fail có thể **biến mất âm thầm** và request vẫn báo pass, chẳng hạn khi `console.log` một chuỗi Unicode lỗi, hoặc `setVar` một object vòng lặp hay lồng quá sâu.
+3. `bru.interpolate` **né được giới hạn RAM** của sandbox (đo được 2 GB RSS).
+
+Mình đề xuất sửa 3 lỗi này trước, rồi đến lỗi #4–#7 (đều mức trung bình). Ước tính 1–1.5 giờ. Việc cần làm: đọc mục "Independent review findings" ở cuối file, rồi trả lời "sửa review" hoặc chọn số.
+
+Benchmark khi có script: 1000 request mất 4.6 s với bru-rs và 128.7 s với Bruno CLI.
+
 Plan: `docs/superpowers/plans/2026-10-23-phase-3-scripts-tests.md`. All 9 tasks done on `main`, not pushed; Phase 4 not started.
 
 | Task | Commit | Tests added |
@@ -70,3 +84,29 @@ Plan: `docs/superpowers/plans/2026-10-23-phase-3-scripts-tests.md`. All 9 tasks 
    - Windows and Linux.
    - Bruno's own scripting fixtures in `fixtures/bruno-tests` (they need Bruno's test server).
    - Console output is formatted with JSON, not Node's `util.inspect`.
+
+## Independent review findings (not fixed yet)
+
+Read-only review of a89d348..967a1f6. Each finding was verified by a localhost probe, by a differential run against Bruno CLI 4.3.0 `--sandbox safe`, or by reading the code, as noted. Probes: `/private/tmp/claude-501/-Users-tienle-projects-rea/1bb5dcfd-43a5-447b-a541-d24ed1b9cd89/scratchpad/review3/`.
+
+| # | Sev | Where | Defect → effect | Verified |
+|---|---|---|---|---|
+| 1 | HIGH | `core/src/vars.rs:118-121` via `script/api.rs:272`, `runner.rs:588` | `VarStack::replace` recurses once per nested `{{var}}` level with no depth limit. A deep chain (20k levels in a URL, or 200k via `bru.interpolate`) overflows the Rust stack and the process aborts (exit 134). | probes `p_deep`, `p_deep2` |
+| 2 | HIGH | `script/engine.rs:358-376`, `prelude.js:214` | If collecting a phase's result fails, the error is swallowed. Tests, console output, `setVar`s and request edits from that phase disappear, and a failing test is silently dropped so the request passes. Triggers: a lone surrogate (`console.log('\ud800')`), a circular object or an array nested deeper than 128 in `setVar`, or a 70 MB `setVar` that runs out of memory during stringify. Bruno fails all three requests. | probes `p_surrogate`, `p_nest`, `p_big` + Bruno diff |
+| 3 | HIGH | `api.rs:272`, `vars.rs:76` | `bru.interpolate` builds its result in Rust, outside the QuickJS memory limit and deadline. 29 doubling variables make a 512 MiB string, with peak RSS 2.06 GB before the request is reported as out of memory. | probe `p_interp` |
+| 4 | MED | `vars.rs:64-69` | `{{obj.path}}` doesn't resolve JSON object variables. Bruno uses lodash `get`. `bru.setVar('user', {...})` then `/users/{{user.id}}` → bru-rs sends a literal `{{user.id}}`; Bruno sends `/users/42`. | Bruno diff `p_nested` |
+| 5 | MED | `cli/src/report/junit.rs:21-26` | Post-response script errors are not emitted as JUnit testcases: the exit code is 1 but the suite shows `tests="0" failures="0"`, which CI reads as green. Bruno emits a failing "Post-Response Script Error" testcase. | Bruno diff `p_posterr` |
+| 6 | MED | `bru/syntax.rs:185-206`, `bru/render.rs:86-90` | Editing one line of a script/tests block re-indents the whole block: trimmed blank lines become `"  "` and tab indentation changes, so a one-line edit produces a multi-line diff. `fixtures/` has 399 such blank lines. | Rust probe test |
+| 7 | MED | `runner.rs:843,855`, `server/src/api/runs.rs:222,240` | Server runtime vars are copied at the start of a send or run and fully replaced at the end, so concurrent sends and runs overwrite each other. Example: a slow folder run wipes the `token` set by a `login` send from the UI. Env changes are merged as diffs, but runtime vars are not. | code reading |
+| 8 | LOW | `engine.rs:190-202` | Cancelling a run doesn't interrupt the running script. Four cancelled `while(true){}` runs keep every worker busy until the 30 s timeout, so UI sends stall. | code reading |
+| 9 | LOW | `api.js:401-402` | `throw 'plain'` inside `test()` reports `plain`; Bruno reports `An unexpected error occurred.` | Bruno diff |
+| 10 | LOW | `cli/src/report/mod.rs:82-88` | Requests never started (e.g. after `stopExecution`) are named by file stem (`04-r4`) instead of meta name (`r4`). | Bruno diff |
+
+**What held up:**
+- In a 5-request differential run against Bruno, everything matched except #9 and #10: counts, chai and assert messages, `{{n}}` on an assert's right side, `req.setBody` and `setMethod` being sent, unknown `setNextRequest`, and `stopExecution`.
+- Workers recover after running out of memory.
+- Microtask-loop timeouts work (about 500 ms).
+- `require` limits hold.
+- No escape to the filesystem, network or process was found.
+
+**Suggested fix order:** 1, 2, 3 (these block calling Phase 3 done), then 7, 4, 5, 6, then 8–10.
