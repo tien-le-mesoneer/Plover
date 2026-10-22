@@ -1,14 +1,16 @@
 //! `bru-rs`: run Bruno collections from the command line.
 
 mod print;
+mod report;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
 use brs_core::collection::Collection;
 use brs_core::executor::ExecOptions;
 use brs_core::runner::{self, RunOptions};
+use brs_core::script::ScriptLimits;
 use brs_core::vars::VarMap;
 use clap::{Parser, Subcommand};
 
@@ -65,6 +67,21 @@ struct RunArgs {
     /// Do not follow HTTP redirects.
     #[arg(long)]
     no_follow_redirects: bool,
+    /// Write a JUnit XML report to this file.
+    #[arg(long, value_name = "FILE")]
+    reporter_junit: Option<PathBuf>,
+    /// Write a JSON report to this file.
+    #[arg(long, value_name = "FILE")]
+    reporter_json: Option<PathBuf>,
+    /// Time limit for each script phase, in milliseconds.
+    #[arg(long, value_name = "N", default_value_t = 30_000)]
+    script_timeout_ms: u64,
+    /// Memory limit for scripts, in MiB.
+    #[arg(long, value_name = "N", default_value_t = 128)]
+    script_memory_mb: usize,
+    /// Also print what scripts log with console.*.
+    #[arg(long)]
+    verbose: bool,
 }
 
 const EXIT_FAILED: u8 = 1;
@@ -102,6 +119,18 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
     if !args.path.exists() {
         return Err(format!("{} does not exist", args.path.display()));
     }
+    for report in [&args.reporter_junit, &args.reporter_json]
+        .into_iter()
+        .flatten()
+    {
+        let dir = report.parent().filter(|d| !d.as_os_str().is_empty());
+        if dir.is_some_and(|d| !d.is_dir()) {
+            return Err(format!(
+                "output directory {} does not exist",
+                dir.unwrap_or(Path::new(".")).display()
+            ));
+        }
+    }
     let root = Collection::find_root(&args.path).map_err(|e| e.to_string())?;
     let collection = Collection::load(&root).map_err(|e| e.to_string())?;
     let opts = RunOptions {
@@ -112,16 +141,34 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
             verify_tls: !args.insecure,
             ..ExecOptions::default()
         },
+        scripts: ScriptLimits {
+            timeout: Duration::from_millis(args.script_timeout_ms),
+            memory_bytes: args.script_memory_mb.saturating_mul(1024 * 1024),
+            ..ScriptLimits::default()
+        },
         ..RunOptions::default()
     }
     .with_env_vars(&args.env_vars.into_iter().collect::<VarMap>());
-    let mut printer = print::Printer::new(&collection.root);
+    let mut printer = print::Printer::new(&collection.root, args.verbose);
+    let mut collector = report::Collector::new(&collection.root);
     let report = runner::run(&collection, &args.path, &opts, &mut |event| {
-        printer.event(event)
+        printer.event(event);
+        collector.event(event);
     })
     .await
     .map_err(|e| e.to_string())?;
     print::summary(&report);
+    if let Some(path) = &args.reporter_junit {
+        std::fs::write(path, report::junit::render(&collector.records))
+            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        println!("Wrote junit results to {}", path.display());
+    }
+    if let Some(path) = &args.reporter_json {
+        let json = serde_json::to_string_pretty(&report::json::render(&collector.records))
+            .map_err(|e| e.to_string())?;
+        std::fs::write(path, json).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        println!("Wrote json results to {}", path.display());
+    }
     Ok(if report.failed > 0 {
         ExitCode::from(EXIT_FAILED)
     } else {

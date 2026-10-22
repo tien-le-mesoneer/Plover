@@ -11,12 +11,15 @@ path = "src/main.rs"
 brs-core = { path = "../core" }
 brs-server = { version = "0.1.0", path = "../server" }
 clap = { version = "4.6.7", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "signal"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 webbrowser = "1.2.5"
 
 [dev-dependencies]
 assert_cmd = "2.2.2"
+quick-xml = "0.42.0"
 serde_json = "1.0.154"
 tempfile = "3.27.0"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }
