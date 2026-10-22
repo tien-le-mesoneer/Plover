@@ -3,3 +3,4 @@
 pub mod bru;
 pub mod collection;
 pub mod request;
+pub mod vars;
