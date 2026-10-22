@@ -60,7 +60,7 @@ pub async fn send(
 ) -> Result<Json<ResponseDto>, ApiError> {
     let open = open_collection(&state, &id)?;
     let draft = body.draft.map(HttpRequest::from);
-    let response = send_one(
+    let sent = send_one(
         &open,
         SendInput {
             item_id: &body.item,
@@ -69,7 +69,19 @@ pub async fn send(
         },
     )
     .await?;
-    Ok(Json(response_dto(response)))
+    match sent.response {
+        Some(response) => Ok(Json(response_dto(response))),
+        None => Err(ApiError::new(
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+            "script_error",
+            sent.skipped.unwrap_or_else(|| {
+                sent.outcome
+                    .script_error
+                    .map(|f| format!("{} script error: {}", f.phase, f.error))
+                    .unwrap_or_else(|| "request not sent".to_owned())
+            }),
+        )),
+    }
 }
 
 pub fn response_dto(res: ResponseSummary) -> ResponseDto {

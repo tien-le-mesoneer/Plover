@@ -82,15 +82,11 @@ async fn runs_in_order_and_reports() {
         .collect();
     assert_eq!(started, ["z", "a", "m"]);
     assert!(matches!(
-        events[1],
-        RunEvent::Passed {
-            status: 200,
-            size: 2,
-            ..
-        }
+        &events[1],
+        RunEvent::Passed { outcome, .. } if outcome.status == Some(200) && outcome.size == 2
     ));
     assert!(
-        matches!(events[5], RunEvent::Passed { status: 500, .. }),
+        matches!(&events[5], RunEvent::Passed { outcome, .. } if outcome.status == Some(500)),
         "5xx is not a failure"
     );
 }
@@ -203,7 +199,7 @@ async fn finished_is_last_and_carries_report() {
 async fn run_with_shares_session_cookies_and_runtime() {
     use brs_core::executor::{ExecOptions, Session};
     use brs_core::runner::run_with;
-    use brs_core::vars::VarMap;
+    use brs_core::vars::ValueMap;
     use wiremock::matchers::header;
 
     let server = MockServer::start().await;
@@ -232,7 +228,7 @@ async fn run_with_shares_session_cookies_and_runtime() {
         settings: Default::default(),
     };
     session.send(&login).await.unwrap();
-    let mut runtime = VarMap::from([("host".to_owned(), server.uri())]);
+    let mut runtime = ValueMap::from([("host".to_owned(), server.uri().into())]);
     let report = run_with(
         &c,
         root,

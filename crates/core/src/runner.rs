@@ -1,22 +1,46 @@
 //! Runs the requests under a target in Bruno's order and reports each one as a `RunEvent`.
+//!
+//! One request follows bruno-cli/src/runner/run-single-request.js: prepare (scopes merged,
+//! nothing interpolated) → pre-request scripts → interpolate → send → post-response vars →
+//! post-response scripts → asserts → tests. The run loop follows commands/run.js for
+//! `skipRequest`, `stopExecution` and `setNextRequest`.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crate::bru::model::RequestFile;
-use crate::collection::{Collection, Item, RequestRef};
+use crate::bru::model::{RequestFile, ScopeFile};
+use crate::collection::{Collection, Environment, Item, RequestRef};
 use crate::executor::{ExecError, ExecOptions, ResponseSummary, Session};
-use crate::request::HttpRequest;
-use crate::resolve::{ResolveContext, ResolveError, ResolvedRequest, resolve};
+use crate::request::{HttpRequest, KeyValue, Method, MultipartField};
+use crate::resolve::{
+    PreparedBody, PreparedRequest, ResolveContext, ResolveError, ResolvedRequest,
+    environment_values, finalize, initial_vars, prepare,
+};
+use crate::script::{
+    AssertResult, ConsoleLine, Flow, NextRequest, ScriptBody, ScriptContext, ScriptEngine,
+    ScriptError, ScriptInfo, ScriptLimits, ScriptRequest, ScriptResponse, ScriptVars, Segment,
+    TestResult, run_asserts, run_post_response_vars, run_script,
+};
 use crate::store::{self, StoreError};
-use crate::vars::VarMap;
+use crate::vars::{ValueMap, VarMap, enabled_map, string_values};
 use crate::workspace::OpenCollection;
 
 #[derive(Debug, Clone, Default)]
 pub struct RunOptions {
     pub env: Option<String>,
-    pub env_overrides: VarMap,
+    /// `--env-var` values, secrets and remembered script changes; they win over the
+    /// environment file.
+    pub env_overrides: ValueMap,
     pub exec: ExecOptions,
+    pub scripts: ScriptLimits,
+}
+
+impl RunOptions {
+    /// Adds string overrides, as the CLI's `--env-var KEY=VALUE` produces them.
+    pub fn with_env_vars(mut self, vars: &VarMap) -> RunOptions {
+        self.env_overrides.extend(string_values(vars));
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,13 +53,13 @@ pub enum RunEvent {
     },
     Passed {
         path: PathBuf,
-        status: u16,
-        elapsed: Duration,
-        size: usize,
+        outcome: RequestOutcome,
     },
+    /// A transport error, a script error, or a failed test or assert.
     Failed {
         path: PathBuf,
         error: String,
+        outcome: RequestOutcome,
     },
     Skipped {
         path: PathBuf,
@@ -52,7 +76,78 @@ pub struct RunReport {
     pub passed: usize,
     pub failed: usize,
     pub skipped: usize,
+    pub tests_passed: usize,
+    pub tests_failed: usize,
+    pub asserts_passed: usize,
+    pub asserts_failed: usize,
     pub elapsed: Duration,
+}
+
+/// What happened to one request, apart from the response body.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct RequestOutcome {
+    /// `None` when the request was not sent or the transport failed.
+    pub status: Option<u16>,
+    pub elapsed: Duration,
+    pub size: usize,
+    pub tests: Vec<TestResult>,
+    pub asserts: Vec<AssertResult>,
+    pub console: Vec<ConsoleLine>,
+    pub script_error: Option<ScriptFailure>,
+}
+
+impl RequestOutcome {
+    /// Why a completed request counts as failed, if it does.
+    fn failure_summary(&self) -> Option<String> {
+        if let Some(f) = &self.script_error
+            && f.phase != ScriptPhase::Tests
+        {
+            return Some(format!("{} script error: {}", f.phase, f.error));
+        }
+        let tests = self.tests.iter().filter(|t| !t.passed).count();
+        let asserts = self.asserts.iter().filter(|a| !a.passed).count();
+        let mut parts = Vec::new();
+        if tests > 0 {
+            parts.push(format!("{tests} test{} failed", plural(tests)));
+        }
+        if asserts > 0 {
+            parts.push(format!("{asserts} assert{} failed", plural(asserts)));
+        }
+        (!parts.is_empty()).then(|| parts.join(", "))
+    }
+}
+
+fn plural(n: usize) -> &'static str {
+    if n == 1 { "" } else { "s" }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScriptFailure {
+    pub phase: ScriptPhase,
+    pub error: ScriptError,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptPhase {
+    PreRequest,
+    PostResponse,
+    Tests,
+}
+
+impl ScriptPhase {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ScriptPhase::PreRequest => "pre-request",
+            ScriptPhase::PostResponse => "post-response",
+            ScriptPhase::Tests => "tests",
+        }
+    }
+}
+
+impl std::fmt::Display for ScriptPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// Setup problems only; per-request problems are reported as events.
@@ -66,6 +161,43 @@ pub enum RunError {
     Session(#[from] ExecError),
 }
 
+/// Variables carried from one request to the next.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RunVars {
+    pub runtime: ValueMap,
+    /// The environment as the run sees it: file values, overrides, script changes.
+    pub environment: ValueMap,
+    /// Collection variables, including `bru.setCollectionVar` changes.
+    pub collection: ValueMap,
+}
+
+impl RunVars {
+    /// Starting state for `collection` with environment `env`.
+    pub fn start(
+        collection: &Collection,
+        env: Option<&Environment>,
+        env_overrides: &ValueMap,
+        runtime: ValueMap,
+    ) -> RunVars {
+        let environment = environment_values(&ResolveContext {
+            collection,
+            environment: env,
+            env_overrides,
+            runtime: &runtime,
+        });
+        let collection_vars = collection
+            .scope
+            .as_ref()
+            .map(|s| string_values(&enabled_map(&s.vars_pre)))
+            .unwrap_or_default();
+        RunVars {
+            runtime,
+            environment,
+            collection: collection_vars,
+        }
+    }
+}
+
 /// Runs with a fresh session and empty runtime variables (the CLI).
 pub async fn run(
     collection: &Collection,
@@ -74,7 +206,7 @@ pub async fn run(
     on_event: &mut (dyn FnMut(&RunEvent) + Send),
 ) -> Result<RunReport, RunError> {
     let session = Session::new(opts.exec.clone())?;
-    let mut runtime = VarMap::new();
+    let mut runtime = ValueMap::new();
     run_with(collection, target, opts, &session, &mut runtime, on_event).await
 }
 
@@ -86,84 +218,156 @@ pub async fn run_with(
     target: &Path,
     opts: &RunOptions,
     session: &Session,
-    runtime: &mut VarMap,
+    runtime: &mut ValueMap,
     on_event: &mut (dyn FnMut(&RunEvent) + Send),
 ) -> Result<RunReport, RunError> {
-    let environment = match &opts.env {
-        Some(name) => Some(
-            collection
-                .environment(name)
-                .ok_or_else(|| RunError::UnknownEnvironment(name.clone()))?,
-        ),
-        None => None,
-    };
+    let environment = find_environment(collection, opts.env.as_deref())?;
+    let mut state = RunVars::start(
+        collection,
+        environment,
+        &opts.env_overrides,
+        std::mem::take(runtime),
+    );
+    let result = run_with_state(collection, target, opts, session, &mut state, on_event).await;
+    *runtime = state.runtime;
+    result
+}
+
+fn find_environment<'a>(
+    collection: &'a Collection,
+    name: Option<&str>,
+) -> Result<Option<&'a Environment>, RunError> {
+    match name {
+        Some(name) => {
+            Ok(Some(collection.environment(name).ok_or_else(|| {
+                RunError::UnknownEnvironment(name.to_owned())
+            })?))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Like `run_with`, but the caller also keeps the environment and collection variables
+/// scripts changed (the server remembers them for the session).
+pub async fn run_with_state(
+    collection: &Collection,
+    target: &Path,
+    opts: &RunOptions,
+    session: &Session,
+    state: &mut RunVars,
+    on_event: &mut (dyn FnMut(&RunEvent) + Send),
+) -> Result<RunReport, RunError> {
+    find_environment(collection, opts.env.as_deref())?;
     let absolute = std::path::absolute(target).unwrap_or_else(|_| target.to_path_buf());
     if !absolute.starts_with(&collection.root) || !absolute.exists() {
         return Err(RunError::TargetNotFound(target.to_path_buf()));
     }
     let refs = collection.requests_under(&absolute);
-    // Phase 3 scripts write to `runtime`; for now it is only read.
-    let ctx = ResolveContext {
+    let engine = ScriptEngine::shared(opts.scripts);
+    let exec = Exec {
         collection,
-        environment,
-        env_overrides: &opts.env_overrides,
-        runtime,
+        session,
+        engine: &engine,
+        env_name: opts.env.as_deref(),
     };
 
     let start = Instant::now();
     let mut report = RunReport::default();
-    for r in refs {
+    let mut index = 0;
+    let mut jumps = 0;
+    while index < refs.len() {
+        let r = &refs[index];
         let path = r.path.to_path_buf();
-        let resolved = match prepare(&ctx, &r) {
-            Ok(resolved) => resolved,
-            Err(NotRunnable::Skip(reason)) => {
-                report.skipped += 1;
-                on_event(&RunEvent::Skipped { path, reason });
-                continue;
+        if let Err(not_runnable) = check_runnable(r) {
+            match not_runnable {
+                NotRunnable::Skip(reason) => {
+                    report.skipped += 1;
+                    on_event(&RunEvent::Skipped { path, reason });
+                }
+                NotRunnable::Fail(e) => {
+                    report.failed += 1;
+                    on_event(&RunEvent::Failed {
+                        path,
+                        error: e.to_string(),
+                        outcome: RequestOutcome::default(),
+                    });
+                }
             }
-            Err(NotRunnable::Fail(e)) => {
+            index += 1;
+            continue;
+        }
+        let executed = exec
+            .execute(r, None, state, &mut |name, resolved| {
+                on_event(&RunEvent::Started {
+                    path: path.clone(),
+                    name: name.to_owned(),
+                    method: resolved.method.as_str().to_owned(),
+                    url: resolved.url.clone(),
+                })
+            })
+            .await;
+        let outcome = &executed.outcome;
+        report.tests_passed += outcome.tests.iter().filter(|t| t.passed).count();
+        report.tests_failed += outcome.tests.iter().filter(|t| !t.passed).count();
+        report.asserts_passed += outcome.asserts.iter().filter(|a| a.passed).count();
+        report.asserts_failed += outcome.asserts.iter().filter(|a| !a.passed).count();
+        match (&executed.skipped, executed.error()) {
+            (Some(reason), _) => {
+                report.skipped += 1;
+                on_event(&RunEvent::Skipped {
+                    path,
+                    reason: reason.clone(),
+                });
+            }
+            (None, Some(error)) => {
                 report.failed += 1;
                 on_event(&RunEvent::Failed {
                     path,
-                    error: e.to_string(),
+                    error,
+                    outcome: executed.outcome.clone(),
                 });
-                continue;
             }
-        };
-        let Item::Request { file, .. } = r.item else {
-            continue;
-        };
-        let request = &file.request;
-        if !request.vars_post.is_empty()
-            || request.script_pre.is_some()
-            || request.script_post.is_some()
-            || request.tests.is_some()
-            || file.doc.block("assert").is_some()
-        {
-            tracing::info!(path = %path.display(), "scripts, tests, asserts and post-response vars run in Phase 3");
-        }
-        on_event(&RunEvent::Started {
-            path: path.clone(),
-            name: request.name.clone(),
-            method: resolved.method.as_str().to_owned(),
-            url: resolved.url.clone(),
-        });
-        match session.send(&resolved).await {
-            Ok(res) => {
+            (None, None) => {
                 report.passed += 1;
                 on_event(&RunEvent::Passed {
                     path,
-                    status: res.status,
-                    elapsed: res.elapsed,
-                    size: res.size,
+                    outcome: executed.outcome.clone(),
                 });
             }
-            Err(e) => {
-                report.failed += 1;
-                on_event(&RunEvent::Failed {
-                    path,
-                    error: e.to_string(),
+        }
+
+        // commands/run.js: stopExecution skips the rest; setNextRequest jumps by name.
+        if executed.flow.stop_execution {
+            for rest in &refs[index + 1..] {
+                report.skipped += 1;
+                on_event(&RunEvent::Skipped {
+                    path: rest.path.to_path_buf(),
+                    reason: "stopExecution".to_owned(),
                 });
+            }
+            break;
+        }
+        match &executed.flow.next_request {
+            None => index += 1,
+            Some(NextRequest::Stop) => break,
+            Some(NextRequest::Name(name)) => {
+                jumps += 1;
+                if jumps > 10_000 {
+                    report.failed += 1;
+                    on_event(&RunEvent::Failed {
+                        path: r.path.to_path_buf(),
+                        error: "too many jumps, possible infinite loop".to_owned(),
+                        outcome: RequestOutcome::default(),
+                    });
+                    break;
+                }
+                match refs.iter().position(|x| request_name(x) == Some(name)) {
+                    Some(next) => index = next,
+                    None => {
+                        tracing::warn!("could not find request with name '{name}'");
+                        index += 1;
+                    }
+                }
             }
         }
     }
@@ -172,14 +376,20 @@ pub async fn run_with(
     Ok(report)
 }
 
+fn request_name<'a>(r: &RequestRef<'a>) -> Option<&'a str> {
+    match r.item {
+        Item::Request { file, .. } => Some(file.request.name.as_str()),
+        _ => None,
+    }
+}
+
 /// Why a request was not sent: skipped like Bruno does, or failed to resolve.
 enum NotRunnable {
     Skip(String),
     Fail(ResolveError),
 }
 
-/// The resolve step shared by `run` and `send_one`.
-fn prepare(ctx: &ResolveContext<'_>, r: &RequestRef<'_>) -> Result<ResolvedRequest, NotRunnable> {
+fn check_runnable(r: &RequestRef<'_>) -> Result<(), NotRunnable> {
     let file = match r.item {
         Item::Request { file, .. } => file,
         Item::Invalid { error, .. } => {
@@ -197,10 +407,367 @@ fn prepare(ctx: &ResolveContext<'_>, r: &RequestRef<'_>) -> Result<ResolvedReque
             file.request.kind
         )));
     }
-    resolve(ctx, r).map_err(|e| match e {
-        ResolveError::Unsupported(what) => NotRunnable::Skip(format!("unsupported {what}")),
-        e => NotRunnable::Fail(e),
-    })
+    Ok(())
+}
+
+/// Everything one request needs that does not change between requests.
+struct Exec<'a> {
+    collection: &'a Collection,
+    session: &'a Session,
+    engine: &'a ScriptEngine,
+    env_name: Option<&'a str>,
+}
+
+struct Executed {
+    outcome: RequestOutcome,
+    /// The response as received, with a body replaced by `res.setBody`.
+    response: Option<ResponseSummary>,
+    /// Set when the request did not complete: resolve, pre-request or transport failure.
+    stopped: Option<Stopped>,
+    skipped: Option<String>,
+    flow: Flow,
+}
+
+enum Stopped {
+    Resolve(ResolveError),
+    Script,
+    Transport(ExecError),
+}
+
+impl Executed {
+    /// The failure message, when the request failed.
+    fn error(&self) -> Option<String> {
+        match &self.stopped {
+            Some(Stopped::Resolve(e)) => Some(e.to_string()),
+            Some(Stopped::Transport(e)) => Some(e.to_string()),
+            Some(Stopped::Script) | None => self.outcome.failure_summary(),
+        }
+    }
+}
+
+/// Bruno's script flow (`bruno.json` `scripts.flow`): `sandwich` (default) runs
+/// post-response scripts and tests from the request outwards.
+fn sequential_flow(collection: &Collection) -> bool {
+    collection
+        .config
+        .extra
+        .get("scripts")
+        .and_then(|s| s.get("flow"))
+        .and_then(|f| f.as_str())
+        == Some("sequential")
+}
+
+impl Exec<'_> {
+    /// Script segments for one phase: collection, folders (outermost first), request —
+    /// reversed for post-response scripts and tests in the sandwich flow
+    /// (bruno-cli/src/utils/collection.js `mergeScripts`).
+    fn segments(
+        &self,
+        r: &RequestRef<'_>,
+        request_source: &Option<String>,
+        pick: fn(&ScopeFile) -> &Option<String>,
+        outward: bool,
+    ) -> Vec<Segment> {
+        let mut segments = Vec::new();
+        let mut push = |scope: String, source: &Option<String>| {
+            if let Some(src) = source.as_ref().filter(|s| !s.trim().is_empty()) {
+                segments.push(Segment::new(scope, src.clone()));
+            }
+        };
+        if let Some(scope) = &self.collection.scope {
+            push("collection".to_owned(), pick(scope));
+        }
+        for folder in &r.folders {
+            if let Some(scope) = &folder.scope {
+                push(format!("folder {}", folder.name), pick(scope));
+            }
+        }
+        push("request".to_owned(), request_source);
+        if outward && !sequential_flow(self.collection) {
+            segments.reverse();
+        }
+        segments
+    }
+
+    async fn execute(
+        &self,
+        r: &RequestRef<'_>,
+        draft: Option<&HttpRequest>,
+        state: &mut RunVars,
+        started: &mut (dyn FnMut(&str, &ResolvedRequest) + Send),
+    ) -> Executed {
+        let mut executed = Executed {
+            outcome: RequestOutcome::default(),
+            response: None,
+            stopped: None,
+            skipped: None,
+            flow: Flow::default(),
+        };
+        let draft_item;
+        let r = match (draft, r.item) {
+            (Some(draft), Item::Request { path, file }) => {
+                draft_item = Item::Request {
+                    path: path.clone(),
+                    file: Box::new(RequestFile {
+                        doc: file.doc.clone(),
+                        request: draft.clone(),
+                    }),
+                };
+                RequestRef {
+                    item: &draft_item,
+                    path: r.path,
+                    folders: r.folders.clone(),
+                }
+            }
+            _ => r.clone(),
+        };
+        let Item::Request { file, .. } = r.item else {
+            executed.stopped = Some(Stopped::Resolve(ResolveError::NotARequest(
+                r.path.to_path_buf(),
+            )));
+            return executed;
+        };
+        let request = &file.request;
+        let ctx = ResolveContext {
+            collection: self.collection,
+            environment: None,
+            env_overrides: &state.environment,
+            runtime: &state.runtime,
+        };
+        let prepared = prepare(&ctx, &r).and_then(|p| Ok((p, initial_vars(&ctx, &r)?)));
+        let (mut prepared, mut vars) = match prepared {
+            Ok(both) => both,
+            Err(e) => {
+                executed.stopped = Some(Stopped::Resolve(e));
+                return executed;
+            }
+        };
+        vars.collection = state.collection.clone();
+        let info = ScriptInfo {
+            env_name: self.env_name.map(str::to_owned),
+            collection_name: self.collection.config.name.clone(),
+            collection_path: self.collection.root.to_string_lossy().into_owned(),
+            request_name: request.name.clone(),
+        };
+
+        // Pre-request scripts see the prepared, not yet interpolated request.
+        let pre = self.segments(&r, &request.script_pre, |s| &s.script_pre, false);
+        if !pre.is_empty() {
+            let out = run_script(
+                self.engine,
+                &ScriptContext {
+                    vars: vars.clone(),
+                    info: info.clone(),
+                    req: script_request(&prepared),
+                    res: None,
+                },
+                pre,
+            )
+            .await;
+            vars = out.vars;
+            apply_script_request(&mut prepared, &out.req);
+            merge_flow(&mut executed.flow, &out.flow);
+            executed.outcome.console.extend(out.console);
+            executed.outcome.tests.extend(out.tests);
+            if let Some(error) = out.error {
+                executed.outcome.script_error = Some(ScriptFailure {
+                    phase: ScriptPhase::PreRequest,
+                    error,
+                });
+                executed.stopped = Some(Stopped::Script);
+                save(state, &vars);
+                return executed;
+            }
+            if out.flow.skip_request {
+                executed.skipped = Some("request skipped via pre-request script".to_owned());
+                save(state, &vars);
+                return executed;
+            }
+        }
+
+        let resolved = match finalize(&prepared, &vars.var_stack(), &self.collection.root) {
+            Ok(resolved) => resolved,
+            Err(e) => {
+                executed.stopped = Some(Stopped::Resolve(e));
+                save(state, &vars);
+                return executed;
+            }
+        };
+        started(&request.name, &resolved);
+        let mut response = match self.session.send(&resolved).await {
+            Ok(response) => response,
+            Err(e) => {
+                // run-single-request.js returns before post-response vars, scripts and tests.
+                executed.stopped = Some(Stopped::Transport(e));
+                save(state, &vars);
+                return executed;
+            }
+        };
+        executed.outcome.status = Some(response.status);
+        executed.outcome.elapsed = response.elapsed;
+        executed.outcome.size = response.size;
+
+        let mut script_ctx = ScriptContext {
+            vars,
+            info,
+            req: script_request(&prepared),
+            res: Some(script_response(&response, &resolved.url)),
+        };
+
+        let post_vars = enabled_pairs(&request.vars_post);
+        if !post_vars.is_empty() {
+            let out = run_post_response_vars(self.engine, &script_ctx, &post_vars).await;
+            script_ctx.vars = out.vars;
+            executed.outcome.console.extend(out.console);
+        }
+
+        let post = self.segments(&r, &request.script_post, |s| &s.script_post, true);
+        if !post.is_empty() {
+            let out = run_script(self.engine, &script_ctx, post).await;
+            script_ctx.vars = out.vars;
+            merge_flow(&mut executed.flow, &out.flow);
+            executed.outcome.console.extend(out.console);
+            executed.outcome.tests.extend(out.tests);
+            if let Some(body) = out.res_body {
+                replace_body(&mut response, &mut script_ctx, &body);
+            }
+            if let Some(error) = out.error {
+                executed.outcome.script_error = Some(ScriptFailure {
+                    phase: ScriptPhase::PostResponse,
+                    error,
+                });
+            }
+        }
+
+        let asserts = enabled_pairs(&request.asserts);
+        if !asserts.is_empty() {
+            let out = run_asserts(self.engine, &script_ctx, &asserts).await;
+            script_ctx.vars = out.vars;
+            executed.outcome.console.extend(out.console);
+            executed.outcome.asserts = out.asserts;
+        }
+
+        let tests = self.segments(&r, &request.tests, |s| &s.tests, true);
+        if !tests.is_empty() {
+            let out = run_script(self.engine, &script_ctx, tests).await;
+            script_ctx.vars = out.vars;
+            merge_flow(&mut executed.flow, &out.flow);
+            executed.outcome.console.extend(out.console);
+            executed.outcome.tests.extend(out.tests);
+            if let Some(body) = out.res_body {
+                replace_body(&mut response, &mut script_ctx, &body);
+            }
+            if let Some(error) = out.error {
+                // run-single-request.js: a test script error becomes a failed test.
+                executed.outcome.tests.push(TestResult {
+                    name: "Test Script Error".to_owned(),
+                    passed: false,
+                    error: Some(error.to_string()),
+                });
+                if executed.outcome.script_error.is_none() {
+                    executed.outcome.script_error = Some(ScriptFailure {
+                        phase: ScriptPhase::Tests,
+                        error,
+                    });
+                }
+            }
+        }
+
+        save(state, &script_ctx.vars);
+        executed.response = Some(response);
+        executed
+    }
+}
+
+fn save(state: &mut RunVars, vars: &ScriptVars) {
+    state.runtime = vars.runtime.clone();
+    state.environment = vars.environment.clone();
+    state.collection = vars.collection.clone();
+}
+
+fn merge_flow(flow: &mut Flow, new: &Flow) {
+    flow.skip_request |= new.skip_request;
+    flow.stop_execution |= new.stop_execution;
+    if new.next_request.is_some() {
+        flow.next_request = new.next_request.clone();
+    }
+}
+
+fn enabled_pairs(items: &[KeyValue]) -> Vec<(String, String)> {
+    items
+        .iter()
+        .filter(|kv| kv.enabled)
+        .map(|kv| (kv.name.clone(), kv.value.clone()))
+        .collect()
+}
+
+fn script_request(p: &PreparedRequest) -> ScriptRequest {
+    ScriptRequest {
+        url: p.url.clone(),
+        method: p.method.as_str().to_owned(),
+        headers: p.headers.clone(),
+        body: match &p.body {
+            PreparedBody::None => ScriptBody::None,
+            PreparedBody::Text(text) => ScriptBody::Text { text: text.clone() },
+            PreparedBody::Form(fields) => ScriptBody::Form {
+                fields: fields.clone(),
+            },
+            PreparedBody::Multipart(_) => ScriptBody::Multipart,
+        },
+        timeout_ms: p.settings.timeout_ms,
+        max_redirects: p.settings.max_redirects,
+    }
+}
+
+fn apply_script_request(p: &mut PreparedRequest, s: &ScriptRequest) {
+    p.url = s.url.clone();
+    if s.method != p.method.as_str() {
+        p.method = Method::from_block_name(&s.method.to_ascii_lowercase())
+            .unwrap_or_else(|| Method::Custom(s.method.clone()));
+    }
+    p.headers = s.headers.clone();
+    let multipart: Vec<MultipartField> = match &p.body {
+        PreparedBody::Multipart(fields) => fields.clone(),
+        _ => Vec::new(),
+    };
+    p.body = match &s.body {
+        ScriptBody::None => PreparedBody::None,
+        ScriptBody::Text { text } => PreparedBody::Text(text.clone()),
+        ScriptBody::Form { fields } => PreparedBody::Form(fields.clone()),
+        ScriptBody::Multipart => PreparedBody::Multipart(multipart),
+    };
+    p.settings.timeout_ms = s.timeout_ms;
+    p.settings.max_redirects = s.max_redirects;
+}
+
+fn script_response(res: &ResponseSummary, url: &str) -> ScriptResponse {
+    ScriptResponse {
+        status: res.status,
+        status_text: reqwest::StatusCode::from_u16(res.status)
+            .ok()
+            .and_then(|s| s.canonical_reason())
+            .unwrap_or_default()
+            .to_owned(),
+        headers: res.headers.clone(),
+        body: String::from_utf8_lossy(&res.body).into_owned(),
+        response_time_ms: res.elapsed.as_millis() as u64,
+        url: url.to_owned(),
+        size: res.size,
+    }
+}
+
+/// `res.setBody(value)`: later phases and the reported response see the new body.
+fn replace_body(response: &mut ResponseSummary, ctx: &mut ScriptContext, body: &serde_json::Value) {
+    let text = match body {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    };
+    response.body = text.clone().into_bytes();
+    if let Some(res) = ctx.res.as_mut() {
+        res.body = text;
+        res.size = response.body.len();
+    }
 }
 
 pub struct SendInput<'a> {
@@ -209,6 +776,15 @@ pub struct SendInput<'a> {
     /// Unsaved edits to send instead of the file's request, with the file's scopes.
     pub draft: Option<&'a HttpRequest>,
     pub env: Option<&'a str>,
+}
+
+/// One request sent from the UI: the response (if any) and what scripts reported.
+#[derive(Debug, Clone)]
+pub struct SendOutcome {
+    pub response: Option<ResponseSummary>,
+    pub outcome: RequestOutcome,
+    /// Set when the pre-request script skipped the request.
+    pub skipped: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -227,12 +803,21 @@ pub enum SendError {
     Exec(#[from] ExecError),
 }
 
-/// Sends one request of an open collection with its session, runtime
-/// variables and in-memory secrets (as environment overrides).
+/// Sends one request of an open collection with its session, runtime variables,
+/// in-memory secrets and remembered script changes to the environment. A pre-request
+/// script error is an `Ok` outcome without a response (`outcome.script_error`).
 pub async fn send_one(
     open: &OpenCollection,
     input: SendInput<'_>,
-) -> Result<ResponseSummary, SendError> {
+) -> Result<SendOutcome, SendError> {
+    send_one_with(open, input, ScriptLimits::default()).await
+}
+
+pub async fn send_one_with(
+    open: &OpenCollection,
+    input: SendInput<'_>,
+    limits: ScriptLimits,
+) -> Result<SendOutcome, SendError> {
     let collection = open.collection();
     let environment = match input.env {
         Some(name) => Some(
@@ -248,34 +833,39 @@ pub async fn send_one(
         .into_iter()
         .find(|r| r.path == path)
         .ok_or_else(|| SendError::NotFound(input.item_id.to_owned()))?;
-    let draft_item;
-    let target = match (input.draft, found.item) {
-        (Some(draft), Item::Request { file, .. }) => {
-            draft_item = Item::Request {
-                path: path.clone(),
-                file: Box::new(RequestFile {
-                    doc: file.doc.clone(),
-                    request: draft.clone(),
-                }),
-            };
-            RequestRef {
-                item: &draft_item,
-                ..found
-            }
-        }
-        _ => found,
-    };
-    let env_overrides = input.env.map(|e| open.secrets(e)).unwrap_or_default();
-    let runtime = open.runtime();
-    let ctx = ResolveContext {
+    if let Err(not_runnable) = check_runnable(&found) {
+        return Err(match not_runnable {
+            NotRunnable::Skip(reason) => SendError::Unsupported(reason),
+            NotRunnable::Fail(e) => SendError::Resolve(e),
+        });
+    }
+    let overrides = input.env.map(|e| open.env_overrides(e)).unwrap_or_default();
+    let mut state = RunVars::start(&collection, environment, &overrides, open.runtime());
+    let environment_before = state.environment.clone();
+    let engine = ScriptEngine::shared(limits);
+    let exec = Exec {
         collection: &collection,
-        environment,
-        env_overrides: &env_overrides,
-        runtime: &runtime,
+        session: &open.session,
+        engine: &engine,
+        env_name: input.env,
     };
-    let resolved = prepare(&ctx, &target).map_err(|e| match e {
-        NotRunnable::Skip(reason) => SendError::Unsupported(reason),
-        NotRunnable::Fail(e) => SendError::Resolve(e),
-    })?;
-    Ok(open.session.send(&resolved).await?)
+    let executed = exec
+        .execute(&found, input.draft, &mut state, &mut |_, _| {})
+        .await;
+    open.set_runtime(state.runtime.clone());
+    if let Some(env) = input.env {
+        open.record_env_changes(env, &environment_before, &state.environment);
+    }
+    match executed.stopped {
+        Some(Stopped::Resolve(ResolveError::Unsupported(what))) => {
+            Err(SendError::Unsupported(format!("unsupported {what}")))
+        }
+        Some(Stopped::Resolve(e)) => Err(SendError::Resolve(e)),
+        Some(Stopped::Transport(e)) => Err(SendError::Exec(e)),
+        Some(Stopped::Script) | None => Ok(SendOutcome {
+            response: executed.response,
+            outcome: executed.outcome,
+            skipped: executed.skipped,
+        }),
+    }
 }

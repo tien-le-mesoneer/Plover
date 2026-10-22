@@ -167,6 +167,22 @@ impl ScriptEngine {
         }
     }
 
+    /// One engine per distinct limits for the whole process, so runs and sends reuse warm
+    /// workers instead of starting threads each time.
+    pub fn shared(limits: ScriptLimits) -> ScriptEngine {
+        static ENGINES: OnceLock<Mutex<Vec<ScriptEngine>>> = OnceLock::new();
+        let mut engines = ENGINES
+            .get_or_init(Mutex::default)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(engine) = engines.iter().find(|e| e.limits() == limits) {
+            return engine.clone();
+        }
+        let engine = ScriptEngine::new(limits);
+        engines.push(engine.clone());
+        engine
+    }
+
     pub fn limits(&self) -> ScriptLimits {
         self.inner.limits
     }

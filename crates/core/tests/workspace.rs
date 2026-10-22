@@ -186,8 +186,9 @@ async fn send_one_uses_draft_and_secrets() {
     )
     .await
     .unwrap();
-    assert_eq!(res.status, 201);
-    assert_eq!(res.body, b"ok");
+    let response = res.response.unwrap();
+    assert_eq!(response.status, 201);
+    assert_eq!(response.body, b"ok");
 }
 
 #[test]

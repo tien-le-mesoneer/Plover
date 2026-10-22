@@ -6,8 +6,11 @@ use std::path::PathBuf;
 use base64::Engine;
 
 use crate::collection::{Collection, Environment, Item, RequestRef};
-use crate::request::{Auth, Body, KeyValue, Method, MultipartValue, RequestSettings};
-use crate::vars::{VarMap, VarStack, enabled_map};
+use crate::request::{
+    Auth, Body, KeyValue, Method, MultipartField, MultipartValue, RequestSettings,
+};
+use crate::script::ScriptVars;
+use crate::vars::{ValueMap, VarStack, enabled_map, string_values};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedRequest {
@@ -44,9 +47,10 @@ pub enum ResolvedPart {
 pub struct ResolveContext<'a> {
     pub collection: &'a Collection,
     pub environment: Option<&'a Environment>,
-    /// `--env-var` values; they win over the environment file (and supply `vars:secret`).
-    pub env_overrides: &'a VarMap,
-    pub runtime: &'a VarMap,
+    /// `--env-var` values, in-memory secrets and script changes; they win over the
+    /// environment file (and supply `vars:secret`).
+    pub env_overrides: &'a ValueMap,
+    pub runtime: &'a ValueMap,
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -59,10 +63,92 @@ pub enum ResolveError {
     InvalidUrl(String),
 }
 
+/// A request after Bruno's `prepareRequest`: scopes merged, auth and the default content
+/// type applied, but nothing interpolated yet. This is what pre-request scripts see as `req`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreparedRequest {
+    pub method: Method,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub body: PreparedBody,
+    /// Basic auth is applied after interpolation (interpolate-vars.js:216-222).
+    pub basic_auth: Option<(String, String)>,
+    pub path_params: Vec<KeyValue>,
+    pub settings: RequestSettings,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PreparedBody {
+    None,
+    /// JSON (comments already stripped), text and XML bodies.
+    Text(String),
+    Form(Vec<(String, String)>),
+    Multipart(Vec<MultipartField>),
+}
+
+/// The variable scopes of one request, from its collection, folders, environment and
+/// the current runtime variables.
+pub fn initial_vars(
+    ctx: &ResolveContext<'_>,
+    req: &RequestRef<'_>,
+) -> Result<ScriptVars, ResolveError> {
+    let Item::Request { file, .. } = req.item else {
+        return Err(ResolveError::NotARequest(req.path.to_path_buf()));
+    };
+    let mut folder = ValueMap::new();
+    for scope in req.folders.iter().filter_map(|f| f.scope.as_ref()) {
+        folder.extend(string_values(&enabled_map(&scope.vars_pre)));
+    }
+    Ok(ScriptVars {
+        runtime: ctx.runtime.clone(),
+        environment: environment_values(ctx),
+        collection: ctx
+            .collection
+            .scope
+            .as_ref()
+            .map(|s| string_values(&enabled_map(&s.vars_pre)))
+            .unwrap_or_default(),
+        folder,
+        request: string_values(&enabled_map(&file.request.vars_pre)),
+    })
+}
+
+/// Environment file variables, `vars:secret` names (as `''`), then overrides.
+pub fn environment_values(ctx: &ResolveContext<'_>) -> ValueMap {
+    let mut environment = ValueMap::new();
+    if let Some(env) = ctx.environment {
+        environment = string_values(&enabled_map(&env.file.vars));
+        // Secret names get '' (envToJson.js:168, :325) unless `--env-var` supplies a value.
+        for secret in env.file.secrets.iter().filter(|s| s.enabled) {
+            environment.insert(
+                secret.name.clone(),
+                serde_json::Value::String(String::new()),
+            );
+        }
+    }
+    environment.extend(
+        ctx.env_overrides
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone())),
+    );
+    environment
+}
+
 pub fn resolve(
     ctx: &ResolveContext<'_>,
     req: &RequestRef<'_>,
 ) -> Result<ResolvedRequest, ResolveError> {
+    let prepared = prepare(ctx, req)?;
+    let vars = initial_vars(ctx, req)?;
+    finalize(&prepared, &vars.var_stack(), &ctx.collection.root)
+}
+
+/// Bruno's `prepareRequest` (bruno-cli/src/runner/prepare-request.js): merges headers and
+/// auth from the scopes and adds the default content type. Nothing is interpolated.
+pub fn prepare(
+    ctx: &ResolveContext<'_>,
+    req: &RequestRef<'_>,
+) -> Result<PreparedRequest, ResolveError> {
     let Item::Request { file, .. } = req.item else {
         return Err(ResolveError::NotARequest(req.path.to_path_buf()));
     };
@@ -73,32 +159,6 @@ pub fn resolve(
         .iter()
         .filter_map(|f| f.scope.as_ref())
         .collect();
-
-    let mut environment = VarMap::new();
-    if let Some(env) = ctx.environment {
-        environment = enabled_map(&env.file.vars);
-        // Secret names get '' (envToJson.js:168, :325) unless `--env-var` supplies a value.
-        for secret in env.file.secrets.iter().filter(|s| s.enabled) {
-            environment.insert(secret.name.clone(), String::new());
-        }
-    }
-    environment.extend(
-        ctx.env_overrides
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone())),
-    );
-    let vars = VarStack::new(
-        ctx.runtime.clone(),
-        enabled_map(&request.vars_pre),
-        folder_scopes
-            .iter()
-            .map(|s| enabled_map(&s.vars_pre))
-            .collect(),
-        environment,
-        collection_scope
-            .map(|s| enabled_map(&s.vars_pre))
-            .unwrap_or_default(),
-    );
 
     // Header assembly follows Bruno CLI step by step; see `fold_case_variants`.
     // 1. mergeHeaders (utils/collection.js:99-140): exact-name map, later scope wins.
@@ -125,14 +185,18 @@ pub fn resolve(
         collection_scope.map(|s| &s.auth),
         folder_scopes.iter().map(|s| &s.auth),
     );
+    let mut basic_auth = None;
     match auth {
         Auth::Bearer { token } => {
             set_exact(&mut headers, "Authorization", format!("Bearer {token}"))
         }
+        Auth::Basic { username, password } => {
+            basic_auth = Some((username.clone(), password.clone()))
+        }
         Auth::Unsupported(mode) => {
             return Err(ResolveError::Unsupported(format!("auth mode `{mode}`")));
         }
-        Auth::None | Auth::Inherit | Auth::Basic { .. } => {}
+        Auth::None | Auth::Inherit => {}
     }
 
     // 3. Default content type (lowercase key) unless one was given.
@@ -149,7 +213,47 @@ pub fn resolve(
         set_exact(&mut headers, "content-type", ct.to_owned());
     }
 
+    let body = match &request.body {
+        Body::None => PreparedBody::None,
+        Body::Json(t) if t.is_empty() => PreparedBody::None,
+        // prepare-request.js:369-373: `decomment`, falling back to the raw text on error.
+        Body::Json(t) => PreparedBody::Text(strip_json_comments(t).unwrap_or_else(|| t.clone())),
+        Body::Text(t) | Body::Xml(t) => PreparedBody::Text(t.clone()),
+        Body::FormUrlEncoded(items) => PreparedBody::Form(
+            items
+                .iter()
+                .filter(|kv| kv.enabled)
+                .map(|kv| (kv.name.clone(), kv.value.clone()))
+                .collect(),
+        ),
+        Body::Multipart(fields) => {
+            PreparedBody::Multipart(fields.iter().filter(|f| f.enabled).cloned().collect())
+        }
+        Body::Unsupported(mode) => {
+            return Err(ResolveError::Unsupported(format!("body mode `{mode}`")));
+        }
+    };
+
+    Ok(PreparedRequest {
+        method: request.method.clone(),
+        url: request.url.clone(),
+        headers,
+        body,
+        basic_auth,
+        path_params: request.path_params.clone(),
+        settings: request.settings.clone(),
+    })
+}
+
+/// Bruno's `interpolateVars` (bruno-cli/src/runner/interpolate-vars.js) and the URL
+/// fix-ups before sending. `root` resolves multipart file paths.
+pub fn finalize(
+    prepared: &PreparedRequest,
+    vars: &VarStack,
+    root: &std::path::Path,
+) -> Result<ResolvedRequest, ResolveError> {
     // 4. interpolate-vars.js:83-86: each key is deleted and re-set interpolated, in order.
+    let mut headers = prepared.headers.clone();
     for (name, _) in headers.clone() {
         if let Some(pos) = headers.iter().position(|(k, _)| *k == name) {
             let (_, value) = headers.remove(pos);
@@ -162,7 +266,7 @@ pub fn resolve(
     }
 
     // 5. Basic auth is added after interpolation (interpolate-vars.js:216-222).
-    if let Auth::Basic { username, password } = auth {
+    if let Some((username, password)) = &prepared.basic_auth {
         let raw = format!(
             "{}:{}",
             vars.interpolate(username),
@@ -173,32 +277,28 @@ pub fn resolve(
     }
     let headers = fold_case_variants(headers);
 
-    let mut url =
-        substitute_path_params(&vars.interpolate(&request.url), &request.path_params, &vars)?;
+    let mut url = substitute_path_params(
+        &vars.interpolate(&prepared.url),
+        &prepared.path_params,
+        vars,
+    )?;
     // run-single-request.js:391-393.
     if !has_explicit_scheme(&url) {
         url = format!("http://{url}");
     }
 
-    let body = match &request.body {
-        Body::None => ResolvedBody::None,
-        Body::Json(t) if t.is_empty() => ResolvedBody::None,
-        // prepare-request.js:369-373: `decomment`, falling back to the raw text on error.
-        Body::Json(t) => {
-            let stripped = strip_json_comments(t).unwrap_or_else(|| t.clone());
-            ResolvedBody::Bytes(vars.interpolate(&stripped).into_bytes())
-        }
-        Body::Text(t) | Body::Xml(t) => ResolvedBody::Bytes(vars.interpolate(t).into_bytes()),
-        Body::FormUrlEncoded(items) => ResolvedBody::Form(
+    let body = match &prepared.body {
+        PreparedBody::None => ResolvedBody::None,
+        PreparedBody::Text(t) => ResolvedBody::Bytes(vars.interpolate(t).into_bytes()),
+        PreparedBody::Form(items) => ResolvedBody::Form(
             items
                 .iter()
-                .filter(|kv| kv.enabled)
-                .map(|kv| (vars.interpolate(&kv.name), vars.interpolate(&kv.value)))
+                .map(|(k, v)| (vars.interpolate(k), vars.interpolate(v)))
                 .collect(),
         ),
-        Body::Multipart(fields) => {
+        PreparedBody::Multipart(fields) => {
             let mut parts = Vec::new();
-            for field in fields.iter().filter(|f| f.enabled) {
+            for field in fields {
                 let name = vars.interpolate(&field.name);
                 let content_type = field.content_type.clone();
                 match &field.value {
@@ -210,7 +310,7 @@ pub fn resolve(
                     MultipartValue::Files(files) => {
                         parts.extend(files.iter().map(|f| ResolvedPart::File {
                             name: name.clone(),
-                            path: ctx.collection.root.join(vars.interpolate(f)),
+                            path: root.join(vars.interpolate(f)),
                             content_type: content_type.clone(),
                         }))
                     }
@@ -218,17 +318,14 @@ pub fn resolve(
             }
             ResolvedBody::Multipart(parts)
         }
-        Body::Unsupported(mode) => {
-            return Err(ResolveError::Unsupported(format!("body mode `{mode}`")));
-        }
     };
 
     Ok(ResolvedRequest {
-        method: request.method.clone(),
+        method: prepared.method.clone(),
         url,
         headers,
         body,
-        settings: request.settings.clone(),
+        settings: prepared.settings.clone(),
     })
 }
 
@@ -492,11 +589,11 @@ mod tests {
         env: Option<&str>,
         overrides: &[(&str, &str)],
     ) -> Result<ResolvedRequest, ResolveError> {
-        let overrides: VarMap = overrides
+        let overrides: ValueMap = overrides
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k.to_string(), serde_json::Value::String(v.to_string())))
             .collect();
-        let runtime = VarMap::new();
+        let runtime = ValueMap::new();
         let ctx = ResolveContext {
             collection: &f.collection,
             environment: env.and_then(|e| f.collection.environment(e)),

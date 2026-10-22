@@ -22,23 +22,19 @@ impl Printer {
             RunEvent::Started { name, method, .. } => {
                 self.current = Some((method.clone(), name.clone()))
             }
-            RunEvent::Passed {
-                path,
-                status,
-                elapsed,
-                size,
-            } => {
+            RunEvent::Passed { path, outcome } => {
                 let (method, name) = self
                     .current
                     .take()
                     .unwrap_or_else(|| (String::new(), self.relative(path)));
                 println!(
-                    "✓ {method:<7} {name}  {status}  {}ms  {}",
-                    elapsed.as_millis(),
-                    format_size(*size)
+                    "✓ {method:<7} {name}  {}  {}ms  {}",
+                    outcome.status.unwrap_or_default(),
+                    outcome.elapsed.as_millis(),
+                    format_size(outcome.size)
                 );
             }
-            RunEvent::Failed { path, error } => {
+            RunEvent::Failed { path, error, .. } => {
                 self.current = None;
                 println!("✗ {}: {error}", self.relative(path));
             }

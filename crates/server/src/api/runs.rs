@@ -8,7 +8,7 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
-use brs_core::runner::{RunEvent, RunOptions, RunReport, run_with};
+use brs_core::runner::{RunEvent, RunOptions, RunReport, RunVars, run_with_state};
 use brs_core::store;
 use brs_core::workspace::{CollectionId, OpenCollection};
 use serde::{Deserialize, Serialize};
@@ -193,27 +193,42 @@ async fn run_task(
 ) {
     let collection = open.collection();
     let opts = RunOptions {
-        env_overrides: env.as_deref().map(|e| open.secrets(e)).unwrap_or_default(),
+        env_overrides: env
+            .as_deref()
+            .map(|e| open.env_overrides(e))
+            .unwrap_or_default(),
         env,
         ..RunOptions::default()
     };
-    let mut runtime = open.runtime();
+    let environment = opts.env.as_deref().and_then(|e| collection.environment(e));
+    let mut state = RunVars::start(
+        &collection,
+        environment,
+        &opts.env_overrides,
+        open.runtime(),
+    );
+    let environment_before = state.environment.clone();
     let events = tx.clone();
     let id = run_id.clone();
     let mut on_event = move |event: &RunEvent| {
         let _ = events.send(event_dto(&root, &id, event));
     };
-    let result = run_with(
+    let result = run_with_state(
         &collection,
         &target,
         &opts,
         &open.session,
-        &mut runtime,
+        &mut state,
         &mut on_event,
     )
     .await;
     match result {
-        Ok(_) => open.set_runtime(runtime),
+        Ok(_) => {
+            open.set_runtime(state.runtime);
+            if let Some(env) = &opts.env {
+                open.record_env_changes(env, &environment_before, &state.environment);
+            }
+        }
         Err(e) => {
             let _ = tx.send(error(Some(run_id), "run_failed", &e.to_string()));
         }
@@ -235,19 +250,14 @@ fn event_dto(root: &std::path::Path, run_id: &str, event: &RunEvent) -> RunEvent
             method: method.clone(),
             url: url.clone(),
         },
-        RunEvent::Passed {
-            path,
-            status,
-            elapsed,
-            size,
-        } => RunEventDto::Passed {
+        RunEvent::Passed { path, outcome } => RunEventDto::Passed {
             run_id,
             item: item_id(root, path),
-            status: *status,
-            elapsed_ms: millis(elapsed),
-            size: *size,
+            status: outcome.status.unwrap_or_default(),
+            elapsed_ms: millis(&outcome.elapsed),
+            size: outcome.size,
         },
-        RunEvent::Failed { path, error } => RunEventDto::Failed {
+        RunEvent::Failed { path, error, .. } => RunEventDto::Failed {
             run_id,
             item: item_id(root, path),
             error: error.clone(),

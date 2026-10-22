@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use crate::collection::{Collection, LoadError};
 use crate::executor::{ExecError, ExecOptions, Session};
 use crate::store::ContentHash;
-use crate::vars::VarMap;
+use crate::vars::{ValueMap, VarMap};
 
 /// First 16 hex characters of the SHA-256 of the canonical collection root.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -27,8 +27,10 @@ pub struct OpenCollection {
     pub id: CollectionId,
     collection: RwLock<Arc<Collection>>,
     pub session: Session,
-    runtime: Mutex<VarMap>,
+    runtime: Mutex<ValueMap>,
     secrets: Mutex<BTreeMap<String, VarMap>>,
+    /// Environment variables scripts set (`bru.setEnvVar`), per environment, in memory only.
+    env_changes: Mutex<BTreeMap<String, ValueMap>>,
 }
 
 impl OpenCollection {
@@ -54,15 +56,49 @@ impl OpenCollection {
         Ok(())
     }
 
-    pub fn runtime(&self) -> VarMap {
+    pub fn runtime(&self) -> ValueMap {
         self.runtime
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
 
-    pub fn set_runtime(&self, vars: VarMap) {
+    pub fn set_runtime(&self, vars: ValueMap) {
         *self.runtime.lock().unwrap_or_else(PoisonError::into_inner) = vars;
+    }
+
+    /// What overrides environment `env`'s file values: secrets entered for it, then
+    /// values scripts set earlier in this session.
+    pub fn env_overrides(&self, env: &str) -> ValueMap {
+        let mut values = crate::vars::string_values(&self.secrets(env));
+        if let Some(changes) = self
+            .env_changes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(env)
+        {
+            values.extend(changes.iter().map(|(k, v)| (k.clone(), v.clone())));
+        }
+        values
+    }
+
+    /// Remembers what scripts changed in environment `env` (`before` → `after`): new or
+    /// changed values are kept for later sends and runs; a variable a script deleted
+    /// stops being overridden (its file value, if any, applies again).
+    pub fn record_env_changes(&self, env: &str, before: &ValueMap, after: &ValueMap) {
+        let mut all = self
+            .env_changes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let changes = all.entry(env.to_owned()).or_default();
+        for (name, value) in after {
+            if before.get(name) != Some(value) {
+                changes.insert(name.clone(), value.clone());
+            }
+        }
+        for name in before.keys().filter(|k| !after.contains_key(*k)) {
+            changes.remove(name);
+        }
     }
 
     pub fn secrets(&self, env: &str) -> VarMap {
@@ -127,6 +163,7 @@ impl Workspace {
             session: Session::new(self.exec.clone())?,
             runtime: Mutex::default(),
             secrets: Mutex::default(),
+            env_changes: Mutex::default(),
         });
         self.collections
             .write()

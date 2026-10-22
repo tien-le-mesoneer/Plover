@@ -106,14 +106,15 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
     let collection = Collection::load(&root).map_err(|e| e.to_string())?;
     let opts = RunOptions {
         env: args.env,
-        env_overrides: args.env_vars.into_iter().collect::<VarMap>(),
         exec: ExecOptions {
             timeout: args.timeout_ms.map(Duration::from_millis),
             follow_redirects: !args.no_follow_redirects,
             verify_tls: !args.insecure,
             ..ExecOptions::default()
         },
-    };
+        ..RunOptions::default()
+    }
+    .with_env_vars(&args.env_vars.into_iter().collect::<VarMap>());
     let mut printer = print::Printer::new(&collection.root);
     let report = runner::run(&collection, &args.path, &opts, &mut |event| {
         printer.event(event)
