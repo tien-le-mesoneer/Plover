@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use brs_core::bru::syntax::BruDocument;
+use brs_core::bru::kind::{BlockKind, block_kind};
+use brs_core::bru::syntax::{BlockContent, BruDocument};
 
 fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")
@@ -36,6 +37,41 @@ fn all_fixtures_roundtrip_byte_identical() {
             Err(e) => failures.push(format!("{}: {e}", path.display())),
         }
     }
-    assert!(failures.is_empty(), "round-trip failures:\n{}", failures.join("\n"));
-    assert!(files.len() >= 280, "only {} fixture files checked", files.len());
+    assert!(
+        failures.is_empty(),
+        "round-trip failures:\n{}",
+        failures.join("\n")
+    );
+    assert!(
+        files.len() >= 280,
+        "only {} fixture files checked",
+        files.len()
+    );
+}
+
+#[test]
+fn all_fixtures_have_no_unexpected_opaque() {
+    let mut offenders = Vec::new();
+    for path in all_fixtures() {
+        let src = std::fs::read_to_string(&path).expect("read fixture");
+        let doc = BruDocument::parse(&src).expect("parse");
+        for block in doc.blocks() {
+            let opener = if block.raw().trim_end().ends_with(']')
+                && !block.raw().trim_end().ends_with('}')
+            {
+                '['
+            } else {
+                '{'
+            };
+            let known = block_kind(&block.name, opener) != BlockKind::Opaque;
+            if known && *block.content() == BlockContent::Opaque {
+                offenders.push(format!("{}: {}", path.display(), block.name));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "unparsed known blocks:\n{}",
+        offenders.join("\n")
+    );
 }

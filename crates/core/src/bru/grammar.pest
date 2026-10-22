@@ -22,3 +22,42 @@ line_block    = { line_name ~ ":" ~ line_value }
 line_name     = { "color" | "extends" }
 line_value    = { (!nl ~ ANY)* }
 block_name    = @{ (!(" " | "\t" | "\r" | "\n" | "{" | "[") ~ ANY)+ }
+
+// ---- Dictionary block content (the text between `{` and the closing `}` line).
+dict        = { SOI ~ (blank | pair)* ~ EOI }
+assert_dict = { SOI ~ (blank | assert_pair)* ~ EOI }
+blank       = _{ hs* ~ nl | hs+ ~ &EOI }
+
+pair        = { hs* ~ annotations ~ hs* ~ disabled? ~ key ~ hs* ~ ":" ~ hs* ~ value ~ hs* ~ (nl | &EOI) }
+assert_pair = { hs* ~ annotations ~ hs* ~ disabled? ~ assert_key ~ ":" ~ hs* ~ value ~ hs* ~ (nl | &EOI) }
+
+disabled    = { "~" }
+key         = _{ quoted_key | plain_key }
+quoted_key  = ${ "\"" ~ quoted_inner ~ "\"" }
+quoted_inner = @{ ("\\\"" | !("\"" | "\r" | "\n") ~ ANY)* }
+plain_key   = @{ (!(" " | "\t" | "\r" | "\n" | ":") ~ ANY)* }
+assert_key  = @{ (!("\r" | "\n" | ":") ~ ANY)* }
+
+value           = _{ list_value | multiline_value | single_value }
+list_value      = { "[" ~ nl+ ~ list_items? ~ hs* ~ nl+ ~ hs* ~ "]" }
+list_items      = _{ list_item ~ (nl+ ~ list_item)* }
+list_item       = _{ hs+ ~ list_word ~ hs* }
+list_word       = @{ (ASCII_ALPHANUMERIC | "_" | "-")+ }
+multiline_value = { "'''" ~ ml_content ~ "'''" ~ hs* ~ content_type? }
+ml_content      = @{ (!"'''" ~ ANY)* }
+content_type    = { "@contentType(" ~ ct_inner ~ ")" }
+ct_inner        = @{ (!")" ~ ANY)* }
+single_value    = @{ (!nl ~ ANY)* }
+
+annotations     = { annotation_line* }
+annotation_line = _{ hs* ~ annotation ~ !":" ~ hs* ~ nl }
+annotation      = ${ "@" ~ ann_name ~ ("(" ~ ann_arg ~ ")")? }
+ann_name        = @{ (!("(" | ")" | " " | "\t" | "\r" | "\n" | ":") ~ ANY)+ }
+ann_arg         = _{ ann_multi | ann_sq | ann_dq | ann_raw }
+ann_multi       = ${ "'''" ~ ann_multi_inner ~ "'''" }
+ann_multi_inner = @{ (!"'''" ~ ANY)* }
+ann_sq          = ${ "'" ~ ann_sq_inner ~ "'" }
+ann_sq_inner    = @{ (!"'" ~ ANY)* }
+ann_dq          = ${ "\"" ~ ann_dq_inner ~ "\"" }
+ann_dq_inner    = @{ ("\\" ~ ANY | !"\"" ~ ANY)* }
+ann_raw         = @{ (!")" ~ ANY)* }
