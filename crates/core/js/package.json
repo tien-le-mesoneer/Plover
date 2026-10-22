@@ -1,0 +1,25 @@
+{
+  "name": "brs-sandbox-libs",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Libraries available to bru-rs scripts; mirrors Bruno safe mode (bruno-js/src/sandbox/bundle-libraries.js).",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs dist/sandbox-libs.js",
+    "check": "node check.mjs"
+  },
+  "dependencies": {
+    "ajv": "^8.18.0",
+    "ajv-formats": "^2.1.1",
+    "atob": "^2.1.2",
+    "btoa": "^1.2.1",
+    "buffer": "^6.0.3",
+    "chai": "^4.3.7",
+    "crypto-js": "^4.2.0",
+    "moment": "^2.29.4",
+    "tv4": "^1.3.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
