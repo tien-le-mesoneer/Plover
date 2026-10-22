@@ -1,0 +1,24 @@
+// Grammar for `.bru` files, ported from Bruno's `packages/bruno-lang/v2/src`
+// (`bruToJson.js`, `envToJson.js`). No implicit WHITESPACE: every byte is
+// matched explicitly so the document can be written back unchanged.
+
+nl = _{ "\r"? ~ "\n" }
+hs = _{ " " | "\t" }
+
+// ---- Top level: a file is blocks separated by whitespace ("trivia").
+file    = { SOI ~ bom? ~ (trivia | block)* ~ EOI }
+bom     = { "\u{FEFF}" }
+trivia  = { (" " | "\t" | "\r" | "\n")+ }
+block   = { line_block | brace_block | bracket_block }
+
+// `name {` ... a line that is exactly `}` (Bruno's `tagend = nl "}"`).
+brace_block   = { block_name ~ hs* ~ "{" ~ brace_body ~ nl ~ "}" }
+brace_body    = { (!(nl ~ "}") ~ ANY)* }
+// `name [` ... `]` (environment `vars:secret`, `extends`).
+bracket_block = { block_name ~ hs* ~ "[" ~ bracket_body ~ "]" }
+bracket_body  = { (!"]" ~ ANY)* }
+// Single-line environment entries: `color: #fff`, `extends: base`.
+line_block    = { line_name ~ ":" ~ line_value }
+line_name     = { "color" | "extends" }
+line_value    = { (!nl ~ ANY)* }
+block_name    = @{ (!(" " | "\t" | "\r" | "\n" | "{" | "[") ~ ANY)+ }
