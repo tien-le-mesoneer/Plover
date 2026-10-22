@@ -1,0 +1,645 @@
+//! A pool of QuickJS runtimes that run scripts in fresh, sandboxed contexts.
+//!
+//! Each worker thread owns one `rquickjs::Runtime` (memory and stack limits, an interrupt
+//! handler for the timeout) and the safe-mode libraries compiled to bytecode once. A job
+//! gets a new context: libraries, `prelude.js`, `api.js`, then the job's code. The script is
+//! driven to completion on the worker: pending promise jobs first, then timers, sleeping
+//! until the next one is due. Scripts only see what the prelude installs; QuickJS without
+//! quickjs-libc has no filesystem, network or process access.
+
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::rc::Rc;
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+use std::time::{Duration, Instant};
+
+use rquickjs::context::EvalOptions;
+use rquickjs::module::WriteOptions;
+use rquickjs::{CaughtError, Context, Ctx, Function, Module, Runtime};
+use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot;
+
+use super::libs::LIBS;
+
+const PRELUDE_JS: &str = include_str!("prelude.js");
+const API_JS: &str = include_str!("api.js");
+/// File name the user's code is evaluated under; stack frames are matched against it.
+const SCRIPT_FILE: &str = "bru-script";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScriptLimits {
+    /// Wall clock for one script phase, including awaited timers and promises.
+    pub timeout: Duration,
+    /// Heap limit of a worker runtime; a script that needs more fails.
+    pub memory_bytes: usize,
+    pub max_stack_bytes: usize,
+}
+
+impl Default for ScriptLimits {
+    fn default() -> Self {
+        ScriptLimits {
+            timeout: Duration::from_secs(30),
+            memory_bytes: 128 * 1024 * 1024,
+            max_stack_bytes: 8 * 1024 * 1024,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Log,
+    Info,
+    Warn,
+    Error,
+    Debug,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConsoleLine {
+    pub level: LogLevel,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ScriptError {
+    #[error("{}", thrown_display(.name, .message, .scope, .line))]
+    Thrown {
+        name: String,
+        message: String,
+        /// Which segment threw: `collection`, `folder <name>` or `request`.
+        scope: Option<String>,
+        /// 1-based line within that segment's source.
+        line: Option<u32>,
+        column: Option<u32>,
+        stack: Option<String>,
+    },
+    #[error("{message}")]
+    ForbiddenModule {
+        module_name: String,
+        message: String,
+    },
+    #[error("script timed out after {} ms", .0.as_millis())]
+    Timeout(Duration),
+    #[error("script exceeded the memory limit")]
+    OutOfMemory,
+    #[error("script awaited a promise that can never settle")]
+    Unsettled,
+    #[error("script engine error: {0}")]
+    Internal(String),
+}
+
+fn thrown_display(name: &str, message: &str, scope: &Option<String>, line: &Option<u32>) -> String {
+    let mut s = format!("{name}: {message}");
+    match (scope, line) {
+        (Some(scope), Some(line)) => s.push_str(&format!(" ({scope}, line {line})")),
+        (Some(scope), None) => s.push_str(&format!(" ({scope})")),
+        _ => {}
+    }
+    s
+}
+
+/// One script segment: the code of one scope, run in its own async closure like Bruno's
+/// `wrapScriptInClosure` (bruno-cli/src/utils/collection.js:232-243).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Segment {
+    pub scope: String,
+    pub source: String,
+}
+
+impl Segment {
+    pub fn new(scope: impl Into<String>, source: impl Into<String>) -> Segment {
+        Segment {
+            scope: scope.into(),
+            source: source.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Main {
+    /// User scripts, run in order in one context.
+    Segments(Vec<Segment>),
+    /// A call into the prelude/API (asserts, post-response vars); must return a promise or value.
+    Call(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct EngineJob {
+    /// Available to `api.js` as `__brs.input`.
+    pub input: serde_json::Value,
+    pub main: Main,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct EngineOutput {
+    /// Everything `api.js` reported besides console output and the error (state, tests, …).
+    pub output: serde_json::Map<String, serde_json::Value>,
+    pub console: Vec<ConsoleLine>,
+    pub error: Option<ScriptError>,
+}
+
+/// Cheap to clone; worker threads start on the first `run`.
+#[derive(Clone)]
+pub struct ScriptEngine {
+    inner: Arc<Inner>,
+}
+
+struct Inner {
+    limits: ScriptLimits,
+    queue: OnceLock<Mutex<mpsc::Sender<Job>>>,
+}
+
+struct Job {
+    job: EngineJob,
+    reply: oneshot::Sender<EngineOutput>,
+}
+
+impl ScriptEngine {
+    pub fn new(limits: ScriptLimits) -> ScriptEngine {
+        ScriptEngine {
+            inner: Arc::new(Inner {
+                limits,
+                queue: OnceLock::new(),
+            }),
+        }
+    }
+
+    pub fn limits(&self) -> ScriptLimits {
+        self.inner.limits
+    }
+
+    pub async fn run(&self, job: EngineJob) -> EngineOutput {
+        let (reply, rx) = oneshot::channel();
+        let sent = self
+            .sender()
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .send(Job { job, reply });
+        if sent.is_err() {
+            return internal("script workers are not running");
+        }
+        rx.await
+            .unwrap_or_else(|_| internal("script worker stopped unexpectedly"))
+    }
+
+    fn sender(&self) -> &Mutex<mpsc::Sender<Job>> {
+        self.inner.queue.get_or_init(|| {
+            let (tx, rx) = mpsc::channel::<Job>();
+            let rx = Arc::new(Mutex::new(rx));
+            let workers = std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+                .clamp(1, 4);
+            for i in 0..workers {
+                let rx = Arc::clone(&rx);
+                let limits = self.inner.limits;
+                let spawned = std::thread::Builder::new()
+                    .name(format!("brs-script-{i}"))
+                    // Room for QuickJS's own stack limit plus the Rust frames around it.
+                    .stack_size(limits.max_stack_bytes + 8 * 1024 * 1024)
+                    .spawn(move || worker_loop(limits, &rx));
+                if let Err(e) = spawned {
+                    tracing::error!("cannot start script worker: {e}");
+                }
+            }
+            Mutex::new(tx)
+        })
+    }
+}
+
+fn internal(message: &str) -> EngineOutput {
+    EngineOutput {
+        error: Some(ScriptError::Internal(message.to_owned())),
+        ..EngineOutput::default()
+    }
+}
+
+fn worker_loop(limits: ScriptLimits, rx: &Mutex<mpsc::Receiver<Job>>) {
+    let mut worker: Option<Worker> = None;
+    loop {
+        let job = {
+            let rx = rx.lock().unwrap_or_else(PoisonError::into_inner);
+            rx.recv()
+        };
+        let Ok(Job { job, reply }) = job else {
+            return;
+        };
+        if worker.is_none() {
+            match Worker::new(limits) {
+                Ok(w) => worker = Some(w),
+                Err(e) => {
+                    let _ = reply.send(internal(&format!("cannot start QuickJS: {e}")));
+                    continue;
+                }
+            }
+        }
+        let Some(w) = worker.as_ref() else { continue };
+        let output = catch_unwind(AssertUnwindSafe(|| w.execute(job)));
+        let output = output.unwrap_or_else(|_| {
+            // Start over with a fresh runtime after a panic.
+            worker = None;
+            internal("script engine panicked")
+        });
+        let _ = reply.send(output);
+    }
+}
+
+struct Worker {
+    runtime: Runtime,
+    limits: ScriptLimits,
+    deadline: Rc<Cell<Option<Instant>>>,
+    /// Module bytecode of each library from `LIBS`, compiled on first use.
+    libs: Rc<RefCell<HashMap<&'static str, Vec<u8>>>>,
+}
+
+impl Worker {
+    fn new(limits: ScriptLimits) -> Result<Worker, String> {
+        let runtime = Runtime::new().map_err(|e| e.to_string())?;
+        runtime.set_memory_limit(limits.memory_bytes);
+        runtime.set_max_stack_size(limits.max_stack_bytes);
+        let deadline: Rc<Cell<Option<Instant>>> = Rc::new(Cell::new(None));
+        let watched = Rc::clone(&deadline);
+        runtime.set_interrupt_handler(Some(Box::new(move || {
+            watched.get().is_some_and(|d| Instant::now() >= d)
+        })));
+        Ok(Worker {
+            runtime,
+            limits,
+            deadline,
+            libs: Rc::default(),
+        })
+    }
+
+    fn execute(&self, job: EngineJob) -> EngineOutput {
+        let started = Instant::now();
+        let deadline = started + self.limits.timeout;
+        self.deadline.set(Some(deadline));
+        let output = self.execute_in_context(job, started, deadline);
+        self.deadline.set(None);
+        output
+    }
+
+    fn execute_in_context(
+        &self,
+        job: EngineJob,
+        started: Instant,
+        deadline: Instant,
+    ) -> EngineOutput {
+        let context = match Context::full(&self.runtime) {
+            Ok(c) => c,
+            Err(e) => return internal(&format!("cannot create a script context: {e}")),
+        };
+        let (code, segments) = build_main(&job.main);
+        let input_json = job.input.to_string();
+
+        let setup = context.with(|ctx| -> Result<(), ScriptError> {
+            let globals = ctx.globals();
+            let internal_err = |e: rquickjs::Error| ScriptError::Internal(e.to_string());
+            globals
+                .set("__brsInputJson", input_json.as_str())
+                .map_err(internal_err)?;
+            let now = Function::new(ctx.clone(), move || {
+                started.elapsed().as_secs_f64() * 1000.0
+            })
+            .map_err(internal_err)?;
+            globals.set("__brsNow", now).map_err(internal_err)?;
+            let interpolate = Function::new(ctx.clone(), |text: String, layers: String| {
+                super::api::interpolate_with_layers(&text, &layers)
+            })
+            .map_err(internal_err)?;
+            globals
+                .set("__brsInterpolate", interpolate)
+                .map_err(internal_err)?;
+            let libs = Rc::clone(&self.libs);
+            let load_lib = Function::new(ctx.clone(), move |ctx: Ctx<'_>, name: String| {
+                load_lib(&ctx, &libs, &name)
+            })
+            .map_err(internal_err)?;
+            globals
+                .set("__brsLoadLib", load_lib)
+                .map_err(internal_err)?;
+            eval_global(&ctx, PRELUDE_JS, "brs-prelude", true)
+                .map_err(|e| self.classify(&ctx, e, deadline, &[]))?;
+            eval_global(&ctx, API_JS, "brs-api", true)
+                .map_err(|e| self.classify(&ctx, e, deadline, &[]))?;
+            eval_global(&ctx, &code, SCRIPT_FILE, false)
+                .map_err(|e| self.classify(&ctx, e, deadline, &segments))?;
+            Ok(())
+        });
+
+        let mut error = setup.err();
+        if error.is_none() {
+            error = self.drive(&context, deadline, &segments);
+        }
+
+        // Collect what the script produced, even after a failure. Give the collector a
+        // fresh, short deadline so a timed-out script can still report its partial state.
+        self.deadline
+            .set(Some(Instant::now() + Duration::from_secs(2)));
+        let collected = context.with(|ctx| -> Option<String> {
+            let f: Function = ctx.globals().get("__brsResult").ok()?;
+            f.call::<_, String>(()).ok()
+        });
+        let mut output = EngineOutput::default();
+        if let Some(json) = collected
+            && let Ok(serde_json::Value::Object(mut map)) = serde_json::from_str(&json)
+        {
+            if let Some(console) = map.remove("console") {
+                output.console = serde_json::from_value(console).unwrap_or_default();
+            }
+            if let Some(js_error) = map.remove("error")
+                && !js_error.is_null()
+                && error.is_none()
+            {
+                error = Some(error_from_js(&js_error, &segments));
+            }
+            output.output = map;
+        }
+        output.error = error;
+        output
+    }
+
+    /// Runs promise jobs and timers until the script reports done.
+    fn drive(
+        &self,
+        context: &Context,
+        deadline: Instant,
+        segments: &[SegmentSpan],
+    ) -> Option<ScriptError> {
+        loop {
+            loop {
+                match self.runtime.execute_pending_job() {
+                    Ok(true) => continue,
+                    Ok(false) => break,
+                    Err(job_error) => {
+                        return Some(job_error.0.with(|ctx| {
+                            self.classify(&ctx, rquickjs::Error::Exception, deadline, segments)
+                        }));
+                    }
+                }
+            }
+            let done = context.with(|ctx| call_global::<bool>(&ctx, "__brsIsDone"));
+            match done {
+                Ok(true) => return None,
+                Ok(false) => {}
+                Err(e) => {
+                    return Some(context.with(|ctx| self.classify(&ctx, e, deadline, segments)));
+                }
+            }
+            if Instant::now() >= deadline {
+                return Some(ScriptError::Timeout(self.limits.timeout));
+            }
+            let delay = match context.with(|ctx| call_global::<f64>(&ctx, "__brsNextTimerDelay")) {
+                Ok(d) => d,
+                Err(e) => {
+                    return Some(context.with(|ctx| self.classify(&ctx, e, deadline, segments)));
+                }
+            };
+            if delay < 0.0 {
+                return Some(ScriptError::Unsettled);
+            }
+            let wake = Instant::now() + Duration::from_secs_f64(delay / 1000.0);
+            if wake >= deadline {
+                std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
+                return Some(ScriptError::Timeout(self.limits.timeout));
+            }
+            std::thread::sleep(wake.saturating_duration_since(Instant::now()));
+            if let Err(e) = context.with(|ctx| call_global::<()>(&ctx, "__brsFireTimer")) {
+                return Some(context.with(|ctx| self.classify(&ctx, e, deadline, segments)));
+            }
+        }
+    }
+
+    fn classify(
+        &self,
+        ctx: &Ctx<'_>,
+        error: rquickjs::Error,
+        deadline: Instant,
+        segments: &[SegmentSpan],
+    ) -> ScriptError {
+        let caught = CaughtError::from_error(ctx, error);
+        self.classify_caught(caught, deadline, segments)
+    }
+
+    fn classify_caught(
+        &self,
+        caught: CaughtError<'_>,
+        deadline: Instant,
+        segments: &[SegmentSpan],
+    ) -> ScriptError {
+        match caught {
+            CaughtError::Error(rquickjs::Error::Allocation) => ScriptError::OutOfMemory,
+            CaughtError::Error(e) => ScriptError::Internal(e.to_string()),
+            CaughtError::Exception(ex) => {
+                let message = ex.message().unwrap_or_default();
+                if is_out_of_memory(&message) {
+                    return ScriptError::OutOfMemory;
+                }
+                if message == "interrupted" && Instant::now() >= deadline {
+                    return ScriptError::Timeout(self.limits.timeout);
+                }
+                let name: String = ex
+                    .as_object()
+                    .get("name")
+                    .unwrap_or_else(|_| "Error".to_owned());
+                let forbidden: Option<String> =
+                    ex.as_object().get("__brsForbiddenModule").ok().flatten();
+                error_from_parts(name, message, ex.stack(), forbidden, segments)
+            }
+            CaughtError::Value(v) => {
+                let text = v
+                    .as_string()
+                    .and_then(|s| s.to_string().ok())
+                    .unwrap_or_else(|| format!("{v:?}"));
+                if is_out_of_memory(&text) {
+                    return ScriptError::OutOfMemory;
+                }
+                if Instant::now() >= deadline {
+                    return ScriptError::Timeout(self.limits.timeout);
+                }
+                error_from_parts("Error".to_owned(), text, None, None, segments)
+            }
+        }
+    }
+}
+
+/// `__brsLoadLib(name)`: evaluates a library in the calling context, compiling it to bytecode
+/// the first time this worker needs it. Library modules have no imports or top-level await,
+/// so evaluation completes synchronously.
+fn load_lib<'js>(
+    ctx: &Ctx<'js>,
+    cache: &RefCell<HashMap<&'static str, Vec<u8>>>,
+    name: &str,
+) -> rquickjs::Result<()> {
+    let Some(&(name, source)) = LIBS.iter().find(|(n, _)| *n == name) else {
+        return Err(rquickjs::Exception::throw_message(
+            ctx,
+            &format!("unknown library {name}"),
+        ));
+    };
+    if !cache.borrow().contains_key(name) {
+        let bytes = Module::declare(ctx.clone(), name, source)?.write(WriteOptions::default())?;
+        cache.borrow_mut().insert(name, bytes);
+    }
+    let cache = cache.borrow();
+    // SAFETY: the bytecode was produced by `Module::write` on this runtime's QuickJS build.
+    let module = unsafe { Module::load(ctx.clone(), &cache[name]) }?;
+    let (_, promise) = module.eval()?;
+    match promise.result::<()>() {
+        Some(Err(e)) => Err(e),
+        _ => Ok(()),
+    }
+}
+
+fn is_out_of_memory(message: &str) -> bool {
+    message.contains("out of memory")
+}
+
+fn eval_global(ctx: &Ctx<'_>, source: &str, file: &str, strict: bool) -> rquickjs::Result<()> {
+    let mut options = EvalOptions::default();
+    options.global = true;
+    options.strict = strict;
+    options.filename = Some(file.to_owned());
+    ctx.eval_with_options::<(), _>(source, options)
+}
+
+fn call_global<'js, T: rquickjs::FromJs<'js>>(ctx: &Ctx<'js>, name: &str) -> rquickjs::Result<T> {
+    let f: Function = ctx.globals().get(name)?;
+    f.call(())
+}
+
+/// Where a segment's code sits in the combined script (1-based, inclusive).
+#[derive(Debug, Clone)]
+struct SegmentSpan {
+    scope: String,
+    first_line: u32,
+    last_line: u32,
+}
+
+/// Wraps each segment in an awaited async closure inside `__brsStart`, like Bruno's
+/// `wrapAndJoinScripts`, and records where each one starts for error positions.
+fn build_main(main: &Main) -> (String, Vec<SegmentSpan>) {
+    match main {
+        Main::Call(expr) => (
+            format!("__brsStart(async () => {{ await ({expr}); }});\n"),
+            Vec::new(),
+        ),
+        Main::Segments(segments) => {
+            let mut code = String::from("__brsStart(async () => {\n");
+            let mut line: u32 = 1;
+            let mut spans = Vec::new();
+            for segment in segments.iter().filter(|s| !s.source.trim().is_empty()) {
+                code.push_str("await (async () => {\n");
+                line += 1;
+                let lines = segment.source.split('\n').count() as u32;
+                spans.push(SegmentSpan {
+                    scope: segment.scope.clone(),
+                    first_line: line + 1,
+                    last_line: line + lines,
+                });
+                code.push_str(&segment.source);
+                code.push_str("\n})();\n");
+                line += lines + 1;
+            }
+            code.push_str("});\n");
+            (code, spans)
+        }
+    }
+}
+
+fn error_from_js(value: &serde_json::Value, segments: &[SegmentSpan]) -> ScriptError {
+    let text = |key: &str| value.get(key).and_then(|v| v.as_str()).map(str::to_owned);
+    let message = text("message").unwrap_or_default();
+    if is_out_of_memory(&message) {
+        return ScriptError::OutOfMemory;
+    }
+    error_from_parts(
+        text("name").unwrap_or_else(|| "Error".to_owned()),
+        message,
+        text("stack"),
+        text("forbiddenModule"),
+        segments,
+    )
+}
+
+fn error_from_parts(
+    name: String,
+    message: String,
+    stack: Option<String>,
+    forbidden_module: Option<String>,
+    segments: &[SegmentSpan],
+) -> ScriptError {
+    if let Some(module_name) = forbidden_module {
+        return ScriptError::ForbiddenModule {
+            module_name,
+            message,
+        };
+    }
+    let position = stack.as_deref().and_then(script_position);
+    let (scope, line, column) = match position {
+        Some((line, column)) => match segments
+            .iter()
+            .find(|s| (s.first_line..=s.last_line).contains(&line))
+        {
+            Some(s) => (Some(s.scope.clone()), Some(line - s.first_line + 1), column),
+            None => (None, None, None),
+        },
+        None => (None, None, None),
+    };
+    ScriptError::Thrown {
+        name,
+        message,
+        scope,
+        line,
+        column,
+        stack,
+    }
+}
+
+/// First `bru-script:LINE[:COL]` position in a QuickJS stack trace.
+fn script_position(stack: &str) -> Option<(u32, Option<u32>)> {
+    let marker = format!("{SCRIPT_FILE}:");
+    let start = stack.find(&marker)? + marker.len();
+    let rest = &stack[start..];
+    let line_end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    let line: u32 = rest[..line_end].parse().ok()?;
+    let column = rest[line_end..].strip_prefix(':').and_then(|r| {
+        let end = r.find(|c: char| !c.is_ascii_digit()).unwrap_or(r.len());
+        r[..end].parse().ok()
+    });
+    Some((line, column))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn segment_spans_match_wrapping() {
+        let (code, spans) = build_main(&Main::Segments(vec![
+            Segment::new("collection", "a\nb"),
+            Segment::new("folder f", "   "),
+            Segment::new("request", "c"),
+        ]));
+        let lines: Vec<&str> = code.lines().collect();
+        assert_eq!(spans.len(), 2);
+        assert_eq!(lines[spans[0].first_line as usize - 1], "a");
+        assert_eq!(lines[spans[0].last_line as usize - 1], "b");
+        assert_eq!(lines[spans[1].first_line as usize - 1], "c");
+    }
+
+    #[test]
+    fn parses_stack_positions() {
+        assert_eq!(
+            script_position("    at <anonymous> (bru-script:12:5)\n"),
+            Some((12, Some(5)))
+        );
+        assert_eq!(script_position("    at bru-script:7\n"), Some((7, None)));
+        assert_eq!(script_position("    at foo (brs-api:3:1)\n"), None);
+    }
+}

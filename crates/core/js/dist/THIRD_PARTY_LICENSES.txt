@@ -1,4 +1,4 @@
-Third-party licenses for crates/core/js/dist/sandbox-libs.js
+Third-party licenses for the libraries in crates/core/js/dist/
 
 ========================================================================
 ajv@8.20.0 — MIT
