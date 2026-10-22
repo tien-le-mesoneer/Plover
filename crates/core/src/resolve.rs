@@ -21,11 +21,8 @@ pub struct ResolvedRequest {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResolvedBody {
     None,
-    /// `content_type` is set only when no `content-type` header was given.
-    Bytes {
-        content_type: Option<String>,
-        data: Vec<u8>,
-    },
+    /// Raw body; its default `content-type` is already in `ResolvedRequest::headers`.
+    Bytes(Vec<u8>),
     Form(Vec<(String, String)>),
     Multipart(Vec<ResolvedPart>),
 }
@@ -97,63 +94,82 @@ pub fn resolve(
             .unwrap_or_default(),
     );
 
-    let mut headers = Vec::new();
+    // Header assembly follows Bruno CLI step by step; see `fold_case_variants`.
+    // 1. mergeHeaders (utils/collection.js:99-140): exact-name map, later scope wins.
+    let mut headers: Vec<(String, String)> = Vec::new();
     let header_lists = collection_scope
         .map(|s| &s.headers)
         .into_iter()
         .chain(folder_scopes.iter().map(|s| &s.headers))
         .chain(std::iter::once(&request.headers));
     for list in header_lists {
-        for h in list.iter().filter(|h| h.enabled) {
-            set_header(
-                &mut headers,
-                &vars.interpolate(&h.name),
-                vars.interpolate(&h.value),
-            );
+        // prepare-request.js:34: enabled headers with a non-empty name only.
+        for h in list.iter().filter(|h| h.enabled && !h.name.is_empty()) {
+            set_exact(&mut headers, &h.name, h.value.clone());
         }
     }
+    // prepare-request.js:36: an explicit content type is detected case-insensitively.
+    let content_type_defined = headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
 
+    // 2. Auth (prepare-request.js:60-70, :210-259). Bearer is set before interpolation.
     let auth = effective_auth(
         &request.auth,
         collection_scope.map(|s| &s.auth),
         folder_scopes.iter().map(|s| &s.auth),
     );
     match auth {
-        Auth::Basic { username, password } => {
-            let raw = format!(
-                "{}:{}",
-                vars.interpolate(username),
-                vars.interpolate(password)
-            );
-            let encoded = base64::engine::general_purpose::STANDARD.encode(raw);
-            set_header(&mut headers, "Authorization", format!("Basic {encoded}"));
-        }
         Auth::Bearer { token } => {
-            set_header(
-                &mut headers,
-                "Authorization",
-                format!("Bearer {}", vars.interpolate(token)),
-            );
+            set_exact(&mut headers, "Authorization", format!("Bearer {token}"))
         }
         Auth::Unsupported(mode) => {
             return Err(ResolveError::Unsupported(format!("auth mode `{mode}`")));
         }
-        Auth::None | Auth::Inherit => {}
+        Auth::None | Auth::Inherit | Auth::Basic { .. } => {}
     }
 
-    let url = substitute_path_params(&vars.interpolate(&request.url), &request.path_params, &vars);
-    let has_content_type = headers
-        .iter()
-        .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
-    let bytes = |text: &str, ct: &str| ResolvedBody::Bytes {
-        content_type: (!has_content_type).then(|| ct.to_owned()),
-        data: vars.interpolate(text).into_bytes(),
+    // 3. Default content type for raw bodies (prepare-request.js:366-386), lowercase key.
+    let default_content_type = match &request.body {
+        Body::Json(_) => Some("application/json"),
+        Body::Text(_) => Some("text/plain"),
+        Body::Xml(_) => Some("application/xml"),
+        _ => None,
     };
+    if let Some(ct) = default_content_type.filter(|_| !content_type_defined) {
+        set_exact(&mut headers, "content-type", ct.to_owned());
+    }
+
+    // 4. interpolate-vars.js:83-86: each key is deleted and re-set interpolated, in order.
+    for (name, _) in headers.clone() {
+        if let Some(pos) = headers.iter().position(|(k, _)| *k == name) {
+            let (_, value) = headers.remove(pos);
+            set_exact(
+                &mut headers,
+                &vars.interpolate(&name),
+                vars.interpolate(&value),
+            );
+        }
+    }
+
+    // 5. Basic auth is added after interpolation (interpolate-vars.js:216-222).
+    if let Auth::Basic { username, password } = auth {
+        let raw = format!(
+            "{}:{}",
+            vars.interpolate(username),
+            vars.interpolate(password)
+        );
+        let encoded = base64::engine::general_purpose::STANDARD.encode(raw);
+        set_exact(&mut headers, "Authorization", format!("Basic {encoded}"));
+    }
+    let headers = fold_case_variants(headers);
+
+    let url = substitute_path_params(&vars.interpolate(&request.url), &request.path_params, &vars);
     let body = match &request.body {
         Body::None => ResolvedBody::None,
-        Body::Json(t) => bytes(t, "application/json"),
-        Body::Text(t) => bytes(t, "text/plain"),
-        Body::Xml(t) => bytes(t, "application/xml"),
+        Body::Json(t) | Body::Text(t) | Body::Xml(t) => {
+            ResolvedBody::Bytes(vars.interpolate(t).into_bytes())
+        }
         Body::FormUrlEncoded(items) => ResolvedBody::Form(
             items
                 .iter()
@@ -197,15 +213,30 @@ pub fn resolve(
     })
 }
 
-/// Replaces a header case-insensitively in place, or appends it.
-fn set_header(headers: &mut Vec<(String, String)>, name: &str, value: String) {
-    match headers
-        .iter_mut()
-        .find(|(k, _)| k.eq_ignore_ascii_case(name))
-    {
-        Some(entry) => *entry = (name.to_owned(), value),
+/// JS object / `Map` assignment: replaces the value of an identically named
+/// key in place, otherwise appends.
+fn set_exact(headers: &mut Vec<(String, String)>, name: &str, value: String) {
+    match headers.iter_mut().find(|(k, _)| k == name) {
+        Some(entry) => entry.1 = value,
         None => headers.push((name.to_owned(), value)),
     }
+}
+
+/// axios 1.18 `AxiosHeaders` construction (`setHeader` with `findKey`): names
+/// differing only by case fold into the first key's spelling and position, and
+/// take the value of the last such key.
+fn fold_case_variants(headers: Vec<(String, String)>) -> Vec<(String, String)> {
+    let mut folded: Vec<(String, String)> = Vec::with_capacity(headers.len());
+    for (name, value) in headers {
+        match folded
+            .iter_mut()
+            .find(|(k, _)| k.eq_ignore_ascii_case(&name))
+        {
+            Some(entry) => entry.1 = value,
+            None => folded.push((name, value)),
+        }
+    }
+    folded
 }
 
 /// Bruno `mergeAuth`: the innermost folder with a concrete auth mode wins over
@@ -313,22 +344,90 @@ mod tests {
             .map(|(_, v)| v.as_str())
     }
 
-    const COLLECTION_HEADERS: &str = "headers {\n  x-a: collection\n  x-b: collection\n}\n";
+    fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
+        list.iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
 
+    // Bruno `mergeHeaders` (bruno-cli/src/utils/collection.js:99-140) keys a Map by the exact
+    // header name: a later scope replaces the value but keeps the first position.
     #[test]
-    fn headers_merge_request_wins() {
+    fn headers_merge_by_exact_name_later_wins() {
         let f = fixture(&[
-            ("collection.bru", COLLECTION_HEADERS),
-            ("d/folder.bru", "headers {\n  X-B: folder\n}\n"),
+            (
+                "collection.bru",
+                "headers {\n  X-A: collection\n  X-B: collection\n}\n",
+            ),
+            ("d/folder.bru", "headers {\n  X-C: folder\n}\n"),
             (
                 "d/r.bru",
-                "get {\n  url: http://h\n}\n\nheaders {\n  x-a: request\n}\n",
+                "get {\n  url: http://h\n}\n\nheaders {\n  X-A: request\n}\n",
             ),
         ]);
         let r = run(&f, "d/r.bru", None, &[]).unwrap();
-        assert_eq!(header(&r, "x-a"), Some("request"));
-        assert_eq!(header(&r, "x-b"), Some("folder"));
-        assert_eq!(r.headers.len(), 2);
+        assert_eq!(
+            r.headers,
+            pairs(&[("X-A", "request"), ("X-B", "collection"), ("X-C", "folder")])
+        );
+    }
+
+    // Names differing only by case stay separate Map/object keys in Bruno
+    // (collection.js:99-140, prepare-request.js:33-35). axios 1.18 `AxiosHeaders`
+    // then folds them case-insensitively: the first key's spelling and position,
+    // the value of the last key in object order. Here `X-A` (first, value
+    // "request") and `x-a` (second, value "folder") fold to `X-A: folder`.
+    #[test]
+    fn case_variant_headers_fold_like_axios() {
+        let f = fixture(&[
+            ("collection.bru", "headers {\n  X-A: collection\n}\n"),
+            ("d/folder.bru", "headers {\n  x-a: folder\n}\n"),
+            (
+                "d/r.bru",
+                "get {\n  url: http://h\n}\n\nheaders {\n  X-A: request\n}\n",
+            ),
+        ]);
+        let r = run(&f, "d/r.bru", None, &[]).unwrap();
+        assert_eq!(r.headers, pairs(&[("X-A", "folder")]));
+    }
+
+    // prepare-request.js:258 sets `headers['Authorization']` after the explicit headers,
+    // so it is the later key and its value wins the axios fold; the spelling stays the
+    // explicit header's.
+    #[test]
+    fn bearer_overrides_lowercase_authorization() {
+        let f = fixture(&[(
+            "r.bru",
+            "get {\n  url: http://h\n  auth: bearer\n}\n\nheaders {\n  authorization: mine\n}\n\nauth:bearer {\n  token: t\n}\n",
+        )]);
+        let r = run(&f, "r.bru", None, &[]).unwrap();
+        assert_eq!(r.headers, pairs(&[("authorization", "Bearer t")]));
+    }
+
+    // prepare-request.js:34 only sends enabled headers with a non-empty name.
+    #[test]
+    fn empty_header_name_skipped() {
+        let f = fixture(&[(
+            "r.bru",
+            "get {\n  url: http://h\n}\n\nheaders {\n  : v\n  x: 1\n}\n",
+        )]);
+        assert_eq!(
+            run(&f, "r.bru", None, &[]).unwrap().headers,
+            pairs(&[("x", "1")])
+        );
+    }
+
+    // interpolate-vars.js:83-86 interpolates header names as well as values.
+    #[test]
+    fn header_names_interpolated() {
+        let f = fixture(&[(
+            "r.bru",
+            "get {\n  url: http://h\n}\n\nheaders {\n  {{hn}}: {{hv}}\n}\n\nvars:pre-request {\n  hn: X-N\n  hv: 1\n}\n",
+        )]);
+        assert_eq!(
+            run(&f, "r.bru", None, &[]).unwrap().headers,
+            pairs(&[("X-N", "1")])
+        );
     }
 
     #[test]
@@ -407,6 +506,8 @@ mod tests {
         assert_eq!(r.url, "http://h/{{secret}}");
     }
 
+    // prepare-request.js:36 detects an explicit content type case-insensitively;
+    // only without one does :366-367 add `content-type: application/json`.
     #[test]
     fn json_content_type_default_and_explicit() {
         let body = "post {\n  url: http://h\n  body: json\n}\n\nbody:json {\n  {\"a\": \"{{v}}\"}\n}\n\nvars:pre-request {\n  v: 1\n}\n";
@@ -418,21 +519,13 @@ mod tests {
             ),
         ]);
         let r = run(&f, "r.bru", None, &[]).unwrap();
-        assert_eq!(
-            r.body,
-            ResolvedBody::Bytes {
-                content_type: Some("application/json".into()),
-                data: br#"{"a": "1"}"#.to_vec()
-            }
-        );
+        assert_eq!(r.headers, pairs(&[("content-type", "application/json")]));
+        assert_eq!(r.body, ResolvedBody::Bytes(br#"{"a": "1"}"#.to_vec()));
         let r = run(&f, "e.bru", None, &[]).unwrap();
-        assert!(matches!(
-            r.body,
-            ResolvedBody::Bytes {
-                content_type: None,
-                ..
-            }
-        ));
+        assert_eq!(
+            r.headers,
+            pairs(&[("Content-Type", "application/vnd+json")])
+        );
     }
 
     #[test]

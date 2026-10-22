@@ -110,12 +110,7 @@ impl Session {
         }
         builder = match &req.body {
             ResolvedBody::None => builder,
-            ResolvedBody::Bytes { content_type, data } => {
-                if let Some(ct) = content_type {
-                    builder = builder.header(reqwest::header::CONTENT_TYPE, ct);
-                }
-                builder.body(data.clone())
-            }
+            ResolvedBody::Bytes(data) => builder.body(data.clone()),
             ResolvedBody::Form(pairs) => builder.form(pairs),
             ResolvedBody::Multipart(parts) => builder.multipart(multipart_form(parts).await?),
         };

@@ -34,10 +34,9 @@ async fn sends_method_headers_and_json_body() {
         .await;
     let mut r = req(Method::Post, format!("{}/items", server.uri()));
     r.headers.push(("x-a".into(), "1".into()));
-    r.body = ResolvedBody::Bytes {
-        content_type: Some("application/json".into()),
-        data: br#"{"a":1}"#.to_vec(),
-    };
+    r.headers
+        .push(("content-type".into(), "application/json".into()));
+    r.body = ResolvedBody::Bytes(br#"{"a":1}"#.to_vec());
     let res = session().send(&r).await.unwrap();
     assert_eq!(res.status, 201);
     assert_eq!(res.body, b"created");
