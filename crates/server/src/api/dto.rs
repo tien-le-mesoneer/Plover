@@ -292,6 +292,7 @@ impl From<&ScriptFailure> for ScriptErrorDto {
             ScriptError::OutOfMemory => ("outOfMemory", None, None, None, None),
             ScriptError::Unsettled => ("unsettled", None, None, None, None),
             ScriptError::Internal(_) => ("internal", None, None, None, None),
+            ScriptError::ResultUnavailable(_) => ("resultUnavailable", None, None, None, None),
         };
         let message = match &f.error {
             ScriptError::Thrown { message, .. } => message.clone(),

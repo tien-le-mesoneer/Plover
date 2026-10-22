@@ -13,6 +13,24 @@
 
   const SAFE_MODULES = 'chai, buffer, moment, btoa, atob, crypto-js, tv4, ajv, ajv-formats';
 
+  // ---- well-formed text: results cross into Rust as UTF-8 -------------------------------
+  const LONE_SURROGATES = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+  const HAS_LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+  const wellFormed = (text) => (HAS_LONE_SURROGATE.test(text) ? text.replace(LONE_SURROGATES, '\ufffd') : text);
+  // JSON.stringify replacer: lone surrogates in strings and keys become U+FFFD.
+  const wellFormedReplacer = function (key, value) {
+    if (typeof value === 'string') return wellFormed(value);
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      const keys = Object.keys(value);
+      if (keys.some((k) => HAS_LONE_SURROGATE.test(k))) {
+        const copy = {};
+        for (const k of keys) copy[wellFormed(k)] = value[k];
+        return copy;
+      }
+    }
+    return value;
+  };
+
   // ---- console -------------------------------------------------------------------------
   const consoleLines = [];
   const formatValue = (v) => {
@@ -29,7 +47,7 @@
     }
   };
   const logAt = (level) => (...args) => {
-    consoleLines.push({ level, text: args.map(formatValue).join(' ') });
+    consoleLines.push({ level, text: wellFormed(args.map(formatValue).join(' ')) });
   };
   g.console = {
     log: logAt('log'),
@@ -202,15 +220,21 @@
     return false;
   };
 
+  // Each part is its own JSON text, so one that cannot be serialized (BigInt, circular,
+  // out of memory) is reported as `!name` with the reason instead of losing everything.
   g.__brsResult = () => {
-    const parts = {};
-    for (const key of Object.keys(resultParts)) {
+    const out = [];
+    const put = (key, get) => {
       try {
-        parts[key] = resultParts[key]();
+        const json = JSON.stringify(get(), wellFormedReplacer);
+        out.push(key, json === undefined ? 'null' : json);
       } catch (e) {
-        parts[key] = null;
+        out.push('!' + key, wellFormed(String(e && e.message !== undefined ? e.message : e)));
       }
-    }
-    return JSON.stringify({ console: consoleLines, error: state.error, ...parts });
+    };
+    put('console', () => consoleLines);
+    put('error', () => state.error);
+    for (const key of Object.keys(resultParts)) put(key, resultParts[key]);
+    return out;
   };
 })();

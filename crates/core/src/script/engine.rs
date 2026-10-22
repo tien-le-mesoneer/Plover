@@ -88,6 +88,10 @@ pub enum ScriptError {
     OutOfMemory,
     #[error("script awaited a promise that can never settle")]
     Unsettled,
+    /// The script ran, but what it produced (variables, tests, console output, request
+    /// changes) could not be handed back, so none of it is trusted.
+    #[error("could not report script results: {0}")]
+    ResultUnavailable(String),
     #[error("script engine error: {0}")]
     Internal(String),
 }
@@ -365,24 +369,63 @@ impl Worker {
         // fresh, short deadline so a timed-out script can still report its partial state.
         self.deadline
             .set(Some(Instant::now() + Duration::from_secs(2)));
-        let collected = context.with(|ctx| -> Option<String> {
-            let f: Function = ctx.globals().get("__brsResult").ok()?;
-            f.call::<_, String>(()).ok()
+        let collected: Result<Vec<String>, String> = context.with(|ctx| {
+            let f: Function = ctx
+                .globals()
+                .get("__brsResult")
+                .map_err(|e| e.to_string())?;
+            f.call::<_, Vec<String>>(())
+                .map_err(|e| match CaughtError::from_error(&ctx, e) {
+                    CaughtError::Exception(ex) => ex.message().unwrap_or_default(),
+                    other => other.to_string(),
+                })
         });
         let mut output = EngineOutput::default();
-        if let Some(json) = collected
-            && let Ok(serde_json::Value::Object(mut map)) = serde_json::from_str(&json)
-        {
-            if let Some(console) = map.remove("console") {
-                output.console = serde_json::from_value(console).unwrap_or_default();
+        let mut result_errors = Vec::new();
+        match collected {
+            Err(message) => result_errors.push(message),
+            Ok(items) => {
+                for pair in items.chunks(2) {
+                    let [key, value] = pair else { continue };
+                    if let Some(part) = key.strip_prefix('!') {
+                        result_errors.push(format!("{}: {value}", part_label(part)));
+                        continue;
+                    }
+                    let parsed = match serde_json::from_str::<serde_json::Value>(value) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            let reason = if e.to_string().contains("recursion limit") {
+                                "a value is nested more than 128 levels deep".to_owned()
+                            } else {
+                                e.to_string()
+                            };
+                            result_errors.push(format!("{}: {reason}", part_label(key)));
+                            continue;
+                        }
+                    };
+                    match key.as_str() {
+                        "console" => {
+                            output.console = serde_json::from_value(parsed).unwrap_or_default()
+                        }
+                        "error" => {
+                            if !parsed.is_null() && error.is_none() {
+                                error = Some(error_from_js(&parsed, &segments));
+                            }
+                        }
+                        _ => {
+                            output.output.insert(key.clone(), parsed);
+                        }
+                    }
+                }
             }
-            if let Some(js_error) = map.remove("error")
-                && !js_error.is_null()
-                && error.is_none()
-            {
-                error = Some(error_from_js(&js_error, &segments));
-            }
-            output.output = map;
+        }
+        // Fail closed: results that could not all be handed back are not trusted.
+        if error.is_none() && !result_errors.is_empty() {
+            error = Some(if result_errors.iter().any(|e| is_out_of_memory(e)) {
+                ScriptError::OutOfMemory
+            } else {
+                ScriptError::ResultUnavailable(result_errors.join("; "))
+            });
         }
         output.error = error;
         output
@@ -517,6 +560,19 @@ fn load_lib<'js>(
     match promise.result::<()>() {
         Some(Err(e)) => Err(e),
         _ => Ok(()),
+    }
+}
+
+/// What a result part holds, for error messages.
+fn part_label(part: &str) -> &str {
+    match part {
+        "vars" => "variables",
+        "req" => "request changes",
+        "tests" => "test results",
+        "asserts" => "assert results",
+        "console" => "console output",
+        "resBody" => "response body",
+        other => other,
     }
 }
 

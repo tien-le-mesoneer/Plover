@@ -322,3 +322,81 @@ async fn interpolate_walks_object_variables() {
     .await;
     assert_eq!(out.console[0].text, "42/x");
 }
+
+async fn run_src(limits: ScriptLimits, src: &str) -> brs_core::script::PhaseOutput {
+    run_script(
+        &ScriptEngine::new(limits),
+        &context(),
+        vec![Segment::new("request", src)],
+    )
+    .await
+}
+
+fn result_error(out: &brs_core::script::PhaseOutput) -> String {
+    match &out.error {
+        Some(ScriptError::ResultUnavailable(message)) => message.clone(),
+        other => panic!("expected ResultUnavailable, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn lone_surrogate_in_console_is_replaced_not_dropped() {
+    let out = run_src(
+        ScriptLimits::default(),
+        "test('must fail', () => { expect(1).to.equal(2); }); console.log('a\\ud800b');",
+    )
+    .await;
+    assert!(out.error.is_none(), "{:?}", out.error);
+    assert_eq!(out.console[0].text, "a\u{fffd}b");
+    assert_eq!(out.tests.len(), 1);
+    assert!(!out.tests[0].passed);
+}
+
+#[tokio::test]
+async fn unserializable_vars_fail_closed_and_keep_other_results() {
+    for (src, needle) in [
+        ("bru.setVar('n', 1n);", "BigInt"),
+        (
+            "const o = {}; o.self = o; bru.setVar('cyc', o);",
+            "circular",
+        ),
+        (
+            "let v = 1; for (let i = 0; i < 200; i++) v = [v]; bru.setVar('deep', v);",
+            "nested",
+        ),
+    ] {
+        let out = run_src(
+            ScriptLimits::default(),
+            &format!("{src} test('still reported', () => {{ throw new Error('x'); }}); console.log('kept');"),
+        )
+        .await;
+        let message = result_error(&out);
+        assert!(
+            message.contains("variables")
+                && message.to_lowercase().contains(&needle.to_lowercase()),
+            "{src}: {message}"
+        );
+        assert_eq!(out.tests.len(), 1, "{src}");
+        assert_eq!(out.console[0].text, "kept", "{src}");
+    }
+}
+
+#[tokio::test]
+async fn out_of_memory_while_reporting_fails_closed() {
+    let out = run_src(
+        ScriptLimits {
+            memory_bytes: 48 * 1024 * 1024,
+            ..ScriptLimits::default()
+        },
+        "bru.setVar('big', 'x'.repeat(30e6)); test('t', () => {});",
+    )
+    .await;
+    assert!(
+        matches!(
+            out.error,
+            Some(ScriptError::ResultUnavailable(_)) | Some(ScriptError::OutOfMemory)
+        ),
+        "{:?}",
+        out.error
+    );
+}
