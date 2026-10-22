@@ -92,3 +92,7 @@ export type ApiErrorDto = { error: string, message: string,
 current: ConflictDto | null, };
 
 export type RunReportDto = { passed: number, failed: number, skipped: number, elapsedMs: number, };
+
+export type RunEventDto = { "type": "started", runId: string, item: string, name: string, method: string, url: string, } | { "type": "passed", runId: string, item: string, status: number, elapsedMs: number, size: number, } | { "type": "failed", runId: string, item: string, error: string, } | { "type": "skipped", runId: string, item: string, reason: string, } | { "type": "finished", runId: string, report: RunReportDto, } | { "type": "cancelled", runId: string, } | { "type": "error", runId: string | null, error: string, message: string, };
+
+export type ClientMessage = { "type": "start", runId: string, collectionId: string, item: string, env: string | null, } | { "type": "cancel", runId: string, };

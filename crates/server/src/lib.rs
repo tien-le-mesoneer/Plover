@@ -30,6 +30,8 @@ pub struct ServerConfig {
 
 pub struct RunningServer {
     pub addr: SocketAddr,
+    /// The server's workspace, e.g. to open a collection given on the command line.
+    pub workspace: Arc<Workspace>,
     pub token: String,
     /// `http://127.0.0.1:<port>/#token=<token>`; the fragment never reaches the server.
     pub url: String,
@@ -65,8 +67,9 @@ pub async fn start(
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, cfg.port)).await?;
     let addr = listener.local_addr()?;
     let token = security::new_token();
+    let workspace = Arc::new(Workspace::new(cfg.exec));
     let state = AppState {
-        workspace: Arc::new(Workspace::new(cfg.exec)),
+        workspace: workspace.clone(),
         token: Arc::from(token.as_str()),
         allowed: Arc::new(AllowList::new(addr.port(), &cfg.dev_origins)),
     };
@@ -74,6 +77,7 @@ pub async fn start(
         .with_graceful_shutdown(shutdown)
         .into_future();
     let running = RunningServer {
+        workspace,
         url: format!("http://{addr}/#token={token}"),
         addr,
         token,

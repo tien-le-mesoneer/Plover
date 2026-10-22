@@ -4,6 +4,7 @@ mod collections;
 pub mod dto;
 mod environments;
 mod requests;
+pub mod runs;
 
 use std::sync::Arc;
 
@@ -44,6 +45,7 @@ pub fn routes() -> Router<AppState> {
             "/collections/{id}/environments/{name}/secrets",
             put(environments::set_secrets),
         )
+        .route("/ws", get(runs::upgrade))
         .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY))
 }
 

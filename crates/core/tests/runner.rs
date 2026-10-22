@@ -170,3 +170,78 @@ async fn transport_error_fails_and_setup_errors() {
     .await;
     assert!(matches!(missing, Err(RunError::TargetNotFound(_))));
 }
+
+#[tokio::test]
+async fn finished_is_last_and_carries_report() {
+    let server = MockServer::start().await;
+    Mock::given(path("/a"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    collection(root);
+    write(
+        root,
+        "environments/local.bru",
+        &format!("vars {{\n  host: {}\n}}\n", server.uri()),
+    );
+    write(root, "a.bru", &request("a", 1));
+    let (report, events) = run_all(root, &env_opts()).await;
+    let report = report.unwrap();
+    assert_eq!(events.last(), Some(&RunEvent::Finished { report }));
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, RunEvent::Finished { .. }))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn run_with_shares_session_cookies_and_runtime() {
+    use brs_core::executor::{ExecOptions, Session};
+    use brs_core::runner::run_with;
+    use brs_core::vars::VarMap;
+    use wiremock::matchers::header;
+
+    let server = MockServer::start().await;
+    Mock::given(path("/a"))
+        .and(header("cookie", "sid=1"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    collection(root);
+    write(root, "a.bru", &request("a", 1));
+    let c = Collection::load(root).unwrap();
+    let session = Session::new(ExecOptions::default()).unwrap();
+    // Seed the session's jar through a prior response.
+    Mock::given(path("/login"))
+        .respond_with(ResponseTemplate::new(200).insert_header("set-cookie", "sid=1; Path=/"))
+        .mount(&server)
+        .await;
+    let login = brs_core::resolve::ResolvedRequest {
+        method: brs_core::request::Method::Get,
+        url: format!("{}/login", server.uri()),
+        headers: Vec::new(),
+        body: brs_core::resolve::ResolvedBody::None,
+        settings: Default::default(),
+    };
+    session.send(&login).await.unwrap();
+    let mut runtime = VarMap::from([("host".to_owned(), server.uri())]);
+    let report = run_with(
+        &c,
+        root,
+        &RunOptions::default(),
+        &session,
+        &mut runtime,
+        &mut |_| {},
+    )
+    .await
+    .unwrap();
+    assert_eq!(report.passed, 1);
+}

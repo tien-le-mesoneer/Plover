@@ -425,6 +425,8 @@ pub fn typescript_bindings() -> String {
         ConflictDto::decl(&cfg),
         ApiErrorDto::decl(&cfg),
         RunReportDto::decl(&cfg),
+        super::runs::RunEventDto::decl(&cfg),
+        super::runs::ClientMessage::decl(&cfg),
     ];
     let mut out = String::from(
         "// Generated from crates/server/src/api by ts-rs. Do not edit.\n\

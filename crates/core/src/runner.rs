@@ -41,6 +41,10 @@ pub enum RunEvent {
         path: PathBuf,
         reason: String,
     },
+    /// Always the last event of a run.
+    Finished {
+        report: RunReport,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -62,10 +66,27 @@ pub enum RunError {
     Session(#[from] ExecError),
 }
 
+/// Runs with a fresh session and empty runtime variables (the CLI).
 pub async fn run(
     collection: &Collection,
     target: &Path,
     opts: &RunOptions,
+    on_event: &mut (dyn FnMut(&RunEvent) + Send),
+) -> Result<RunReport, RunError> {
+    let session = Session::new(opts.exec.clone())?;
+    let mut runtime = VarMap::new();
+    run_with(collection, target, opts, &session, &mut runtime, on_event).await
+}
+
+/// Runs with a caller-owned session (cookie jar) and runtime variables, so
+/// a long-lived process can share them across runs and single sends.
+/// `opts.exec` is ignored; the session's options apply.
+pub async fn run_with(
+    collection: &Collection,
+    target: &Path,
+    opts: &RunOptions,
+    session: &Session,
+    runtime: &mut VarMap,
     on_event: &mut (dyn FnMut(&RunEvent) + Send),
 ) -> Result<RunReport, RunError> {
     let environment = match &opts.env {
@@ -81,14 +102,12 @@ pub async fn run(
         return Err(RunError::TargetNotFound(target.to_path_buf()));
     }
     let refs = collection.requests_under(&absolute);
-    let session = Session::new(opts.exec.clone())?;
-    // Filled by scripts in Phase 3.
-    let runtime = VarMap::new();
+    // Phase 3 scripts write to `runtime`; for now it is only read.
     let ctx = ResolveContext {
         collection,
         environment,
         env_overrides: &opts.env_overrides,
-        runtime: &runtime,
+        runtime,
     };
 
     let start = Instant::now();
@@ -149,6 +168,7 @@ pub async fn run(
         }
     }
     report.elapsed = start.elapsed();
+    on_event(&RunEvent::Finished { report });
     Ok(report)
 }
 
