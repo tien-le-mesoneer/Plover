@@ -1,0 +1,30 @@
+meta {
+  name: create user
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{host}}/users
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "name": "Bo"
+  }
+}
+
+vars:post-response {
+  userId: res.body.id
+}
+
+script:pre-request {
+  req.setHeader('x-request-id', 'req-' + bru.getVar('token'));
+}
+
+tests {
+  test('created', () => expect(res.status).to.equal(201));
+  test('id stored', () => expect(bru.getVar('userId')).to.equal(42));
+}

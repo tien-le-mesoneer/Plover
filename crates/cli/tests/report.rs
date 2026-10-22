@@ -199,6 +199,10 @@ async fn json_report_counts() {
         .code(1);
     let report: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&json_path).unwrap()).unwrap();
+    // Bruno writes one entry per iteration.
+    assert_eq!(report.as_array().unwrap().len(), 1);
+    let report = &report[0];
+    assert_eq!(report["iterationIndex"], 0);
     let s = &report["summary"];
     assert_eq!(s["totalRequests"], 3);
     assert_eq!(s["passedRequests"], 0);
@@ -219,7 +223,8 @@ async fn json_report_counts() {
     );
     let results = report["results"].as_array().unwrap();
     assert_eq!(results.len(), 3);
-    assert_eq!(results[0]["status"], "fail");
+    // As in Bruno, `status` says the request completed; its failed test is in the lists.
+    assert_eq!(results[0]["status"], "pass");
     assert_eq!(results[0]["test"]["filename"], "a.bru");
     assert_eq!(results[0]["response"]["status"], 200);
     assert_eq!(results[0]["testResults"][1]["description"], "ok");

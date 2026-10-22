@@ -607,6 +607,7 @@
       },
       getResponseTime: () => rs.responseTimeMs,
       getUrl: () => rs.url,
+      jq: unsupported('res.jq'),
       getSize: () => {
         const lines = ['HTTP/1.1 ' + rs.status + ' ' + rs.statusText];
         for (const [k, v] of Object.entries(headers)) {

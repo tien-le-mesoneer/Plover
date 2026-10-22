@@ -69,3 +69,24 @@ uncaught page error. Run it after changing `frontend/src/editor/` or upgrading
 - `Host` and `Origin` must be `127.0.0.1:<port>` / `localhost:<port>` (or a
   `--dev-origin`), which blocks cross-site requests and DNS rebinding.
 - Secret environment values entered in the UI stay in server memory.
+
+## Script sandbox libraries
+
+The libraries scripts can `require` are prebuilt into `crates/core/js/dist/` and
+committed, so building Rust never needs Node. After changing
+`crates/core/js/libs/` or its dependencies:
+
+```bash
+cd crates/core/js && npm ci && npm run build && npm run check
+```
+
+## Phase 3 fixture
+
+`fixtures/phase3-chain` is a chained collection (login → token → requests that
+use it) with scripts, asserts and tests. Against the localhost mock:
+
+```bash
+python3 scripts/phase3-mock.py 18090 &
+bru-rs run fixtures/phase3-chain --env local      # 3 passed · Tests 5/5 · Asserts 2/2
+```
+

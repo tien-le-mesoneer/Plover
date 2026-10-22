@@ -1,0 +1,27 @@
+meta {
+  name: login
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{host}}/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "user": "ana",
+    "password": "secret"
+  }
+}
+
+script:post-response {
+  bru.setVar('token', res.body.token);
+}
+
+tests {
+  test('login ok', () => expect(res.status).to.equal(200));
+  test('token present', () => expect(res.body.token).to.be.a('string'));
+}
