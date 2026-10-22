@@ -18,6 +18,9 @@ pub struct ExecOptions {
     pub follow_redirects: bool,
     pub max_redirects: u32,
     pub verify_tls: bool,
+    /// Stop reading a (decoded) response body after this many bytes and drop
+    /// the connection. `None` reads the whole body, as Bruno does.
+    pub max_body_bytes: Option<usize>,
 }
 
 impl Default for ExecOptions {
@@ -27,6 +30,7 @@ impl Default for ExecOptions {
             follow_redirects: true,
             max_redirects: 5,
             verify_tls: true,
+            max_body_bytes: None,
         }
     }
 }
@@ -41,7 +45,11 @@ pub struct ResponseSummary {
     pub elapsed: Duration,
     /// Decoded body length, matching Bruno's `Buffer.byteLength(response.dataBuffer)`
     /// (run-single-request.js:1004) rather than the bytes on the wire.
+    /// When `truncated`, the bytes read before stopping; the full size is unknown.
     pub size: usize,
+    /// Reading stopped at `ExecOptions::max_body_bytes`; `body` holds the first
+    /// `max_body_bytes` bytes.
+    pub truncated: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -159,14 +167,15 @@ impl Session {
                 )
             })
             .collect();
-        let body = response.bytes().await.map_err(transport_error)?.to_vec();
+        let (body, size, truncated) = read_body(response, self.opts.max_body_bytes).await?;
         let elapsed = start.elapsed();
         Ok(ResponseSummary {
             status,
             headers,
-            size: body.len(),
+            size,
             body,
             elapsed,
+            truncated,
         })
     }
 
@@ -323,6 +332,25 @@ fn escape_quoted(s: &str) -> String {
     s.replace('"', "%22")
         .replace('\r', "%0D")
         .replace('\n', "%0A")
+}
+
+/// Reads the decoded body chunk by chunk. With a cap, stops once it is
+/// exceeded and drops the response, which closes the connection.
+async fn read_body(
+    mut response: reqwest::Response,
+    cap: Option<usize>,
+) -> Result<(Vec<u8>, usize, bool), ExecError> {
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(transport_error)? {
+        body.extend_from_slice(&chunk);
+        if let Some(cap) = cap.filter(|cap| body.len() > *cap) {
+            let read = body.len();
+            body.truncate(cap);
+            return Ok((body, read, true));
+        }
+    }
+    let size = body.len();
+    Ok((body, size, false))
 }
 
 fn transport_error(e: reqwest::Error) -> ExecError {

@@ -446,3 +446,130 @@ async fn user_accept_encoding_wins() {
             .any(|(k, v)| k == "content-encoding" && v == "zstd")
     );
 }
+
+/// A localhost server that answers every connection with an endless chunked
+/// body (optionally gzip-encoded zeros) and reports how many bytes it wrote.
+async fn endless_server(gzip: bool) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    use std::io::Write as _;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let written = std::sync::Arc::new(AtomicUsize::new(0));
+    let counter = written.clone();
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let counter = counter.clone();
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                let head = if gzip {
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-encoding: gzip\r\ntransfer-encoding: chunked\r\n\r\n"
+                } else {
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ntransfer-encoding: chunked\r\n\r\n"
+                };
+                if socket.write_all(head.as_bytes()).await.is_err() {
+                    return;
+                }
+                let mut encoder =
+                    flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+                let block = vec![b'a'; 64 * 1024];
+                loop {
+                    let chunk = if gzip {
+                        encoder.write_all(&block).unwrap();
+                        encoder.flush().unwrap();
+                        std::mem::take(encoder.get_mut())
+                    } else {
+                        block.clone()
+                    };
+                    if chunk.is_empty() {
+                        continue;
+                    }
+                    let framed = [
+                        format!("{:x}\r\n", chunk.len()).into_bytes(),
+                        chunk,
+                        b"\r\n".to_vec(),
+                    ]
+                    .concat();
+                    if socket.write_all(&framed).await.is_err() {
+                        return;
+                    }
+                    counter.fetch_add(framed.len(), Ordering::Relaxed);
+                }
+            });
+        }
+    });
+    (format!("http://{addr}/"), written)
+}
+
+#[tokio::test]
+async fn body_cap_stops_reading_an_endless_stream() {
+    const CAP: usize = 1024 * 1024;
+    let (url, written) = endless_server(false).await;
+    let session = Session::new(ExecOptions {
+        max_body_bytes: Some(CAP),
+        ..ExecOptions::default()
+    })
+    .unwrap();
+    let res = tokio::time::timeout(
+        Duration::from_secs(10),
+        session.send(&req(Method::Get, url)),
+    )
+    .await
+    .expect("a capped read must return promptly")
+    .unwrap();
+    assert_eq!(res.body.len(), CAP);
+    assert!(res.truncated);
+    assert!(res.size >= CAP, "size counts the bytes read");
+    // The connection is dropped: the server stops being able to write soon after.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let after_drop = written.load(std::sync::atomic::Ordering::Relaxed);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let later = written.load(std::sync::atomic::Ordering::Relaxed);
+    assert!(
+        later - after_drop < 4 * 1024 * 1024,
+        "server kept streaming: {after_drop} -> {later}"
+    );
+}
+
+#[tokio::test]
+async fn body_cap_applies_to_decoded_gzip_stream() {
+    const CAP: usize = 2 * 1024 * 1024;
+    let (url, _) = endless_server(true).await;
+    let session = Session::new(ExecOptions {
+        max_body_bytes: Some(CAP),
+        ..ExecOptions::default()
+    })
+    .unwrap();
+    let res = tokio::time::timeout(
+        Duration::from_secs(10),
+        session.send(&req(Method::Get, url)),
+    )
+    .await
+    .expect("a capped read must return promptly")
+    .unwrap();
+    assert_eq!(res.body.len(), CAP);
+    assert!(res.body.iter().all(|b| *b == b'a'), "body is decoded");
+    assert!(res.truncated);
+    assert!(
+        !res.headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("content-encoding"))
+    );
+}
+
+#[tokio::test]
+async fn no_cap_reads_whole_body_and_is_not_truncated() {
+    let server = MockServer::start().await;
+    Mock::given(path("/big"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![7u8; 3 * 1024 * 1024]))
+        .mount(&server)
+        .await;
+    let res = session()
+        .send(&req(Method::Get, format!("{}/big", server.uri())))
+        .await
+        .unwrap();
+    assert_eq!(res.body.len(), 3 * 1024 * 1024);
+    assert_eq!(res.size, 3 * 1024 * 1024);
+    assert!(!res.truncated);
+}
