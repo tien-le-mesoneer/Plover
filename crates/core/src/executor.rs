@@ -35,9 +35,12 @@ impl Default for ExecOptions {
 pub struct ResponseSummary {
     pub status: u16,
     pub headers: Vec<(String, String)>,
+    /// Decoded body (gzip, deflate and br are decompressed, as axios does).
     pub body: Vec<u8>,
     /// From sending the request until the whole body was read.
     pub elapsed: Duration,
+    /// Decoded body length, matching Bruno's `Buffer.byteLength(response.dataBuffer)`
+    /// (run-single-request.js:1004) rather than the bytes on the wire.
     pub size: usize,
 }
 
@@ -110,6 +113,16 @@ impl Session {
         ];
         headers.extend(req.headers.iter().cloned());
         let mut headers = fold_case_variants(headers);
+        // axios 1.18.0 lib/adapters/http.js:55, :820-824: set only when absent (any case).
+        if !headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("accept-encoding"))
+        {
+            headers.push((
+                "Accept-Encoding".to_owned(),
+                DEFAULT_ACCEPT_ENCODING.to_owned(),
+            ));
+        }
         let body = match &req.body {
             ResolvedBody::None => None,
             ResolvedBody::Bytes(data) => Some(data.clone()),
@@ -191,6 +204,8 @@ impl Session {
 }
 
 const DEFAULT_ACCEPT: &str = "application/json, text/plain, */*";
+/// axios advertises zstd only behind a transitional flag, so neither do we.
+const DEFAULT_ACCEPT_ENCODING: &str = "gzip, compress, deflate, br";
 
 fn user_agent() -> String {
     format!("bru-rs/{}", env!("CARGO_PKG_VERSION"))

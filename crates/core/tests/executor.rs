@@ -337,3 +337,112 @@ async fn default_accept_and_user_agent() {
     assert_eq!(received_headers(&server, "accept").await, ["text/html"]);
     assert_eq!(received_headers(&server, "user-agent").await, ["mine"]);
 }
+
+fn gzip(data: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    enc.write_all(data).unwrap();
+    enc.finish().unwrap()
+}
+
+fn brotli(data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    brotli::BrotliCompress(
+        &mut &data[..],
+        &mut out,
+        &brotli::enc::BrotliEncoderParams::default(),
+    )
+    .unwrap();
+    out
+}
+
+fn encoded(body: Vec<u8>, encoding: &str) -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .insert_header("content-encoding", encoding)
+        .set_body_bytes(body)
+}
+
+// axios 1.18.0 lib/adapters/http.js:55 + :820-824: `Accept-Encoding: gzip, compress,
+// deflate, br` is set unless the request already has one (any case).
+#[tokio::test]
+async fn default_accept_encoding() {
+    let server = MockServer::start().await;
+    Mock::given(path("/e"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    session()
+        .send(&req(Method::Get, format!("{}/e", server.uri())))
+        .await
+        .unwrap();
+    assert_eq!(
+        received_headers(&server, "accept-encoding").await,
+        ["gzip, compress, deflate, br"]
+    );
+}
+
+// http.js:1031-1063 decodes gzip and br and drops `content-encoding`. The reported size
+// is the decoded length, like Bruno's `Buffer.byteLength(response.dataBuffer)`
+// (run-single-request.js:1004).
+#[tokio::test]
+async fn gzip_and_br_bodies_are_decoded() {
+    let plain = b"hello hello hello hello".to_vec();
+    let server = MockServer::start().await;
+    Mock::given(path("/gz"))
+        .respond_with(encoded(gzip(&plain), "gzip"))
+        .mount(&server)
+        .await;
+    Mock::given(path("/br"))
+        .respond_with(encoded(brotli(&plain), "br"))
+        .mount(&server)
+        .await;
+    let s = session();
+    for p in ["/gz", "/br"] {
+        let res = s
+            .send(&req(Method::Get, format!("{}{p}", server.uri())))
+            .await
+            .unwrap();
+        assert_eq!(res.body, plain, "{p}");
+        assert_eq!(res.size, plain.len(), "{p}");
+        assert!(
+            !res.headers.iter().any(|(k, _)| k == "content-encoding"),
+            "{p}"
+        );
+    }
+}
+
+// A user Accept-Encoding is sent verbatim. reqwest still decodes encodings it supports
+// (as axios does); an encoding it does not support (zstd) comes back as received.
+#[tokio::test]
+async fn user_accept_encoding_wins() {
+    let plain = b"hello hello hello hello".to_vec();
+    let server = MockServer::start().await;
+    Mock::given(path("/gz"))
+        .respond_with(encoded(gzip(&plain), "gzip"))
+        .mount(&server)
+        .await;
+    Mock::given(path("/zstd"))
+        .respond_with(encoded(b"raw-bytes".to_vec(), "zstd"))
+        .mount(&server)
+        .await;
+    let s = session();
+    let mut r = req(Method::Get, format!("{}/gz", server.uri()));
+    r.headers
+        .push(("ACCEPT-ENCODING".into(), "identity".into()));
+    let res = s.send(&r).await.unwrap();
+    assert_eq!(
+        received_headers(&server, "accept-encoding").await,
+        ["identity"]
+    );
+    assert_eq!(res.body, plain);
+    r.url = format!("{}/zstd", server.uri());
+    r.headers = vec![("Accept-Encoding".into(), "zstd".into())];
+    let res = s.send(&r).await.unwrap();
+    assert_eq!(received_headers(&server, "accept-encoding").await, ["zstd"]);
+    assert_eq!(res.body, b"raw-bytes");
+    assert!(
+        res.headers
+            .iter()
+            .any(|(k, v)| k == "content-encoding" && v == "zstd")
+    );
+}
