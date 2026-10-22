@@ -316,3 +316,46 @@ async fn script_limits_flags() {
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).into_owned();
     assert!(stdout.contains("script timed out after 200 ms"), "{stdout}");
 }
+
+#[tokio::test]
+async fn junit_reports_post_response_script_errors_like_bruno() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "bruno.json",
+        r#"{"version":"1","name":"pe","type":"collection"}"#,
+    );
+    write(
+        root,
+        "01-a.bru",
+        &request(
+            "a",
+            1,
+            &format!("{}/a", server.uri()),
+            "\nscript:post-response {\n  throw new Error('post <boom> ]]>');\n}\n",
+        ),
+    );
+    let junit = root.join("junit.xml");
+    Command::cargo_bin("bru-rs")
+        .unwrap()
+        .arg("run")
+        .arg(root)
+        .arg("--reporter-junit")
+        .arg(&junit)
+        .assert()
+        .code(1);
+    let suites = parse_junit(&fs::read_to_string(&junit).unwrap());
+    let a = &suites[0];
+    assert_eq!((a.attr("tests"), a.attr("failures")), ("1", "1"));
+    assert_eq!(
+        a.cases[0].iter().find(|(k, _)| k == "name").unwrap().1,
+        "Post-Response Script Error"
+    );
+    assert_eq!(a.failures, ["post <boom> ]]>"]);
+}

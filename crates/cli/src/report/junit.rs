@@ -4,7 +4,7 @@
 use std::fmt::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::{RecordStatus, RequestRecord};
+use super::{POST_RESPONSE_SCRIPT_ERROR, RecordStatus, RequestRecord};
 
 pub fn render(records: &[RequestRecord]) -> String {
     let timestamp = iso_timestamp(SystemTime::now());
@@ -23,6 +23,9 @@ pub fn render(records: &[RequestRecord]) -> String {
         }
         for t in &r.outcome.tests {
             cases.push((t.name.clone(), t.passed, t.error.clone()));
+        }
+        if let Some(message) = r.post_response_script_error() {
+            cases.push((POST_RESPONSE_SCRIPT_ERROR.to_owned(), false, Some(message)));
         }
         let total = cases.len();
         let per_case = if total > 0 {

@@ -6,7 +6,8 @@ pub mod junit;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use brs_core::runner::{RequestOutcome, RunEvent};
+use brs_core::runner::{RequestOutcome, RunEvent, ScriptPhase};
+use brs_core::script::ScriptError;
 
 /// One request of the run, as the reporters need it.
 #[derive(Debug, Clone)]
@@ -48,7 +49,20 @@ impl RequestRecord {
     pub fn duration(&self) -> Duration {
         self.outcome.elapsed
     }
+
+    /// Bruno records a post-response script error as a failed post-response test named
+    /// "Post-Response Script Error" whose error is the thrown message
+    /// (run-single-request.js); both reporters list it that way.
+    pub fn post_response_script_error(&self) -> Option<String> {
+        let failure = self.outcome.script_error.as_ref()?;
+        (failure.phase == ScriptPhase::PostResponse).then(|| match &failure.error {
+            ScriptError::Thrown { message, .. } => message.clone(),
+            other => other.to_string(),
+        })
+    }
 }
+
+pub const POST_RESPONSE_SCRIPT_ERROR: &str = "Post-Response Script Error";
 
 #[derive(Default)]
 pub struct Collector {

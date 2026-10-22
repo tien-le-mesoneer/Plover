@@ -2,10 +2,9 @@
 //! `{ iterationIndex, summary, results }`, minus request headers and response bodies,
 //! which runs do not keep.
 
-use brs_core::runner::ScriptPhase;
 use serde_json::{Value, json};
 
-use super::{RecordStatus, RequestRecord};
+use super::{POST_RESPONSE_SCRIPT_ERROR, RecordStatus, RequestRecord};
 
 pub fn render(records: &[RequestRecord]) -> Value {
     let count = |status: RecordStatus| records.iter().filter(|r| r.status == status).count();
@@ -34,20 +33,10 @@ pub fn render(records: &[RequestRecord]) -> Value {
                 RecordStatus::Pass | RecordStatus::Fail => "pass",
                 other => other.as_str(),
             };
-            // A post-response script error is reported as a failed post-response test
-            // (run-single-request.js).
             let post_response_tests: Vec<Value> = r
-                .outcome
-                .script_error
-                .iter()
-                .filter(|f| f.phase == ScriptPhase::PostResponse)
-                .map(|f| {
-                    let message = match &f.error {
-                        brs_core::script::ScriptError::Thrown { message, .. } => message.clone(),
-                        other => other.to_string(),
-                    };
-                    json!({ "description": "Post-Response Script Error", "status": "fail", "error": message })
-                })
+                .post_response_script_error()
+                .map(|message| json!({ "description": POST_RESPONSE_SCRIPT_ERROR, "status": "fail", "error": message }))
+                .into_iter()
                 .collect();
             json!({
                 "test": { "filename": r.file },
