@@ -112,7 +112,7 @@ async fn broken_file_skipped_run_continues() {
     let report = report.unwrap();
     assert_eq!((report.passed, report.failed, report.skipped), (1, 0, 1));
     let skipped = events.iter().find_map(|e| match e {
-        RunEvent::Skipped { path, reason } => Some((path, reason)),
+        RunEvent::Skipped { path, reason, .. } => Some((path, reason)),
         _ => None,
     });
     let (path, reason) = skipped.unwrap();

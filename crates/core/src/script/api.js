@@ -401,7 +401,9 @@
         await callback();
         testResults.push({ name: String(description), passed: true, error: null });
       } catch (e) {
-        testResults.push({ name: String(description), passed: false, error: errorMessage(e, 'An unexpected error occurred.') });
+        // bruno-js/src/test.js: `error.message || 'An unexpected error occurred.'`.
+        const message = e !== null && e !== undefined && e.message ? String(e.message) : 'An unexpected error occurred.';
+        testResults.push({ name: String(description), passed: false, error: message });
       }
     })();
     pendingTests.push(run);

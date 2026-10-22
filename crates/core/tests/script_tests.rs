@@ -240,3 +240,25 @@ async fn post_response_var_from_body() {
         out.console[0].text
     );
 }
+
+#[tokio::test]
+async fn thrown_non_errors_get_brunos_generic_message() {
+    let out = run_script(
+        &engine(),
+        &context(),
+        vec![Segment::new(
+            "request",
+            "test('plain', () => { throw 'plain'; }); test('empty', () => { throw new Error(''); });",
+        )],
+    )
+    .await;
+    let errors: Vec<Option<&str>> = out.tests.iter().map(|t| t.error.as_deref()).collect();
+    // bruno-js/src/test.js: `error.message || 'An unexpected error occurred.'`.
+    assert_eq!(
+        errors,
+        [
+            Some("An unexpected error occurred."),
+            Some("An unexpected error occurred.")
+        ]
+    );
+}

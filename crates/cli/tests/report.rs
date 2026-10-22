@@ -359,3 +359,48 @@ async fn junit_reports_post_response_script_errors_like_bruno() {
     );
     assert_eq!(a.failures, ["post <boom> ]]>"]);
 }
+
+#[tokio::test]
+async fn requests_that_never_ran_are_named_by_meta_name() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "bruno.json",
+        r#"{"version":"1","name":"nm","type":"collection"}"#,
+    );
+    write(
+        root,
+        "01-first.bru",
+        &request(
+            "first",
+            1,
+            &format!("{}/a", server.uri()),
+            "\nscript:post-response {\n  bru.runner.stopExecution();\n}\n",
+        ),
+    );
+    write(
+        root,
+        "04-r4.bru",
+        &request("r4", 4, &format!("{}/b", server.uri()), ""),
+    );
+    let json_path = root.join("results.json");
+    Command::cargo_bin("bru-rs")
+        .unwrap()
+        .arg("run")
+        .arg(root)
+        .arg("--reporter-json")
+        .arg(&json_path)
+        .assert()
+        .success();
+    let report: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&json_path).unwrap()).unwrap();
+    let results = report[0]["results"].as_array().unwrap();
+    assert_eq!(results[1]["status"], "skipped");
+    assert_eq!(results[1]["name"], "r4");
+}

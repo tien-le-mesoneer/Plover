@@ -130,14 +130,18 @@ impl Collector {
                 };
                 record(self, path, status, outcome, Some(error), None)
             }
-            RunEvent::Skipped { path, reason } => record(
-                self,
-                path,
-                RecordStatus::Skipped,
-                &RequestOutcome::default(),
-                None,
-                Some(reason),
-            ),
+            RunEvent::Skipped { path, name, reason } => {
+                // Never started, so no `Started` event named it.
+                self.started = Some((String::new(), name.clone(), String::new()));
+                record(
+                    self,
+                    path,
+                    RecordStatus::Skipped,
+                    &RequestOutcome::default(),
+                    None,
+                    Some(reason),
+                )
+            }
             RunEvent::Finished { .. } => {}
         }
     }

@@ -65,12 +65,12 @@ pub enum RunEvent {
     },
     Skipped {
         path: PathBuf,
+        /// The request's `meta.name`, or the file name when it has none (unparsable file).
+        name: String,
         reason: String,
     },
     /// Always the last event of a run.
-    Finished {
-        report: RunReport,
-    },
+    Finished { report: RunReport },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -284,7 +284,11 @@ pub async fn run_with_state(
             match not_runnable {
                 NotRunnable::Skip(reason) => {
                     report.skipped += 1;
-                    on_event(&RunEvent::Skipped { path, reason });
+                    on_event(&RunEvent::Skipped {
+                        path,
+                        name: display_name(r),
+                        reason,
+                    });
                 }
                 NotRunnable::Fail(e) => {
                     report.failed += 1;
@@ -318,6 +322,7 @@ pub async fn run_with_state(
                 report.skipped += 1;
                 on_event(&RunEvent::Skipped {
                     path,
+                    name: display_name(r),
                     reason: reason.clone(),
                 });
             }
@@ -344,6 +349,7 @@ pub async fn run_with_state(
                 report.skipped += 1;
                 on_event(&RunEvent::Skipped {
                     path: rest.path.to_path_buf(),
+                    name: display_name(rest),
                     reason: "stopExecution".to_owned(),
                 });
             }
@@ -376,6 +382,15 @@ pub async fn run_with_state(
     report.elapsed = start.elapsed();
     on_event(&RunEvent::Finished { report });
     Ok(report)
+}
+
+fn display_name(r: &RequestRef<'_>) -> String {
+    request_name(r).map(str::to_owned).unwrap_or_else(|| {
+        r.path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    })
 }
 
 fn request_name<'a>(r: &RequestRef<'a>) -> Option<&'a str> {

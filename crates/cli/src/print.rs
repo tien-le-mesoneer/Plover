@@ -47,7 +47,9 @@ impl Printer {
                 }
                 self.details(outcome);
             }
-            RunEvent::Skipped { path, reason } => println!("- {}: {reason}", self.relative(path)),
+            RunEvent::Skipped { path, reason, .. } => {
+                println!("- {}: {reason}", self.relative(path))
+            }
             // The summary line is printed by `summary`.
             RunEvent::Finished { .. } => {}
         }

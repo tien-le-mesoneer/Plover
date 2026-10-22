@@ -296,7 +296,7 @@ fn event_dto(root: &std::path::Path, run_id: &str, event: &RunEvent) -> RunEvent
                 script_error,
             }
         }
-        RunEvent::Skipped { path, reason } => RunEventDto::Skipped {
+        RunEvent::Skipped { path, reason, .. } => RunEventDto::Skipped {
             run_id,
             item: item_id(root, path),
             reason: reason.clone(),
