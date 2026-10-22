@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use brs_core::executor::ExecOptions;
 use brs_server::{RunningServer, ServerConfig, start};
-use common::small_collection;
+use common::{small_collection, write};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::Message;
@@ -231,4 +231,44 @@ async fn unknown_environment_is_error_event() {
     assert_eq!(event["error"], "bad_item");
     socket.send(Message::text("not json")).await.unwrap();
     assert_eq!(next_json(&mut socket).await["error"], "bad_message");
+}
+
+#[tokio::test]
+async fn run_events_include_tests() {
+    let mock = delayed_mock(0).await;
+    let dir = small_collection(&mock.uri());
+    write(
+        dir.path(),
+        "a.bru",
+        "meta {\n  name: a\n  type: http\n  seq: 1\n}\n\nget {\n  url: {{host}}/a\n}\n\nassert {\n  res.status: eq 201\n}\n\ntests {\n  test('ok', () => expect(res.status).to.equal(200));\n  console.log('ran');\n}\n",
+    );
+    let running = server().await;
+    let id = running.workspace.open(dir.path()).unwrap();
+    let mut socket = authed(&running).await;
+    start_run(&mut socket, "r1", &id.0, "a.bru").await;
+    let mut failed = None;
+    loop {
+        let event = next_json(&mut socket).await;
+        match event["type"].as_str().unwrap() {
+            "failed" => failed = Some(event),
+            "finished" => {
+                let report = &event["report"];
+                assert_eq!(
+                    (
+                        report["testsPassed"].clone(),
+                        report["assertsFailed"].clone()
+                    ),
+                    (1.into(), 1.into())
+                );
+                break;
+            }
+            _ => {}
+        }
+    }
+    let failed = failed.expect("a failed event");
+    assert_eq!(failed["status"], 200);
+    assert_eq!(failed["tests"][0]["name"], "ok");
+    assert_eq!(failed["asserts"][0]["passed"], false);
+    assert_eq!(failed["asserts"][0]["error"], "expected 200 to equal 201");
+    assert_eq!(failed["console"][0]["text"], "ran");
 }

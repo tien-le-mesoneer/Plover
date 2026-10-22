@@ -8,7 +8,8 @@ use brs_core::store::{self, ContentHash};
 use serde::Deserialize;
 
 use super::dto::{
-    HttpRequestDto, ResponseDto, SaveRequestBody, SavedRequestDto, SendBody, StoredRequestDto,
+    HttpRequestDto, ResponseDto, SaveRequestBody, SavedRequestDto, SendBody, SendResultDto,
+    StoredRequestDto, outcome_lists,
 };
 use super::extract::{ApiJson, ApiPath, ApiQuery};
 use super::open_collection;
@@ -57,7 +58,7 @@ pub async fn send(
     State(state): State<AppState>,
     ApiPath(id): ApiPath<String>,
     ApiJson(body): ApiJson<SendBody>,
-) -> Result<Json<ResponseDto>, ApiError> {
+) -> Result<Json<SendResultDto>, ApiError> {
     let open = open_collection(&state, &id)?;
     let draft = body.draft.map(HttpRequest::from);
     let sent = send_one(
@@ -69,19 +70,15 @@ pub async fn send(
         },
     )
     .await?;
-    match sent.response {
-        Some(response) => Ok(Json(response_dto(response))),
-        None => Err(ApiError::new(
-            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
-            "script_error",
-            sent.skipped.unwrap_or_else(|| {
-                sent.outcome
-                    .script_error
-                    .map(|f| format!("{} script error: {}", f.phase, f.error))
-                    .unwrap_or_else(|| "request not sent".to_owned())
-            }),
-        )),
-    }
+    let (tests, asserts, console, script_error) = outcome_lists(&sent.outcome);
+    Ok(Json(SendResultDto {
+        response: sent.response.map(response_dto),
+        tests,
+        asserts,
+        console,
+        script_error,
+        skipped: sent.skipped,
+    }))
 }
 
 pub fn response_dto(res: ResponseSummary) -> ResponseDto {

@@ -1,4 +1,4 @@
-import type { RunEventDto } from "../api/types";
+import type { RunEventDto, RunReportDto } from "../api/types";
 import { formatDuration, formatSize } from "../lib/format";
 import { useRuns } from "../store/runs";
 
@@ -22,6 +22,21 @@ function rows(events: RunEventDto[]): Row[] {
   return out;
 }
 
+/** "tests 3/4" for a finished row (asserts count as tests, like Bruno's runner). */
+function testCount(e: Extract<RunEventDto, { type: "passed" | "failed" }>): string {
+  const all = [...e.asserts.map((a) => a.passed), ...e.tests.map((t) => t.passed)];
+  return all.length ? `tests ${all.filter(Boolean).length}/${all.length}` : "";
+}
+
+function checks(r: RunReportDto): string {
+  const parts = [];
+  const tests = r.testsPassed + r.testsFailed;
+  const asserts = r.assertsPassed + r.assertsFailed;
+  if (tests) parts.push(`tests ${r.testsPassed}/${tests}`);
+  if (asserts) parts.push(`asserts ${r.assertsPassed}/${asserts}`);
+  return parts.join(", ");
+}
+
 /** The most recent collection run, with live rows and a Cancel button. */
 export function RunPanel({ onClose }: { onClose: () => void }) {
   const { runs, order, cancel } = useRuns();
@@ -34,8 +49,8 @@ export function RunPanel({ onClose }: { onClose: () => void }) {
         <span className="muted">{run.status}</span>
         {run.report && (
           <span>
-            {run.report.passed} passed, {run.report.failed} failed, {run.report.skipped} skipped (
-            {formatDuration(run.report.elapsedMs)})
+            {run.report.passed} passed, {run.report.failed} failed, {run.report.skipped} skipped
+            {checks(run.report) && ` · ${checks(run.report)}`} ({formatDuration(run.report.elapsedMs)})
           </span>
         )}
         {run.error && <span className="err">{run.error}</span>}
@@ -56,8 +71,9 @@ export function RunPanel({ onClose }: { onClose: () => void }) {
                 </td>
                 <td className={`badge method-${r.method.toLowerCase()}`}>{r.method}</td>
                 <td>{r.name}</td>
-                <td>{o?.type === "passed" ? o.status : ""}</td>
+                <td>{o?.type === "passed" ? o.status : o?.type === "failed" ? (o.status ?? "") : ""}</td>
                 <td>{o?.type === "passed" ? `${formatDuration(o.elapsedMs)} · ${formatSize(o.size)}` : ""}</td>
+                <td>{o && (o.type === "passed" || o.type === "failed") ? testCount(o) : ""}</td>
                 <td className="muted">{o?.type === "failed" ? o.error : o?.type === "skipped" ? o.reason : ""}</td>
               </tr>
             );

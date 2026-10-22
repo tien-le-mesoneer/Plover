@@ -154,3 +154,24 @@ table.headers td { word-break: break-all; }
 .run-panel td.skipped, .run-panel td.pending { color: var(--muted); }
 .secret-row { display: flex; gap: 4px; }
 .secret-row input { flex: 1; }
+
+/* Scripts, tests and console (Phase 3) */
+.script-tab { display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%; }
+.script-tab .editor-box { flex: 1; min-height: 240px; }
+.pane-body > .editor-box { min-height: 240px; height: 100%; }
+sup.ok { color: var(--ok, #2e9d5b); }
+sup.err { color: var(--err, #d0473b); }
+.test-results { padding: 8px 12px; overflow: auto; }
+.test-results > p.ok { color: var(--ok, #2e9d5b); font-weight: 600; }
+.test-results > p.err { color: var(--err, #d0473b); font-weight: 600; }
+.test-results ul { list-style: none; margin: 0; padding: 0; }
+.test-results li { padding: 4px 0; border-bottom: 1px solid var(--border); }
+.test-results li .mark { display: inline-block; width: 1.5em; }
+.test-results li.pass .mark { color: var(--ok, #2e9d5b); }
+.test-results li.fail .mark { color: var(--err, #d0473b); }
+.test-results li .error { margin-left: 1.5em; color: var(--err, #d0473b); font-family: var(--mono, monospace); font-size: 12px; white-space: pre-wrap; }
+.console-output { list-style: none; margin: 0; padding: 8px 12px; overflow: auto; font-family: var(--mono, monospace); font-size: 12px; }
+.console-output li { border-bottom: 1px solid var(--border); padding: 2px 0; }
+.console-output li pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.console-output li.warn { color: #b7791f; }
+.console-output li.error { color: var(--err, #d0473b); }

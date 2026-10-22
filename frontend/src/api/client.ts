@@ -7,7 +7,7 @@ import type {
   HashDto,
   HttpRequestDto,
   KeyValueDto,
-  ResponseDto,
+  SendResultDto,
   RunEventDto,
   SavedRequestDto,
   StoredRequestDto,
@@ -51,7 +51,7 @@ export interface ApiClient {
     item: string,
     draft: HttpRequestDto | null,
     env: string | null,
-  ): Promise<ResponseDto>;
+  ): Promise<SendResultDto>;
   environments(id: string): Promise<EnvironmentDto[]>;
   saveEnvironment(id: string, name: string, vars: KeyValueDto[], hash: string): Promise<HashDto>;
   /** Merges secret values; `null` clears one. */

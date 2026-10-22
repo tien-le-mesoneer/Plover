@@ -7,10 +7,12 @@ import { Banner } from "../Banner";
 import { ResponseViewer } from "../ResponseViewer";
 import { AuthTab } from "./AuthTab";
 import { BodyTab } from "./BodyTab";
+import { CodeEditor } from "../../editor/CodeEditor";
+import { ScriptTab } from "./ScriptTab";
 import { KeyValueTable } from "./KeyValueTable";
 import { UrlBar } from "./UrlBar";
 
-const SECTIONS = ["Params", "Headers", "Auth", "Body"] as const;
+const SECTIONS = ["Params", "Headers", "Auth", "Body", "Script", "Assert", "Tests"] as const;
 type Section = (typeof SECTIONS)[number];
 
 function count(draft: HttpRequestDto, section: Section): number | null {
@@ -19,9 +21,17 @@ function count(draft: HttpRequestDto, section: Section): number | null {
       return draft.query.filter((q) => q.enabled).length + draft.pathParams.length;
     case "Headers":
       return draft.headers.filter((h) => h.enabled).length;
+    case "Assert":
+      return draft.asserts.filter((a) => a.enabled).length;
     default:
       return null;
   }
+}
+
+function hasCode(draft: HttpRequestDto, section: Section): boolean {
+  if (section === "Script") return Boolean(draft.scriptPre || draft.scriptPost);
+  if (section === "Tests") return Boolean(draft.tests);
+  return false;
 }
 
 export function RequestEditor({ tab }: { tab: Tab }) {
@@ -67,7 +77,7 @@ export function RequestEditor({ tab }: { tab: Tab }) {
               return (
                 <button key={s} className={s === section ? "active" : ""} onClick={() => setSection(s)}>
                   {s}
-                  {n ? <sup>{n}</sup> : null}
+                  {n ? <sup>{n}</sup> : hasCode(draft, s) ? <sup>•</sup> : null}
                 </button>
               );
             })}
@@ -99,6 +109,32 @@ export function RequestEditor({ tab }: { tab: Tab }) {
               />
             )}
             {section === "Auth" && <AuthTab auth={draft.auth} onChange={(auth) => onEdit((d) => ({ ...d, auth }))} />}
+            {section === "Script" && (
+              <ScriptTab
+                pre={draft.scriptPre}
+                post={draft.scriptPost}
+                onChange={(phase, script) =>
+                  onEdit((d) => (phase === "pre" ? { ...d, scriptPre: script } : { ...d, scriptPost: script }))
+                }
+              />
+            )}
+            {section === "Assert" && (
+              <KeyValueTable
+                rows={draft.asserts}
+                namePlaceholder="res.status"
+                valuePlaceholder="eq 200"
+                onChange={(asserts) => onEdit((d) => ({ ...d, asserts }))}
+              />
+            )}
+            {section === "Tests" && (
+              <div className="editor-box">
+                <CodeEditor
+                  value={draft.tests ?? ""}
+                  language="javascript"
+                  onChange={(v) => onEdit((d) => ({ ...d, tests: v === "" ? null : v }))}
+                />
+              </div>
+            )}
             {section === "Body" && (
               <BodyTab
                 body={draft.body}
@@ -109,7 +145,7 @@ export function RequestEditor({ tab }: { tab: Tab }) {
           </div>
         </section>
         <section className="pane">
-          <ResponseViewer response={tab.response} sending={tab.sending} />
+          <ResponseViewer result={tab.result} sending={tab.sending} />
         </section>
       </div>
     </div>

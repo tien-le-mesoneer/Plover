@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { ApiError } from "../api/client";
 import { api } from "../api/instance";
-import type { ConflictDto, HttpRequestDto, ResponseDto } from "../api/types";
+import type { ConflictDto, HttpRequestDto, SendResultDto } from "../api/types";
 import { useWorkspace } from "./workspace";
 
 export interface Tab {
@@ -12,7 +12,8 @@ export interface Tab {
   saved: HttpRequestDto;
   draft: HttpRequestDto;
   hash: string;
-  response?: ResponseDto;
+  /** The last send: response (if any), tests, asserts, console output, script error. */
+  result?: SendResultDto;
   sending: boolean;
   error?: string;
   /** Set when a save found the file changed on disk. */
@@ -155,10 +156,10 @@ export const useTabs = create<TabsState>()((set, get) => {
       update(key, { sending: true, error: undefined });
       const env = useWorkspace.getState().activeEnv[tab.collectionId] ?? null;
       try {
-        const response = await api().send(tab.collectionId, tab.item, tab.draft, env);
-        update(key, { response, sending: false });
+        const result = await api().send(tab.collectionId, tab.item, tab.draft, env);
+        update(key, { result, sending: false });
       } catch (e) {
-        update(key, { sending: false, error: message(e), response: undefined });
+        update(key, { sending: false, error: message(e), result: undefined });
       }
     },
   };

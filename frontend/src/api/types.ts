@@ -78,6 +78,44 @@ bodyBase64: string | null,
  */
 truncated: boolean, };
 
+export type TestResultDto = { name: string, passed: boolean, error: string | null, };
+
+export type AssertResultDto = { lhs: string, rhs: string, operator: string, passed: boolean, error: string | null, };
+
+export type ConsoleLineDto = { 
+/**
+ * `log`, `info`, `warn`, `error` or `debug`.
+ */
+level: string, text: string, };
+
+export type ScriptErrorDto = { 
+/**
+ * `pre-request`, `post-response` or `tests`.
+ */
+phase: string, 
+/**
+ * `thrown`, `forbiddenModule`, `timeout`, `outOfMemory`, `unsettled` or `internal`.
+ */
+kind: string, 
+/**
+ * Error name for thrown errors, e.g. `TypeError`.
+ */
+name: string | null, message: string, 
+/**
+ * `collection`, `folder <name>` or `request`.
+ */
+scope: string | null, 
+/**
+ * 1-based line within that scope's script.
+ */
+line: number | null, column: number | null, };
+
+export type SendResultDto = { response: ResponseDto | null, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, scriptError: ScriptErrorDto | null, 
+/**
+ * Why the request was not sent (`bru.runner.skipRequest()`).
+ */
+skipped: string | null, };
+
 export type OpenCollectionBody = { path: string, };
 
 export type StoredRequestDto = { request: HttpRequestDto, hash: string, };
@@ -110,8 +148,8 @@ export type ApiErrorDto = { error: string, message: string,
  */
 current: ConflictDto | null, };
 
-export type RunReportDto = { passed: number, failed: number, skipped: number, elapsedMs: number, };
+export type RunReportDto = { passed: number, failed: number, skipped: number, testsPassed: number, testsFailed: number, assertsPassed: number, assertsFailed: number, elapsedMs: number, };
 
-export type RunEventDto = { "type": "started", runId: string, item: string, name: string, method: string, url: string, } | { "type": "passed", runId: string, item: string, status: number, elapsedMs: number, size: number, } | { "type": "failed", runId: string, item: string, error: string, } | { "type": "skipped", runId: string, item: string, reason: string, } | { "type": "finished", runId: string, report: RunReportDto, } | { "type": "cancelled", runId: string, } | { "type": "error", runId: string | null, error: string, message: string, };
+export type RunEventDto = { "type": "started", runId: string, item: string, name: string, method: string, url: string, } | { "type": "passed", runId: string, item: string, status: number, elapsedMs: number, size: number, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, } | { "type": "failed", runId: string, item: string, error: string, status: number | null, elapsedMs: number | null, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, scriptError: ScriptErrorDto | null, } | { "type": "skipped", runId: string, item: string, reason: string, } | { "type": "finished", runId: string, report: RunReportDto, } | { "type": "cancelled", runId: string, } | { "type": "error", runId: string | null, error: string, message: string, };
 
 export type ClientMessage = { "type": "start", runId: string, collectionId: string, item: string, env: string | null, } | { "type": "cancel", runId: string, };

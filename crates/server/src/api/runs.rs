@@ -17,7 +17,9 @@ use tokio::task::JoinHandle;
 use ts_rs::TS;
 
 use super::collections::item_id;
-use super::dto::RunReportDto;
+use super::dto::{
+    AssertResultDto, ConsoleLineDto, RunReportDto, ScriptErrorDto, TestResultDto, outcome_lists,
+};
 use crate::security::TOKEN_PROTOCOL_PREFIX;
 use crate::state::AppState;
 
@@ -62,11 +64,23 @@ pub enum RunEventDto {
         elapsed_ms: u64,
         #[ts(type = "number")]
         size: usize,
+        tests: Vec<TestResultDto>,
+        asserts: Vec<AssertResultDto>,
+        console: Vec<ConsoleLineDto>,
     },
+    /// A transport or script error, or a failed test or assert. `status` is set when a
+    /// response arrived.
     Failed {
         run_id: String,
         item: String,
         error: String,
+        status: Option<u16>,
+        #[ts(type = "number | null")]
+        elapsed_ms: Option<u64>,
+        tests: Vec<TestResultDto>,
+        asserts: Vec<AssertResultDto>,
+        console: Vec<ConsoleLineDto>,
+        script_error: Option<ScriptErrorDto>,
     },
     Skipped {
         run_id: String,
@@ -250,18 +264,37 @@ fn event_dto(root: &std::path::Path, run_id: &str, event: &RunEvent) -> RunEvent
             method: method.clone(),
             url: url.clone(),
         },
-        RunEvent::Passed { path, outcome } => RunEventDto::Passed {
-            run_id,
-            item: item_id(root, path),
-            status: outcome.status.unwrap_or_default(),
-            elapsed_ms: millis(&outcome.elapsed),
-            size: outcome.size,
-        },
-        RunEvent::Failed { path, error, .. } => RunEventDto::Failed {
-            run_id,
-            item: item_id(root, path),
-            error: error.clone(),
-        },
+        RunEvent::Passed { path, outcome } => {
+            let (tests, asserts, console, _) = outcome_lists(outcome);
+            RunEventDto::Passed {
+                run_id,
+                item: item_id(root, path),
+                status: outcome.status.unwrap_or_default(),
+                elapsed_ms: millis(&outcome.elapsed),
+                size: outcome.size,
+                tests,
+                asserts,
+                console,
+            }
+        }
+        RunEvent::Failed {
+            path,
+            error,
+            outcome,
+        } => {
+            let (tests, asserts, console, script_error) = outcome_lists(outcome);
+            RunEventDto::Failed {
+                run_id,
+                item: item_id(root, path),
+                error: error.clone(),
+                status: outcome.status,
+                elapsed_ms: outcome.status.map(|_| millis(&outcome.elapsed)),
+                tests,
+                asserts,
+                console,
+                script_error,
+            }
+        }
         RunEvent::Skipped { path, reason } => RunEventDto::Skipped {
             run_id,
             item: item_id(root, path),
@@ -284,6 +317,10 @@ fn report_dto(r: &RunReport) -> RunReportDto {
         passed: count(r.passed),
         failed: count(r.failed),
         skipped: count(r.skipped),
+        tests_passed: count(r.tests_passed),
+        tests_failed: count(r.tests_failed),
+        asserts_passed: count(r.asserts_passed),
+        asserts_failed: count(r.asserts_failed),
         elapsed_ms: millis(&r.elapsed),
     }
 }

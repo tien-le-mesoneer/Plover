@@ -147,11 +147,96 @@ async fn send_draft_returns_response() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{res}");
-    assert_eq!(res["status"], 404);
-    assert_eq!(res["bodyText"], "not here");
-    assert_eq!(res["size"], 8);
-    assert_eq!(res["truncated"], false);
-    assert!(res["elapsedMs"].is_number());
+    let response = &res["response"];
+    assert_eq!(response["status"], 404);
+    assert_eq!(response["bodyText"], "not here");
+    assert_eq!(response["size"], 8);
+    assert_eq!(response["truncated"], false);
+    assert!(response["elapsedMs"].is_number());
+    assert_eq!(res["tests"], json!([]));
+    assert!(res["scriptError"].is_null());
+}
+
+#[tokio::test]
+async fn send_runs_scripts_and_returns_tests() {
+    let server = MockServer::start().await;
+    Mock::given(path("/s"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "token": "abc" })))
+        .mount(&server)
+        .await;
+    Mock::given(path("/t/abc"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let dir = small_collection(&server.uri());
+    write(
+        dir.path(),
+        "s.bru",
+        "meta {\n  name: s\n  type: http\n  seq: 9\n}\n\nget {\n  url: {{host}}/s\n}\n\nassert {\n  res.status: eq 200\n}\n\nscript:post-response {\n  bru.setVar('tok', res.body.token);\n  console.log('hi');\n}\n\ntests {\n  test('has token', () => expect(res.body.token).to.equal('abc'));\n}\n",
+    );
+    write(
+        dir.path(),
+        "t.bru",
+        "meta {\n  name: t\n  type: http\n  seq: 10\n}\n\nget {\n  url: {{host}}/t/{{tok}}\n}\n",
+    );
+    let app = app();
+    let id = open(&app, dir.path()).await;
+    let send = |item: &str| json!({ "item": item, "env": "local" });
+    let (status, res) = call(
+        &app,
+        "POST",
+        &format!("/api/collections/{id}/send"),
+        Some(send("s.bru")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{res}");
+    assert_eq!(res["response"]["status"], 200);
+    assert_eq!(
+        res["tests"],
+        json!([{ "name": "has token", "passed": true, "error": null }])
+    );
+    assert_eq!(res["asserts"][0]["lhs"], "res.status");
+    assert_eq!(res["asserts"][0]["passed"], true);
+    assert_eq!(res["console"], json!([{ "level": "log", "text": "hi" }]));
+    // Runtime variables carry over to the next send in the session.
+    let (status, res) = call(
+        &app,
+        "POST",
+        &format!("/api/collections/{id}/send"),
+        Some(send("t.bru")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{res}");
+    assert_eq!(res["response"]["status"], 200);
+}
+
+#[tokio::test]
+async fn send_pre_request_script_error_is_reported() {
+    let dir = small_collection("http://127.0.0.1:9");
+    write(
+        dir.path(),
+        "e.bru",
+        "meta {\n  name: e\n  type: http\n  seq: 9\n}\n\nget {\n  url: {{host}}/e\n}\n\nscript:pre-request {\n  console.log('before');\n  throw new Error('nope');\n}\n",
+    );
+    let app = app();
+    let id = open(&app, dir.path()).await;
+    let (status, res) = call(
+        &app,
+        "POST",
+        &format!("/api/collections/{id}/send"),
+        Some(json!({ "item": "e.bru", "env": "local" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{res}");
+    assert!(res["response"].is_null());
+    let e = &res["scriptError"];
+    assert_eq!(e["phase"], "pre-request");
+    assert_eq!(e["kind"], "thrown");
+    assert_eq!(e["message"], "nope");
+    assert_eq!(e["scope"], "request");
+    assert_eq!(e["line"], 2);
+    assert_eq!(res["console"][0]["text"], "before");
 }
 
 #[tokio::test]
@@ -198,6 +283,7 @@ async fn binary_and_large_body() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    let res = &res["response"];
     assert!(res["bodyText"].is_null());
     let b64 = res["bodyBase64"].as_str().unwrap();
     assert_eq!(b64.len(), CAP.div_ceil(3) * 4);
@@ -214,6 +300,7 @@ async fn binary_and_large_body() {
         Some(json!({ "item": "b.bru", "env": "local" })),
     )
     .await;
+    let small = &small["response"];
     assert_eq!(small["truncated"], false);
     assert_eq!(small["sizeComplete"], true);
     assert_eq!(small["size"], 10);
@@ -239,6 +326,7 @@ async fn truncation_backs_off_to_a_char_boundary() {
         Some(json!({ "item": "a.bru", "env": "local" })),
     )
     .await;
+    let res = &res["response"];
     assert!(res["bodyBase64"].is_null());
     assert_eq!(res["bodyText"].as_str().unwrap().len(), CAP - 1);
     assert_eq!(res["truncated"], true);
@@ -332,7 +420,7 @@ async fn env_edit_and_secret_memory_only() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{res}");
-    assert_eq!(res["status"], 200);
+    assert_eq!(res["response"]["status"], 200);
     assert!(
         !fs::read_to_string(&env_path)
             .unwrap()

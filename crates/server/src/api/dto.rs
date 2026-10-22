@@ -6,6 +6,8 @@ use std::collections::BTreeMap;
 use brs_core::request::{
     Auth, Body, HttpRequest, KeyValue, Method, MultipartField, MultipartValue, RequestSettings,
 };
+use brs_core::runner::{RequestOutcome, ScriptFailure};
+use brs_core::script::{AssertResult, ConsoleLine, LogLevel, ScriptError, TestResult};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -179,6 +181,151 @@ pub struct ResponseDto {
     pub truncated: bool,
 }
 
+/// `POST /collections/{id}/send`: the response (absent when a pre-request script failed
+/// or skipped the request) and what the request's scripts, asserts and tests reported.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SendResultDto {
+    pub response: Option<ResponseDto>,
+    pub tests: Vec<TestResultDto>,
+    pub asserts: Vec<AssertResultDto>,
+    pub console: Vec<ConsoleLineDto>,
+    pub script_error: Option<ScriptErrorDto>,
+    /// Why the request was not sent (`bru.runner.skipRequest()`).
+    pub skipped: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TestResultDto {
+    pub name: String,
+    pub passed: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AssertResultDto {
+    pub lhs: String,
+    pub rhs: String,
+    pub operator: String,
+    pub passed: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsoleLineDto {
+    /// `log`, `info`, `warn`, `error` or `debug`.
+    pub level: String,
+    pub text: String,
+}
+
+/// A script that failed: where (`phase`, `scope`, `line`) and why.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ScriptErrorDto {
+    /// `pre-request`, `post-response` or `tests`.
+    pub phase: String,
+    /// `thrown`, `forbiddenModule`, `timeout`, `outOfMemory`, `unsettled` or `internal`.
+    pub kind: String,
+    /// Error name for thrown errors, e.g. `TypeError`.
+    pub name: Option<String>,
+    pub message: String,
+    /// `collection`, `folder <name>` or `request`.
+    pub scope: Option<String>,
+    /// 1-based line within that scope's script.
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+}
+
+impl From<&TestResult> for TestResultDto {
+    fn from(t: &TestResult) -> Self {
+        TestResultDto {
+            name: t.name.clone(),
+            passed: t.passed,
+            error: t.error.clone(),
+        }
+    }
+}
+
+impl From<&AssertResult> for AssertResultDto {
+    fn from(a: &AssertResult) -> Self {
+        AssertResultDto {
+            lhs: a.lhs.clone(),
+            rhs: a.rhs.clone(),
+            operator: a.operator.clone(),
+            passed: a.passed,
+            error: a.error.clone(),
+        }
+    }
+}
+
+impl From<&ConsoleLine> for ConsoleLineDto {
+    fn from(c: &ConsoleLine) -> Self {
+        let level = match c.level {
+            LogLevel::Log => "log",
+            LogLevel::Info => "info",
+            LogLevel::Warn => "warn",
+            LogLevel::Error => "error",
+            LogLevel::Debug => "debug",
+        };
+        ConsoleLineDto {
+            level: level.to_owned(),
+            text: c.text.clone(),
+        }
+    }
+}
+
+impl From<&ScriptFailure> for ScriptErrorDto {
+    fn from(f: &ScriptFailure) -> Self {
+        let (kind, name, scope, line, column) = match &f.error {
+            ScriptError::Thrown {
+                name,
+                scope,
+                line,
+                column,
+                ..
+            } => ("thrown", Some(name.clone()), scope.clone(), *line, *column),
+            ScriptError::ForbiddenModule { .. } => ("forbiddenModule", None, None, None, None),
+            ScriptError::Timeout(_) => ("timeout", None, None, None, None),
+            ScriptError::OutOfMemory => ("outOfMemory", None, None, None, None),
+            ScriptError::Unsettled => ("unsettled", None, None, None, None),
+            ScriptError::Internal(_) => ("internal", None, None, None, None),
+        };
+        let message = match &f.error {
+            ScriptError::Thrown { message, .. } => message.clone(),
+            other => other.to_string(),
+        };
+        ScriptErrorDto {
+            phase: f.phase.as_str().to_owned(),
+            kind: kind.to_owned(),
+            name,
+            message,
+            scope,
+            line,
+            column,
+        }
+    }
+}
+
+/// Test, assert, console and script-error lists of one request, as DTOs.
+pub fn outcome_lists(
+    o: &RequestOutcome,
+) -> (
+    Vec<TestResultDto>,
+    Vec<AssertResultDto>,
+    Vec<ConsoleLineDto>,
+    Option<ScriptErrorDto>,
+) {
+    (
+        o.tests.iter().map(Into::into).collect(),
+        o.asserts.iter().map(Into::into).collect(),
+        o.console.iter().map(Into::into).collect(),
+        o.script_error.as_ref().map(Into::into),
+    )
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenCollectionBody {
@@ -262,6 +409,10 @@ pub struct RunReportDto {
     pub passed: u32,
     pub failed: u32,
     pub skipped: u32,
+    pub tests_passed: u32,
+    pub tests_failed: u32,
+    pub asserts_passed: u32,
+    pub asserts_failed: u32,
     #[ts(type = "number")]
     pub elapsed_ms: u64,
 }
@@ -446,6 +597,11 @@ pub fn typescript_bindings() -> String {
         TreeNodeDto::decl(&cfg),
         EnvironmentDto::decl(&cfg),
         ResponseDto::decl(&cfg),
+        TestResultDto::decl(&cfg),
+        AssertResultDto::decl(&cfg),
+        ConsoleLineDto::decl(&cfg),
+        ScriptErrorDto::decl(&cfg),
+        SendResultDto::decl(&cfg),
         OpenCollectionBody::decl(&cfg),
         StoredRequestDto::decl(&cfg),
         SaveRequestBody::decl(&cfg),

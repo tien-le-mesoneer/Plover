@@ -143,7 +143,15 @@ describe("tabs store", () => {
 
   it("send uses the collection's active environment and the draft", async () => {
     const response = { status: 200, headers: [], elapsedMs: 1, size: 0, sizeComplete: true, bodyText: "", bodyBase64: null, truncated: false };
-    const api = mockApi({ send: vi.fn(async () => response) });
+    const result = {
+      response,
+      tests: [{ name: "ok", passed: true, error: null }],
+      asserts: [],
+      console: [{ level: "log", text: "hi" }],
+      scriptError: null,
+      skipped: null,
+    };
+    const api = mockApi({ send: vi.fn(async () => result) });
     setApi(api);
     useWorkspace.getState().selectEnv("c1", "local");
     await useTabs.getState().open("c1", "a.bru");
@@ -151,7 +159,22 @@ describe("tabs store", () => {
     useTabs.getState().edit(key, (d) => ({ ...d, url: "draft" }));
     await useTabs.getState().send(key);
     expect(api.send).toHaveBeenCalledWith("c1", "a.bru", expect.objectContaining({ url: "draft" }), "local");
-    expect(useTabs.getState().tabs[0]!.response).toEqual(response);
+    expect(useTabs.getState().tabs[0]!.result).toEqual(result);
     expect(useTabs.getState().tabs[0]!.sending).toBe(false);
+  });
+
+  it("script, test and assert edits are draft changes", async () => {
+    setApi(mockApi());
+    await useTabs.getState().open("c1", "a.bru");
+    const key = useTabs.getState().active!;
+    useTabs.getState().edit(key, (d) => ({ ...d, scriptPost: "bru.setVar('a', 1);" }));
+    expect(useTabs.getState().isDirty(key)).toBe(true);
+    useTabs.getState().edit(key, (d) => ({ ...d, scriptPost: null }));
+    expect(useTabs.getState().isDirty(key)).toBe(false);
+    useTabs.getState().edit(key, (d) => ({
+      ...d,
+      asserts: [{ name: "res.status", value: "eq 200", enabled: true, local: false }],
+    }));
+    expect(useTabs.getState().isDirty(key)).toBe(true);
   });
 });
