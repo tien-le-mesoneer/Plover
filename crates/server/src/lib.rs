@@ -1,6 +1,7 @@
 //! Thin axum shell over `brs-core`: security checks, REST + WebSocket API and
 //! the embedded UI. Binds to 127.0.0.1 only.
 
+mod api;
 mod error;
 mod security;
 mod state;
@@ -14,6 +15,7 @@ use axum::{Json, Router, middleware};
 use brs_core::executor::ExecOptions;
 use brs_core::workspace::Workspace;
 
+pub use api::dto::typescript_bindings;
 pub use error::ApiError;
 pub use security::AllowList;
 pub use state::AppState;
@@ -39,6 +41,7 @@ pub fn router(state: AppState) -> Router {
             "/health",
             get(|| async { Json(serde_json::json!({ "ok": true })) }),
         )
+        .merge(api::routes())
         .fallback(|| async { ApiError::not_found("no such API route") })
         .layer(middleware::from_fn_with_state(
             state.clone(),
