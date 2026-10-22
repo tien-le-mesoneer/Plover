@@ -6,6 +6,9 @@ use crate::request::KeyValue;
 
 pub type VarMap = BTreeMap<String, String>;
 
+/// Variables scripts can set to any JSON value (`bru.setVar('a', {b: 1})`).
+pub type ValueMap = BTreeMap<String, serde_json::Value>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
     Runtime,
@@ -159,6 +162,28 @@ pub fn enabled_map(items: &[KeyValue]) -> VarMap {
         .iter()
         .filter(|kv| kv.enabled)
         .map(|kv| (kv.name.clone(), kv.value.clone()))
+        .collect()
+}
+
+/// The text a value interpolates to: strings as they are, anything else as JSON
+/// (bruno-common `interpolate` stringifies objects).
+pub fn value_text(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+pub fn value_texts(values: &ValueMap) -> VarMap {
+    values
+        .iter()
+        .map(|(k, v)| (k.clone(), value_text(v)))
+        .collect()
+}
+
+pub fn string_values(vars: &VarMap) -> ValueMap {
+    vars.iter()
+        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
         .collect()
 }
 

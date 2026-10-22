@@ -1,25 +1,280 @@
-//! Rust side of the script API: the JSON exchanged with `api.js`.
+//! What scripts can see and change, exchanged with `api.js` as JSON. The JS side mirrors
+//! Bruno's `bru`, `req`, `res` and `test` objects; this side is plain data the runner owns.
 
-use crate::vars::{VarMap, VarStack};
+use serde::{Deserialize, Serialize};
 
-/// Variable layers as `api.js` sends them to `__brsInterpolate`.
-#[derive(Debug, Default, serde::Deserialize)]
+use super::engine::{ConsoleLine, EngineJob, Main, ScriptEngine, ScriptError, Segment};
+use crate::vars::{ValueMap, VarMap, VarStack};
+
+/// Variable scopes a script reads and writes. Folder variables are merged outermost
+/// first, so inner folders win.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ScriptVars {
+    pub runtime: ValueMap,
+    pub environment: ValueMap,
+    pub collection: ValueMap,
+    pub folder: ValueMap,
+    pub request: ValueMap,
+}
+
+impl ScriptVars {
+    /// The interpolation stack these variables form (Phase 1 precedence).
+    pub fn var_stack(&self) -> VarStack {
+        use crate::vars::value_texts;
+        VarStack::new(
+            value_texts(&self.runtime),
+            value_texts(&self.request),
+            vec![value_texts(&self.folder)],
+            value_texts(&self.environment),
+            value_texts(&self.collection),
+        )
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ScriptInfo {
+    pub env_name: Option<String>,
+    pub collection_name: String,
+    /// `bru.cwd()`.
+    pub collection_path: String,
+    pub request_name: String,
+}
+
+/// The request as scripts see it. Before the request is sent this is the prepared,
+/// not yet interpolated request (Bruno runs pre-request scripts before `interpolateVars`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ScriptRequest {
+    pub url: String,
+    pub method: String,
+    /// In order; names are kept exactly as written.
+    pub headers: Vec<(String, String)>,
+    pub body: ScriptBody,
+    pub timeout_ms: Option<u64>,
+    pub max_redirects: Option<u32>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "camelCase")]
+pub enum ScriptBody {
+    #[default]
+    None,
+    /// JSON, text and XML bodies.
+    Text { text: String },
+    /// `body:form-urlencoded`, as name/value pairs.
+    Form { fields: Vec<(String, String)> },
+    /// Multipart bodies are sent as written; scripts can't read or replace them yet.
+    Multipart,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ScriptResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub headers: Vec<(String, String)>,
+    /// Decoded body text; `res.body` is its JSON value when it parses (Bruno CLI
+    /// `parseDataFromResponse`), else this string.
+    pub body: String,
+    pub response_time_ms: u64,
+    pub url: String,
+    pub size: usize,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ScriptContext {
+    pub vars: ScriptVars,
+    pub info: ScriptInfo,
+    pub req: ScriptRequest,
+    pub res: Option<ScriptResponse>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NextRequest {
+    /// `setNextRequest(name)`: continue the run at the request with this name.
+    Name(String),
+    /// `setNextRequest(null)`: stop the run after this request.
+    Stop,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Flow {
+    pub skip_request: bool,
+    pub stop_execution: bool,
+    pub next_request: Option<NextRequest>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TestResult {
+    pub name: String,
+    pub passed: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssertResult {
+    pub lhs: String,
+    pub rhs: String,
+    pub operator: String,
+    pub passed: bool,
+    pub error: Option<String>,
+}
+
+/// Everything one script phase produced. On error, the state up to the failure is kept
+/// (Bruno's `partialResults`).
+#[derive(Debug, Clone, Default)]
+pub struct PhaseOutput {
+    pub vars: ScriptVars,
+    pub req: ScriptRequest,
+    /// `res.setBody(value)`; later phases and the reported response see it.
+    pub res_body: Option<serde_json::Value>,
+    pub tests: Vec<TestResult>,
+    pub asserts: Vec<AssertResult>,
+    pub flow: Flow,
+    pub console: Vec<ConsoleLine>,
+    pub error: Option<ScriptError>,
+}
+
+/// What `api.js` reports back (`__brs.resultParts`).
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct Reported {
+    vars: Option<ScriptVars>,
+    req: Option<ScriptRequest>,
+    res_body_set: bool,
+    res_body: serde_json::Value,
+    tests: Vec<TestResult>,
+    asserts: Vec<AssertResult>,
+    skip_request: bool,
+    stop_execution: bool,
+    next_request_set: bool,
+    next_request: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Input<'a> {
+    vars: &'a ScriptVars,
+    info: &'a ScriptInfo,
+    req: &'a ScriptRequest,
+    res: Option<&'a ScriptResponse>,
+    asserts: &'a [(String, String)],
+    post_vars: &'a [(String, String)],
+}
+
+/// Runs script segments (collection, folders, request — in the order given).
+pub async fn run_script(
+    engine: &ScriptEngine,
+    ctx: &ScriptContext,
+    segments: Vec<Segment>,
+) -> PhaseOutput {
+    run(engine, ctx, Main::Segments(segments), &[], &[]).await
+}
+
+/// Evaluates `assert` entries (enabled ones, as `(lhs, "operator rhs")`) like Bruno's
+/// `AssertRuntime`.
+pub async fn run_asserts(
+    engine: &ScriptEngine,
+    ctx: &ScriptContext,
+    asserts: &[(String, String)],
+) -> PhaseOutput {
+    run(
+        engine,
+        ctx,
+        Main::Call("__brs.runAsserts()".into()),
+        asserts,
+        &[],
+    )
+    .await
+}
+
+/// Evaluates `vars:post-response` entries (enabled ones) as JS expressions and stores the
+/// results as runtime variables, like Bruno's `VarsRuntime.runPostResponseVars`.
+pub async fn run_post_response_vars(
+    engine: &ScriptEngine,
+    ctx: &ScriptContext,
+    vars: &[(String, String)],
+) -> PhaseOutput {
+    run(
+        engine,
+        ctx,
+        Main::Call("__brs.runPostVars()".into()),
+        &[],
+        vars,
+    )
+    .await
+}
+
+async fn run(
+    engine: &ScriptEngine,
+    ctx: &ScriptContext,
+    main: Main,
+    asserts: &[(String, String)],
+    post_vars: &[(String, String)],
+) -> PhaseOutput {
+    let input = Input {
+        vars: &ctx.vars,
+        info: &ctx.info,
+        req: &ctx.req,
+        res: ctx.res.as_ref(),
+        asserts,
+        post_vars,
+    };
+    let input = match serde_json::to_value(&input) {
+        Ok(v) => v,
+        Err(e) => {
+            return PhaseOutput {
+                vars: ctx.vars.clone(),
+                req: ctx.req.clone(),
+                error: Some(ScriptError::Internal(e.to_string())),
+                ..PhaseOutput::default()
+            };
+        }
+    };
+    let out = engine.run(EngineJob { input, main }).await;
+    let reported: Reported =
+        serde_json::from_value(serde_json::Value::Object(out.output)).unwrap_or_default();
+    PhaseOutput {
+        vars: reported.vars.unwrap_or_else(|| ctx.vars.clone()),
+        req: reported.req.unwrap_or_else(|| ctx.req.clone()),
+        res_body: reported.res_body_set.then_some(reported.res_body),
+        tests: reported.tests,
+        asserts: reported.asserts,
+        flow: Flow {
+            skip_request: reported.skip_request,
+            stop_execution: reported.stop_execution,
+            next_request: reported
+                .next_request_set
+                .then_some(match reported.next_request {
+                    Some(name) => NextRequest::Name(name),
+                    None => NextRequest::Stop,
+                }),
+        },
+        console: out.console,
+        error: out.error,
+    }
+}
+
+/// Variable layers as `api.js` sends them to `__brsInterpolate` (already stringified).
+#[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct Layers {
     runtime: VarMap,
     request: VarMap,
-    folders: Vec<VarMap>,
+    folder: VarMap,
     environment: VarMap,
     collection: VarMap,
 }
 
-/// `bru.interpolate`: Phase 1 interpolation over the script's current variables.
+/// `bru.interpolate` and friends: Phase 1 interpolation over the script's current variables.
 pub(crate) fn interpolate_with_layers(text: &str, layers_json: &str) -> String {
     let layers: Layers = serde_json::from_str(layers_json).unwrap_or_default();
     VarStack::new(
         layers.runtime,
         layers.request,
-        layers.folders,
+        vec![layers.folder],
         layers.environment,
         layers.collection,
     )
