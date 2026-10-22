@@ -184,3 +184,156 @@ async fn connection_refused_is_transport_error() {
         .unwrap_err();
     assert!(matches!(err, ExecError::Transport(_)), "{err}");
 }
+
+async fn received_headers(server: &MockServer, name: &str) -> Vec<String> {
+    let requests = server.received_requests().await.unwrap();
+    let last = requests.last().unwrap();
+    last.headers
+        .get_all(name)
+        .iter()
+        .map(|v| v.to_str().unwrap().to_owned())
+        .collect()
+}
+
+// run-single-request.js:555-575: one content type, carrying the form's boundary; a
+// boundary the user already wrote is reused.
+#[tokio::test]
+async fn multipart_sends_one_content_type_with_boundary() {
+    let server = MockServer::start().await;
+    Mock::given(path("/m"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let s = session();
+    let parts = vec![ResolvedPart::Text {
+        name: "t".into(),
+        value: "hello".into(),
+        content_type: None,
+    }];
+    for (given, expected_prefix) in [
+        ("multipart/mixed", "multipart/mixed; boundary="),
+        ("multipart/form-data", "multipart/form-data; boundary="),
+        (
+            "multipart/form-data; boundary=abc",
+            "multipart/form-data; boundary=abc",
+        ),
+    ] {
+        let mut r = req(Method::Post, format!("{}/m", server.uri()));
+        r.headers.push(("Content-Type".into(), given.into()));
+        r.body = ResolvedBody::Multipart(parts.clone());
+        s.send(&r).await.unwrap();
+        let ct = received_headers(&server, "content-type").await;
+        assert_eq!(ct.len(), 1, "{ct:?}");
+        assert!(ct[0].starts_with(expected_prefix), "{ct:?}");
+        let boundary = ct[0].split("boundary=").nth(1).unwrap();
+        let body = String::from_utf8(
+            server
+                .received_requests()
+                .await
+                .unwrap()
+                .last()
+                .unwrap()
+                .body
+                .clone(),
+        )
+        .unwrap();
+        assert!(body.starts_with(&format!("--{boundary}\r\n")), "{body}");
+        assert!(body.contains("name=\"t\"\r\n\r\nhello\r\n"), "{body}");
+        assert!(body.ends_with(&format!("--{boundary}--\r\n")), "{body}");
+    }
+}
+
+// Bruno keeps a user-set content type on form bodies (prepare-request.js:430-432).
+#[tokio::test]
+async fn form_keeps_explicit_content_type() {
+    let server = MockServer::start().await;
+    Mock::given(path("/f"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let mut r = req(Method::Post, format!("{}/f", server.uri()));
+    r.headers.push((
+        "Content-Type".into(),
+        "application/x-www-form-urlencoded; charset=utf-8".into(),
+    ));
+    r.body = ResolvedBody::Form(vec![("a b".into(), "1&2".into())]);
+    session().send(&r).await.unwrap();
+    assert_eq!(
+        received_headers(&server, "content-type").await,
+        ["application/x-www-form-urlencoded; charset=utf-8"]
+    );
+    let body = server
+        .received_requests()
+        .await
+        .unwrap()
+        .last()
+        .unwrap()
+        .body
+        .clone();
+    assert_eq!(body, b"a+b=1%262");
+}
+
+// axios-instance.js:166-169: past the redirect limit the 3xx itself is the response.
+#[tokio::test]
+async fn redirect_limit_returns_last_redirect() {
+    let server = MockServer::start().await;
+    for (from, to) in [("/r1", "/r2"), ("/r2", "/r3"), ("/r3", "/ok")] {
+        Mock::given(path(from))
+            .respond_with(ResponseTemplate::new(302).insert_header("location", to))
+            .mount(&server)
+            .await;
+    }
+    Mock::given(path("/ok"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let s = Session::new(ExecOptions {
+        max_redirects: 2,
+        ..ExecOptions::default()
+    })
+    .unwrap();
+    let mut r = req(Method::Get, format!("{}/r1", server.uri()));
+    let res = s.send(&r).await.unwrap();
+    assert_eq!(res.status, 302);
+    assert!(
+        res.headers
+            .iter()
+            .any(|(k, v)| k == "location" && v == "/ok")
+    );
+    r.settings.max_redirects = Some(0);
+    let res = s.send(&r).await.unwrap();
+    assert!(
+        res.headers
+            .iter()
+            .any(|(k, v)| k == "location" && v == "/r2")
+    );
+    r.settings.max_redirects = Some(3);
+    assert_eq!(s.send(&r).await.unwrap().status, 200);
+}
+
+// axios-instance.js:101-111: default Accept (axios common default) and User-Agent;
+// the user's own value (any case) replaces them. We identify as bru-rs.
+#[tokio::test]
+async fn default_accept_and_user_agent() {
+    let server = MockServer::start().await;
+    Mock::given(path("/d"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let s = session();
+    let mut r = req(Method::Get, format!("{}/d", server.uri()));
+    s.send(&r).await.unwrap();
+    assert_eq!(
+        received_headers(&server, "accept").await,
+        ["application/json, text/plain, */*"]
+    );
+    assert_eq!(
+        received_headers(&server, "user-agent").await,
+        [format!("bru-rs/{}", env!("CARGO_PKG_VERSION"))]
+    );
+    r.headers.push(("accept".into(), "text/html".into()));
+    r.headers.push(("USER-AGENT".into(), "mine".into()));
+    s.send(&r).await.unwrap();
+    assert_eq!(received_headers(&server, "accept").await, ["text/html"]);
+    assert_eq!(received_headers(&server, "user-agent").await, ["mine"]);
+}

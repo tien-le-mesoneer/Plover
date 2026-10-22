@@ -135,11 +135,14 @@ pub fn resolve(
         Auth::None | Auth::Inherit | Auth::Basic { .. } => {}
     }
 
-    // 3. Default content type for raw bodies (prepare-request.js:366-386), lowercase key.
+    // 3. Default content type (lowercase key) unless one was given.
+    // prepare-request.js:363-441; an empty JSON body sends nothing (:365).
     let default_content_type = match &request.body {
-        Body::Json(_) => Some("application/json"),
+        Body::Json(t) if !t.is_empty() => Some("application/json"),
         Body::Text(_) => Some("text/plain"),
         Body::Xml(_) => Some("application/xml"),
+        Body::FormUrlEncoded(_) => Some("application/x-www-form-urlencoded"),
+        Body::Multipart(_) => Some("multipart/form-data"),
         _ => None,
     };
     if let Some(ct) = default_content_type.filter(|_| !content_type_defined) {
@@ -170,12 +173,22 @@ pub fn resolve(
     }
     let headers = fold_case_variants(headers);
 
-    let url = substitute_path_params(&vars.interpolate(&request.url), &request.path_params, &vars)?;
+    let mut url =
+        substitute_path_params(&vars.interpolate(&request.url), &request.path_params, &vars)?;
+    // run-single-request.js:391-393.
+    if !has_explicit_scheme(&url) {
+        url = format!("http://{url}");
+    }
+
     let body = match &request.body {
         Body::None => ResolvedBody::None,
-        Body::Json(t) | Body::Text(t) | Body::Xml(t) => {
-            ResolvedBody::Bytes(vars.interpolate(t).into_bytes())
+        Body::Json(t) if t.is_empty() => ResolvedBody::None,
+        // prepare-request.js:369-373: `decomment`, falling back to the raw text on error.
+        Body::Json(t) => {
+            let stripped = strip_json_comments(t).unwrap_or_else(|| t.clone());
+            ResolvedBody::Bytes(vars.interpolate(&stripped).into_bytes())
         }
+        Body::Text(t) | Body::Xml(t) => ResolvedBody::Bytes(vars.interpolate(t).into_bytes()),
         Body::FormUrlEncoded(items) => ResolvedBody::Form(
             items
                 .iter()
@@ -231,7 +244,7 @@ fn set_exact(headers: &mut Vec<(String, String)>, name: &str, value: String) {
 /// axios 1.18 `AxiosHeaders` construction (`setHeader` with `findKey`): names
 /// differing only by case fold into the first key's spelling and position, and
 /// take the value of the last such key.
-fn fold_case_variants(headers: Vec<(String, String)>) -> Vec<(String, String)> {
+pub(crate) fn fold_case_variants(headers: Vec<(String, String)>) -> Vec<(String, String)> {
     let mut folded: Vec<(String, String)> = Vec::with_capacity(headers.len());
     for (name, value) in headers {
         match folded
@@ -262,6 +275,84 @@ fn effective_auth<'a>(
         }
     }
     effective
+}
+
+/// bruno-common/src/utils/url/index.ts `getExplicitScheme`: `scheme://` with an ASCII
+/// letter followed by letters, digits, `+`, `-` or `.`.
+fn has_explicit_scheme(url: &str) -> bool {
+    match url.find("://") {
+        Some(end) if end >= 1 => {
+            let scheme = &url[..end];
+            scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+                && scheme
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        }
+        _ => false,
+    }
+}
+
+/// Approximates the `decomment` package as Bruno calls it: removes `//` and
+/// `/* */` comments outside string literals and drops lines left blank by a
+/// removed comment. `None` (unterminated string or comment) means "send as is".
+fn strip_json_comments(text: &str) -> Option<String> {
+    let mut out = String::with_capacity(text.len());
+    let mut line = String::new();
+    let mut line_had_comment = false;
+    let mut chars = text.chars().peekable();
+    let end_line = |out: &mut String, line: &mut String, had_comment: &mut bool, newline: bool| {
+        if !(*had_comment && line.trim().is_empty()) {
+            out.push_str(line);
+            if newline {
+                out.push('\n');
+            }
+        }
+        line.clear();
+        *had_comment = false;
+    };
+    while let Some(c) = chars.next() {
+        match c {
+            '"' | '\'' | '`' => {
+                line.push(c);
+                loop {
+                    let next = chars.next()?;
+                    if next == '\n' && c != '`' {
+                        return None;
+                    }
+                    line.push(next);
+                    if next == '\\' {
+                        line.push(chars.next()?);
+                    } else if next == c {
+                        break;
+                    }
+                }
+            }
+            '/' if chars.peek() == Some(&'/') => {
+                line_had_comment = true;
+                while chars.peek().is_some_and(|n| *n != '\n') {
+                    chars.next();
+                }
+            }
+            '/' if chars.peek() == Some(&'*') => {
+                chars.next();
+                line_had_comment = true;
+                loop {
+                    match chars.next()? {
+                        '*' if chars.peek() == Some(&'/') => {
+                            chars.next();
+                            break;
+                        }
+                        '\n' => end_line(&mut out, &mut line, &mut true, true),
+                        _ => {}
+                    }
+                }
+            }
+            '\n' => end_line(&mut out, &mut line, &mut line_had_comment, true),
+            _ => line.push(c),
+        }
+    }
+    end_line(&mut out, &mut line, &mut line_had_comment, false);
+    Some(out)
 }
 
 /// Port of bruno-cli/src/runner/interpolate-vars.js:139-198. With any path params
@@ -650,6 +741,76 @@ mod tests {
         assert_eq!(
             run(&f, "r.bru", None, &[]).unwrap().url,
             "http://localhost:3000/users/7/People(5)/?q=1"
+        );
+    }
+
+    // run-single-request.js:391-393: `http://` is prepended when the interpolated URL has
+    // no explicit `scheme://` (bruno-common/src/utils/url/index.ts getExplicitScheme).
+    #[test]
+    fn url_without_scheme_gets_http() {
+        let f = fixture(&[
+            ("a.bru", "get {\n  url: localhost:3000/x\n}\n"),
+            (
+                "b.bru",
+                "get {\n  url: {{host}}/x\n}\n\nvars:pre-request {\n  host: localhost:1\n}\n",
+            ),
+            ("c.bru", "get {\n  url: ftp://h/x\n}\n"),
+            ("d.bru", "get {\n  url: HTTPS://h/x\n}\n"),
+        ]);
+        assert_eq!(
+            run(&f, "a.bru", None, &[]).unwrap().url,
+            "http://localhost:3000/x"
+        );
+        assert_eq!(
+            run(&f, "b.bru", None, &[]).unwrap().url,
+            "http://localhost:1/x"
+        );
+        assert_eq!(run(&f, "c.bru", None, &[]).unwrap().url, "ftp://h/x");
+        assert_eq!(run(&f, "d.bru", None, &[]).unwrap().url, "HTTPS://h/x");
+    }
+
+    // prepare-request.js:363-374: comments are stripped with `decomment`; an empty JSON
+    // body sends no body and no default content type.
+    #[test]
+    fn json_comments_stripped_and_empty_body_omitted() {
+        let body = "post {\n  url: http://h\n  body: json\n}\n\nbody:json {\n  {\n    // note\n    \"a\": \"x // y\", /* inline */ \"b\": 1\n  }\n}\n";
+        let f = fixture(&[
+            ("r.bru", body),
+            (
+                "e.bru",
+                "post {\n  url: http://h\n  body: json\n}\n\nbody:json {\n}\n",
+            ),
+        ]);
+        let r = run(&f, "r.bru", None, &[]).unwrap();
+        assert_eq!(
+            r.body,
+            ResolvedBody::Bytes(b"{\n  \"a\": \"x // y\",  \"b\": 1\n}".to_vec())
+        );
+        let r = run(&f, "e.bru", None, &[]).unwrap();
+        assert_eq!(r.body, ResolvedBody::None);
+        assert!(r.headers.is_empty());
+    }
+
+    // prepare-request.js:429-441: default content types for form and multipart bodies.
+    #[test]
+    fn form_and_multipart_default_content_types() {
+        let f = fixture(&[
+            (
+                "f.bru",
+                "post {\n  url: http://h\n  body: formUrlEncoded\n}\n\nbody:form-urlencoded {\n  a: 1\n}\n",
+            ),
+            (
+                "m.bru",
+                "post {\n  url: http://h\n  body: multipartForm\n}\n\nbody:multipart-form {\n  a: 1\n}\n\nheaders {\n  Content-Type: multipart/mixed\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            run(&f, "f.bru", None, &[]).unwrap().headers,
+            pairs(&[("content-type", "application/x-www-form-urlencoded")])
+        );
+        assert_eq!(
+            run(&f, "m.bru", None, &[]).unwrap().headers,
+            pairs(&[("Content-Type", "multipart/mixed")])
         );
     }
 }
