@@ -1,11 +1,12 @@
 use std::path::{Path, PathBuf};
 
 use axum::Json;
-use axum::extract::{Path as UrlPath, State};
+use axum::extract::State;
 use brs_core::collection::{Folder, Item};
 use brs_core::workspace::OpenCollection;
 
 use super::dto::{CollectionSummaryDto, OpenCollectionBody, TreeNodeDto, TreeNodeKind};
+use super::extract::{ApiJson, ApiPath};
 use super::open_collection;
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -21,7 +22,7 @@ fn summary(open: &OpenCollection) -> CollectionSummaryDto {
 
 pub async fn open(
     State(state): State<AppState>,
-    Json(body): Json<OpenCollectionBody>,
+    ApiJson(body): ApiJson<OpenCollectionBody>,
 ) -> Result<Json<CollectionSummaryDto>, ApiError> {
     let workspace = state.workspace.clone();
     let path = PathBuf::from(body.path);
@@ -45,7 +46,7 @@ pub async fn list(State(state): State<AppState>) -> Json<Vec<CollectionSummaryDt
 
 pub async fn tree(
     State(state): State<AppState>,
-    UrlPath(id): UrlPath<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> Result<Json<TreeNodeDto>, ApiError> {
     let open = open_collection(&state, &id)?;
     let collection = open.collection();
@@ -58,7 +59,7 @@ pub async fn tree(
 
 pub async fn reload(
     State(state): State<AppState>,
-    UrlPath(id): UrlPath<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> Result<Json<TreeNodeDto>, ApiError> {
     let open = open_collection(&state, &id)?;
     let reloading = open.clone();

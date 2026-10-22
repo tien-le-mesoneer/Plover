@@ -9,6 +9,7 @@ import type {
   KeyValueDto,
   ResponseDto,
   RunEventDto,
+  SavedRequestDto,
   StoredRequestDto,
   TreeNodeDto,
 } from "./types";
@@ -38,7 +39,13 @@ export interface ApiClient {
   tree(id: string): Promise<TreeNodeDto>;
   reload(id: string): Promise<TreeNodeDto>;
   readRequest(id: string, item: string): Promise<StoredRequestDto>;
-  saveRequest(id: string, item: string, request: HttpRequestDto, hash: string): Promise<HashDto>;
+  /** Resolves to the request as re-read from the written file, with its new hash. */
+  saveRequest(
+    id: string,
+    item: string,
+    request: HttpRequestDto,
+    hash: string,
+  ): Promise<SavedRequestDto>;
   send(
     id: string,
     item: string,
@@ -47,7 +54,8 @@ export interface ApiClient {
   ): Promise<ResponseDto>;
   environments(id: string): Promise<EnvironmentDto[]>;
   saveEnvironment(id: string, name: string, vars: KeyValueDto[], hash: string): Promise<HashDto>;
-  setSecrets(id: string, name: string, values: Record<string, string>): Promise<void>;
+  /** Merges secret values; `null` clears one. */
+  setSecrets(id: string, name: string, values: Record<string, string | null>): Promise<void>;
   startRun(
     id: string,
     item: string,
@@ -77,17 +85,22 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();
-    const parsed: unknown = text ? JSON.parse(text) : undefined;
     if (!res.ok) {
-      const err = parsed as Partial<ApiErrorDto> | undefined;
+      // Error bodies are `{error, message}` JSON, but tolerate anything else.
+      let err: Partial<ApiErrorDto> | undefined;
+      try {
+        err = text ? (JSON.parse(text) as Partial<ApiErrorDto>) : undefined;
+      } catch {
+        err = undefined;
+      }
       throw new ApiError(
         res.status,
-        err?.error ?? "http_error",
-        parsed,
-        err?.message ?? `HTTP ${res.status}`,
+        err?.error ?? `http_${res.status}`,
+        err ?? text,
+        err?.message ?? (text || `HTTP ${res.status}`),
       );
     }
-    return parsed as T;
+    return (text ? JSON.parse(text) : undefined) as T;
   }
 
   function wsUrl(): string {
@@ -122,7 +135,9 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
         send({ type: "start", runId, collectionId: id, item, env });
       socket.onmessage = (e: MessageEvent) => {
         const event = JSON.parse(String(e.data)) as RunEventDto;
-        if (event.runId !== runId) return;
+        // One run per socket: errors without a runId (e.g. bad_message) belong to it too.
+        const ours = event.runId === runId || (event.type === "error" && event.runId === null);
+        if (!ours) return;
         onEvent(event);
         if (TERMINAL.includes(event.type)) socket.close();
       };

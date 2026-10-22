@@ -102,6 +102,9 @@ pub struct HttpRequestDto {
     pub path_params: Vec<KeyValueDto>,
     pub headers: Vec<KeyValueDto>,
     pub body: BodyDto,
+    /// Bodies of the other modes present in the file (Bruno keeps one per mode).
+    #[serde(default)]
+    pub other_bodies: Vec<BodyDto>,
     pub auth: AuthDto,
     pub vars_pre: Vec<KeyValueDto>,
     pub vars_post: Vec<KeyValueDto>,
@@ -148,6 +151,8 @@ pub struct EnvironmentDto {
     pub name: String,
     pub vars: Vec<KeyValueDto>,
     pub secret_names: Vec<String>,
+    /// Secret names that have a value in this session (values are never sent).
+    pub secrets_set: Vec<String>,
     pub hash: String,
 }
 
@@ -158,9 +163,11 @@ pub struct ResponseDto {
     pub headers: Vec<(String, String)>,
     #[ts(type = "number")]
     pub elapsed_ms: u64,
-    /// Decoded body length in bytes, even when the body is truncated.
+    /// Decoded body length in bytes. When `sizeComplete` is false, reading
+    /// stopped at the server's cap and this is the number of bytes read.
     #[ts(type = "number")]
     pub size: usize,
+    pub size_complete: bool,
     /// The body when it is valid UTF-8.
     pub body_text: Option<String>,
     /// The body otherwise.
@@ -190,6 +197,14 @@ pub struct SaveRequestBody {
     pub hash: String,
 }
 
+/// A saved request as parsed back from the written file, with its new hash.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedRequestDto {
+    pub request: HttpRequestDto,
+    pub hash: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct HashDto {
@@ -216,7 +231,8 @@ pub struct SaveEnvironmentBody {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretsBody {
-    pub values: BTreeMap<String, String>,
+    /// Merged into the current values: a string sets a secret, `null` clears it.
+    pub values: BTreeMap<String, Option<String>>,
 }
 
 /// The file content found on disk when a save conflicts.
@@ -288,34 +304,8 @@ impl From<&HttpRequest> for HttpRequestDto {
             query: kvs(&r.query),
             path_params: kvs(&r.path_params),
             headers: kvs(&r.headers),
-            body: match &r.body {
-                Body::None => BodyDto::None,
-                Body::Json(text) => BodyDto::Json { text: text.clone() },
-                Body::Text(text) => BodyDto::Text { text: text.clone() },
-                Body::Xml(text) => BodyDto::Xml { text: text.clone() },
-                Body::FormUrlEncoded(fields) => BodyDto::FormUrlEncoded {
-                    fields: kvs(fields),
-                },
-                Body::Multipart(fields) => BodyDto::MultipartForm {
-                    fields: fields
-                        .iter()
-                        .map(|f| MultipartFieldDto {
-                            name: f.name.clone(),
-                            value: match &f.value {
-                                MultipartValue::Text(value) => MultipartValueDto::Text {
-                                    value: value.clone(),
-                                },
-                                MultipartValue::Files(paths) => MultipartValueDto::Files {
-                                    paths: paths.clone(),
-                                },
-                            },
-                            enabled: f.enabled,
-                            content_type: f.content_type.clone(),
-                        })
-                        .collect(),
-                },
-                Body::Unsupported(name) => BodyDto::Unsupported { name: name.clone() },
-            },
+            body: body_dto(&r.body),
+            other_bodies: r.other_bodies.iter().map(body_dto).collect(),
             auth: match &r.auth {
                 Auth::None => AuthDto::None,
                 Auth::Inherit => AuthDto::Inherit,
@@ -355,29 +345,8 @@ impl From<HttpRequestDto> for HttpRequest {
             query: from_kvs(d.query),
             path_params: from_kvs(d.path_params),
             headers: from_kvs(d.headers),
-            other_bodies: Vec::new(),
-            body: match d.body {
-                BodyDto::None => Body::None,
-                BodyDto::Json { text } => Body::Json(text),
-                BodyDto::Text { text } => Body::Text(text),
-                BodyDto::Xml { text } => Body::Xml(text),
-                BodyDto::FormUrlEncoded { fields } => Body::FormUrlEncoded(from_kvs(fields)),
-                BodyDto::MultipartForm { fields } => Body::Multipart(
-                    fields
-                        .into_iter()
-                        .map(|f| MultipartField {
-                            name: f.name,
-                            value: match f.value {
-                                MultipartValueDto::Text { value } => MultipartValue::Text(value),
-                                MultipartValueDto::Files { paths } => MultipartValue::Files(paths),
-                            },
-                            enabled: f.enabled,
-                            content_type: f.content_type,
-                        })
-                        .collect(),
-                ),
-                BodyDto::Unsupported { name } => Body::Unsupported(name),
-            },
+            body: body_from_dto(d.body),
+            other_bodies: d.other_bodies.into_iter().map(body_from_dto).collect(),
             auth: match d.auth {
                 AuthDto::None => Auth::None,
                 AuthDto::Inherit => Auth::Inherit,
@@ -396,6 +365,62 @@ impl From<HttpRequestDto> for HttpRequest {
                 timeout_ms: d.settings.timeout_ms,
             },
         }
+    }
+}
+
+fn body_dto(body: &Body) -> BodyDto {
+    match body {
+        Body::None => BodyDto::None,
+        Body::Json(text) => BodyDto::Json { text: text.clone() },
+        Body::Text(text) => BodyDto::Text { text: text.clone() },
+        Body::Xml(text) => BodyDto::Xml { text: text.clone() },
+        Body::FormUrlEncoded(fields) => BodyDto::FormUrlEncoded {
+            fields: kvs(fields),
+        },
+        Body::Multipart(fields) => BodyDto::MultipartForm {
+            fields: fields
+                .iter()
+                .map(|f| MultipartFieldDto {
+                    name: f.name.clone(),
+                    value: match &f.value {
+                        MultipartValue::Text(value) => MultipartValueDto::Text {
+                            value: value.clone(),
+                        },
+                        MultipartValue::Files(paths) => MultipartValueDto::Files {
+                            paths: paths.clone(),
+                        },
+                    },
+                    enabled: f.enabled,
+                    content_type: f.content_type.clone(),
+                })
+                .collect(),
+        },
+        Body::Unsupported(name) => BodyDto::Unsupported { name: name.clone() },
+    }
+}
+
+fn body_from_dto(body: BodyDto) -> Body {
+    match body {
+        BodyDto::None => Body::None,
+        BodyDto::Json { text } => Body::Json(text),
+        BodyDto::Text { text } => Body::Text(text),
+        BodyDto::Xml { text } => Body::Xml(text),
+        BodyDto::FormUrlEncoded { fields } => Body::FormUrlEncoded(from_kvs(fields)),
+        BodyDto::MultipartForm { fields } => Body::Multipart(
+            fields
+                .into_iter()
+                .map(|f| MultipartField {
+                    name: f.name,
+                    value: match f.value {
+                        MultipartValueDto::Text { value } => MultipartValue::Text(value),
+                        MultipartValueDto::Files { paths } => MultipartValue::Files(paths),
+                    },
+                    enabled: f.enabled,
+                    content_type: f.content_type,
+                })
+                .collect(),
+        ),
+        BodyDto::Unsupported { name } => Body::Unsupported(name),
     }
 }
 
@@ -419,6 +444,7 @@ pub fn typescript_bindings() -> String {
         OpenCollectionBody::decl(&cfg),
         StoredRequestDto::decl(&cfg),
         SaveRequestBody::decl(&cfg),
+        SavedRequestDto::decl(&cfg),
         HashDto::decl(&cfg),
         SendBody::decl(&cfg),
         SaveEnvironmentBody::decl(&cfg),

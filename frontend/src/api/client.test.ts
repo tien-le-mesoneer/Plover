@@ -82,6 +82,16 @@ describe("ApiClient", () => {
     expect((err as ApiError).body).toEqual(body);
   });
 
+  it("tolerates non-JSON error bodies", async () => {
+    const fetch = vi.fn(async () => new Response("Failed to parse the request body", { status: 400 }));
+    const api = createApiClient("", "tok", { fetch });
+    const err = await api.tree("c1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(400);
+    expect((err as ApiError).code).toBe("http_400");
+    expect((err as ApiError).message).toBe("Failed to parse the request body");
+  });
+
   it("setSecrets accepts 204 without a body", async () => {
     const fetch = vi.fn(async () => new Response(null, { status: 204 }));
     const api = createApiClient("", "tok", { fetch });
@@ -111,6 +121,30 @@ describe("ApiClient", () => {
     await run.done;
     expect(events.map((e) => e.type)).toEqual(["started", "finished"]);
     expect(socket.closed).toBe(true);
+  });
+
+  it("forwards error events, including ones without a runId", async () => {
+    const api = createApiClient("http://127.0.0.1:4000", "tok", {
+      WebSocket: FakeSocket as unknown as typeof WebSocket,
+    });
+    const events: RunEventDto[] = [];
+    const run = api.startRun("c1", "", "nope", (e) => events.push(e));
+    const socket = FakeSocket.last!;
+    socket.open();
+    socket.emit({ type: "error", runId: run.runId, error: "run_failed", message: "environment `nope` not found" });
+    await run.done;
+    expect(events).toEqual([
+      { type: "error", runId: run.runId, error: "run_failed", message: "environment `nope` not found" },
+    ]);
+    expect(socket.closed).toBe(true);
+
+    const other: RunEventDto[] = [];
+    const run2 = api.startRun("c1", "", null, (e) => other.push(e));
+    const socket2 = FakeSocket.last!;
+    socket2.open();
+    socket2.emit({ type: "error", runId: null, error: "bad_message", message: "x" });
+    await run2.done;
+    expect(other.map((e) => e.type)).toEqual(["error"]);
   });
 
   it("cancel sends cancel then closes", async () => {

@@ -34,3 +34,18 @@ describe("workspace store", () => {
     expect(state.environments.c1![0]!.name).toBe("local");
   });
 });
+
+describe("secrets", () => {
+  it("sends only changed names and refreshes which secrets are set", async () => {
+    const api = {
+      setSecrets: vi.fn(async () => undefined),
+      environments: vi.fn(async () => [
+        { name: "local", vars: [], secretNames: ["a", "b"], secretsSet: ["a", "b"], hash: "h" },
+      ]),
+    } as unknown as ApiClient;
+    setApi(api);
+    await useWorkspace.getState().setSecrets("c1", "local", { b: "2", a: null });
+    expect(api.setSecrets).toHaveBeenCalledWith("c1", "local", { b: "2", a: null });
+    expect(useWorkspace.getState().environments.c1![0]!.secretsSet).toEqual(["a", "b"]);
+  });
+});

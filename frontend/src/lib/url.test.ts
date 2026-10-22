@@ -14,12 +14,29 @@ describe("url helpers", () => {
 
   it("reads params from the URL and keeps disabled rows", () => {
     expect(syncQueryFromUrl("http://h/x?a=1&b={{v}}&flag", [kv("old", "0", false)])).toEqual([
+      kv("old", "0", false),
       kv("a", "1"),
       kv("b", "{{v}}"),
       kv("flag", ""),
-      kv("old", "0", false),
     ]);
     expect(syncQueryFromUrl("http://h/x", [kv("a", "1")])).toEqual([]);
+  });
+
+  it("keeps disabled rows in place when the URL has no query", () => {
+    expect(syncQueryFromUrl("https://x/api", [kv("debug", "1", false)])).toEqual([kv("debug", "1", false)]);
+  });
+
+  it("keeps disabled rows in their positions; enabled rows follow the URL", () => {
+    const rows = [kv("a", "1"), kv("b", "2", false), kv("c", "3")];
+    expect(syncQueryFromUrl("http://h/x?a=1&c=3", rows)).toEqual(rows);
+    expect(syncQueryFromUrl("http://h/x?a=9&c=3&d=4", rows)).toEqual([
+      kv("a", "9"),
+      kv("b", "2", false),
+      kv("c", "3"),
+      kv("d", "4"),
+    ]);
+    // Removing c from the URL drops the enabled row only.
+    expect(syncQueryFromUrl("http://h/x?a=1", rows)).toEqual([kv("a", "1"), kv("b", "2", false)]);
   });
 
   it("finds :path params and keeps existing values", () => {

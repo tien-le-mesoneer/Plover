@@ -151,3 +151,5 @@ table.headers td { word-break: break-all; }
 .run-panel td.passed { color: var(--ok); }
 .run-panel td.failed, .err { color: var(--err); }
 .run-panel td.skipped, .run-panel td.pending { color: var(--muted); }
+.secret-row { display: flex; gap: 4px; }
+.secret-row input { flex: 1; }

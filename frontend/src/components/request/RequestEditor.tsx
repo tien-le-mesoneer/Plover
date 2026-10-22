@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { HttpRequestDto } from "../../api/types";
+import { switchBodyMode } from "../../lib/body";
 import { urlWithQuery } from "../../lib/url";
 import { useTabs, type Tab } from "../../store/tabs";
 import { ResponseViewer } from "../ResponseViewer";
@@ -90,7 +91,13 @@ export function RequestEditor({ tab }: { tab: Tab }) {
               />
             )}
             {section === "Auth" && <AuthTab auth={draft.auth} onChange={(auth) => onEdit((d) => ({ ...d, auth }))} />}
-            {section === "Body" && <BodyTab body={draft.body} onChange={(body) => onEdit((d) => ({ ...d, body }))} />}
+            {section === "Body" && (
+              <BodyTab
+                body={draft.body}
+                onChange={(body) => onEdit((d) => ({ ...d, body }))}
+                onModeChange={(mode) => onEdit((d) => switchBodyMode(d, mode))}
+              />
+            )}
           </div>
         </section>
         <section className="pane">

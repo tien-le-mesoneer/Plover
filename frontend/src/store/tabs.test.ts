@@ -16,6 +16,7 @@ function request(url: string): HttpRequestDto {
     pathParams: [],
     headers: [],
     body: { mode: "none" },
+    otherBodies: [],
     auth: { mode: "none" },
     varsPre: [],
     varsPost: [],
@@ -32,7 +33,10 @@ function mockApi(overrides: Partial<ApiClient> = {}): ApiClient {
       request: request(`http://h/${item}`),
       hash: `hash-${item}`,
     })),
-    saveRequest: vi.fn(async () => ({ hash: "new-hash" })),
+    saveRequest: vi.fn(async (_id: string, _item: string, r: HttpRequestDto) => ({
+      hash: "new-hash",
+      request: r,
+    })),
     tree: vi.fn(async () => ({
       kind: "folder" as const,
       id: "",
@@ -91,10 +95,24 @@ describe("tabs store", () => {
     expect(useTabs.getState().isDirty(key)).toBe(true);
 
     // Overwrite re-saves against the hash found on disk.
-    (api.saveRequest as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ hash: "h3" });
+    (api.saveRequest as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ hash: "h3", request: useTabs.getState().tabs[0]!.draft });
     await useTabs.getState().resolveConflict(key, "overwrite");
     expect(api.saveRequest).toHaveBeenLastCalledWith("c1", "a.bru", expect.anything(), "disk-hash");
     expect(useTabs.getState().tabs[0]!.conflict).toBeUndefined();
+    expect(useTabs.getState().isDirty(key)).toBe(false);
+  });
+
+  it("save adopts the request as re-read from disk", async () => {
+    const reread = { ...request("http://h/a.bru"), headers: [{ name: "x", value: "v", enabled: false, local: false }] };
+    const api = mockApi({ saveRequest: vi.fn(async () => ({ hash: "h2", request: reread })) });
+    setApi(api);
+    await useTabs.getState().open("c1", "a.bru");
+    const key = useTabs.getState().active!;
+    useTabs.getState().edit(key, (d) => ({ ...d, headers: [{ name: "~x", value: "  v  ", enabled: true, local: false }] }));
+    await useTabs.getState().save(key);
+    const tab = useTabs.getState().tabs[0]!;
+    expect(tab.saved).toEqual(reread);
+    expect(tab.draft).toEqual(reread);
     expect(useTabs.getState().isDirty(key)).toBe(false);
   });
 
@@ -123,7 +141,7 @@ describe("tabs store", () => {
   });
 
   it("send uses the collection's active environment and the draft", async () => {
-    const response = { status: 200, headers: [], elapsedMs: 1, size: 0, bodyText: "", bodyBase64: null, truncated: false };
+    const response = { status: 200, headers: [], elapsedMs: 1, size: 0, sizeComplete: true, bodyText: "", bodyBase64: null, truncated: false };
     const api = mockApi({ send: vi.fn(async () => response) });
     setApi(api);
     useWorkspace.getState().selectEnv("c1", "local");

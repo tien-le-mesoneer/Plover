@@ -20,7 +20,9 @@ export function ResponseViewer({ response, sending }: { response?: ResponseDto; 
       <div className="response-meta">
         <span className={`status ${statusClass(response.status)}`}>{response.status}</span>
         <span title="Time">{formatDuration(response.elapsedMs)}</span>
-        <span title="Size (decoded)">{formatSize(response.size)}</span>
+        <span title={response.sizeComplete ? "Size (decoded)" : "Bytes read before the 10 MB limit"}>
+          {response.sizeComplete ? formatSize(response.size) : `≥ ${formatSize(response.size)}`}
+        </span>
         <span className="spacer" />
         <nav className="subtabs">
           <button className={view === "body" ? "active" : ""} onClick={() => setView("body")}>
@@ -31,7 +33,13 @@ export function ResponseViewer({ response, sending }: { response?: ResponseDto; 
           </button>
         </nav>
       </div>
-      {response.truncated && <div className="banner warn">Showing the first 10 MB of the body.</div>}
+      {response.truncated && (
+        <div className="banner warn">
+          {response.sizeComplete
+            ? "Showing the first 10 MB of the body."
+            : "Stopped reading after 10 MB; the full size is unknown. Showing the first 10 MB."}
+        </div>
+      )}
       {view === "body" ? (
         body.language === "binary" ? (
           <p className="muted center">{body.text}</p>

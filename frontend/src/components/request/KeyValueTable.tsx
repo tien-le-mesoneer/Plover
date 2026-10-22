@@ -17,8 +17,16 @@ export function KeyValueTable({ rows, onChange, fixedNames, namePlaceholder, val
     onChange(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   const remove = (index: number) => onChange(rows.filter((_, i) => i !== index));
   const display = fixedNames ? rows : [...rows, empty()];
+  const tildeNames = rows.some((r) => r.name.startsWith("~"));
 
   return (
+    <>
+    {tildeNames && (
+      <p className="banner warn" role="note">
+        A name starting with <code>~</code> means &ldquo;disabled&rdquo; in <code>.bru</code>; it is saved
+        as a disabled entry without the <code>~</code>.
+      </p>
+    )}
     <table className="kv">
       <tbody>
         {display.map((row, i) => {
@@ -64,5 +72,6 @@ export function KeyValueTable({ rows, onChange, fixedNames, namePlaceholder, val
         })}
       </tbody>
     </table>
+    </>
   );
 }

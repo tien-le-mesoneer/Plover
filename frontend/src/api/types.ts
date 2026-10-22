@@ -25,7 +25,11 @@ kind: string,
 /**
  * Uppercase method name; any other string is a custom method.
  */
-method: string, url: string, query: Array<KeyValueDto>, pathParams: Array<KeyValueDto>, headers: Array<KeyValueDto>, body: BodyDto, auth: AuthDto, varsPre: Array<KeyValueDto>, varsPost: Array<KeyValueDto>, scriptPre: string | null, scriptPost: string | null, tests: string | null, settings: RequestSettingsDto, };
+method: string, url: string, query: Array<KeyValueDto>, pathParams: Array<KeyValueDto>, headers: Array<KeyValueDto>, body: BodyDto, 
+/**
+ * Bodies of the other modes present in the file (Bruno keeps one per mode).
+ */
+otherBodies: Array<BodyDto>, auth: AuthDto, varsPre: Array<KeyValueDto>, varsPost: Array<KeyValueDto>, scriptPre: string | null, scriptPost: string | null, tests: string | null, settings: RequestSettingsDto, };
 
 export type CollectionSummaryDto = { id: string, name: string, root: string, };
 
@@ -45,13 +49,18 @@ error: string | null,
  */
 children: Array<TreeNodeDto> | null, };
 
-export type EnvironmentDto = { name: string, vars: Array<KeyValueDto>, secretNames: Array<string>, hash: string, };
+export type EnvironmentDto = { name: string, vars: Array<KeyValueDto>, secretNames: Array<string>, 
+/**
+ * Secret names that have a value in this session (values are never sent).
+ */
+secretsSet: Array<string>, hash: string, };
 
 export type ResponseDto = { status: number, headers: Array<[string, string]>, elapsedMs: number, 
 /**
- * Decoded body length in bytes, even when the body is truncated.
+ * Decoded body length in bytes. When `sizeComplete` is false, reading
+ * stopped at the server's cap and this is the number of bytes read.
  */
-size: number, 
+size: number, sizeComplete: boolean, 
 /**
  * The body when it is valid UTF-8.
  */
@@ -75,13 +84,19 @@ export type SaveRequestBody = { request: HttpRequestDto,
  */
 hash: string, };
 
+export type SavedRequestDto = { request: HttpRequestDto, hash: string, };
+
 export type HashDto = { hash: string, };
 
 export type SendBody = { item: string, draft: HttpRequestDto | null, env: string | null, };
 
 export type SaveEnvironmentBody = { vars: Array<KeyValueDto>, hash: string, };
 
-export type SecretsBody = { values: { [key in string]: string }, };
+export type SecretsBody = { 
+/**
+ * Merged into the current values: a string sets a secret, `null` clears it.
+ */
+values: { [key in string]: string | null }, };
 
 export type ConflictDto = { text: string, hash: string, };
 

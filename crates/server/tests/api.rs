@@ -173,10 +173,17 @@ async fn send_transport_failure_is_502() {
 #[tokio::test]
 async fn binary_and_large_body() {
     const SIZE: usize = 12 * 1024 * 1024;
+    const CAP: usize = 10 * 1024 * 1024;
     let server = MockServer::start().await;
     Mock::given(path("/a"))
         .respond_with(
             ResponseTemplate::new(200).set_body_raw(vec![0xffu8; SIZE], "application/octet-stream"),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(path("/b"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw(vec![0xffu8; 10], "application/octet-stream"),
         )
         .mount(&server)
         .await;
@@ -193,9 +200,48 @@ async fn binary_and_large_body() {
     assert_eq!(status, StatusCode::OK);
     assert!(res["bodyText"].is_null());
     let b64 = res["bodyBase64"].as_str().unwrap();
-    assert_eq!(b64.len(), (10 * 1024 * 1024usize).div_ceil(3) * 4);
+    assert_eq!(b64.len(), CAP.div_ceil(3) * 4);
     assert_eq!(res["truncated"], true);
-    assert_eq!(res["size"], SIZE);
+    // Reading stopped at the cap: the size is what was read, not the total.
+    assert_eq!(res["sizeComplete"], false);
+    let size = res["size"].as_u64().unwrap() as usize;
+    assert!((CAP..=SIZE).contains(&size), "{size}");
+
+    let (_, small) = call(
+        &app,
+        "POST",
+        &format!("/api/collections/{id}/send"),
+        Some(json!({ "item": "b.bru", "env": "local" })),
+    )
+    .await;
+    assert_eq!(small["truncated"], false);
+    assert_eq!(small["sizeComplete"], true);
+    assert_eq!(small["size"], 10);
+}
+
+#[tokio::test]
+async fn truncation_backs_off_to_a_char_boundary() {
+    const CAP: usize = 10 * 1024 * 1024;
+    let mut body = vec![b'a'; CAP - 1];
+    body.extend("é".repeat(1000).as_bytes());
+    let server = MockServer::start().await;
+    Mock::given(path("/a"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "text/plain; charset=utf-8"))
+        .mount(&server)
+        .await;
+    let dir = small_collection(&server.uri());
+    let app = app();
+    let id = open(&app, dir.path()).await;
+    let (_, res) = call(
+        &app,
+        "POST",
+        &format!("/api/collections/{id}/send"),
+        Some(json!({ "item": "a.bru", "env": "local" })),
+    )
+    .await;
+    assert!(res["bodyBase64"].is_null());
+    assert_eq!(res["bodyText"].as_str().unwrap().len(), CAP - 1);
+    assert_eq!(res["truncated"], true);
 }
 
 #[tokio::test]
@@ -293,6 +339,52 @@ async fn env_edit_and_secret_memory_only() {
             .contains("s3cr3t-value")
     );
 
+    // Later updates merge; null clears; only names are ever listed.
+    let (status, _) = call(
+        &app,
+        "PUT",
+        &format!("/api/collections/{id}/environments/local/secrets"),
+        Some(json!({ "values": { "other": "x" } })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, envs) = call(
+        &app,
+        "GET",
+        &format!("/api/collections/{id}/environments"),
+        None,
+    )
+    .await;
+    let local = envs
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == "local")
+        .unwrap();
+    assert_eq!(local["secretsSet"], json!(["other", "token"]));
+    assert!(!envs.to_string().contains("s3cr3t-value"));
+    call(
+        &app,
+        "PUT",
+        &format!("/api/collections/{id}/environments/local/secrets"),
+        Some(json!({ "values": { "other": null } })),
+    )
+    .await;
+    let (_, envs) = call(
+        &app,
+        "GET",
+        &format!("/api/collections/{id}/environments"),
+        None,
+    )
+    .await;
+    let local = envs
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == "local")
+        .unwrap();
+    assert_eq!(local["secretsSet"], json!(["token"]));
+
     let (status, _) = call(
         &app,
         "PUT",
@@ -308,4 +400,145 @@ async fn unknown_api_route_is_json_404() {
     let (status, body): (StatusCode, Value) = call(&app(), "GET", "/api/nope", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["error"], "not_found");
+}
+
+#[tokio::test]
+async fn extractor_rejections_are_json() {
+    use axum::body::Body;
+    use axum::http::Request;
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    let dir = small_collection("http://127.0.0.1:9");
+    let app = app();
+    let id = open(&app, dir.path()).await;
+    let cases = [
+        (
+            "POST",
+            "/api/collections".to_owned(),
+            Some("application/json"),
+            "{not json",
+            400,
+            "bad_request",
+        ),
+        (
+            "POST",
+            "/api/collections".to_owned(),
+            Some("text/plain"),
+            "{}",
+            415,
+            "unsupported_media_type",
+        ),
+        (
+            "POST",
+            "/api/collections".to_owned(),
+            Some("application/json"),
+            "{}",
+            422,
+            "bad_request",
+        ),
+        (
+            "GET",
+            format!("/api/collections/{id}/requests"),
+            None,
+            "",
+            400,
+            "bad_request",
+        ),
+    ];
+    for (method, uri, content_type, body, status, code) in cases {
+        let mut req = Request::builder()
+            .method(method)
+            .uri(&uri)
+            .header("host", format!("127.0.0.1:{PORT}"))
+            .header("authorization", format!("Bearer {TOKEN}"));
+        if let Some(ct) = content_type {
+            req = req.header("content-type", ct);
+        }
+        let res = app
+            .clone()
+            .oneshot(req.body(Body::from(body)).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status().as_u16(), status, "{method} {uri} {body}");
+        assert!(
+            res.headers()["content-type"]
+                .to_str()
+                .unwrap()
+                .starts_with("application/json")
+        );
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        let json: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["error"], code, "{json}");
+        assert!(json["message"].as_str().is_some_and(|m| !m.is_empty()));
+    }
+}
+
+#[tokio::test]
+async fn save_returns_reread_request() {
+    let (_dir, root) = fixture_copy();
+    let app = app();
+    let id = open(&app, &root).await;
+    let uri = format!("/api/collections/{id}/requests?item={}", enc(ECHO_JSON));
+    let (_, read) = call(&app, "GET", &uri, None).await;
+    let mut request = read["request"].clone();
+    request["headers"][0]["name"] = json!("~x");
+    request["headers"][0]["value"] = json!("  v  ");
+    let (status, saved) = call(
+        &app,
+        "PUT",
+        &uri,
+        Some(json!({ "request": request, "hash": read["hash"] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(
+        saved["request"]["headers"][0],
+        json!({"name": "x", "value": "v", "enabled": false, "local": false})
+    );
+    let (_, again) = call(&app, "GET", &uri, None).await;
+    assert_eq!(again["request"], saved["request"]);
+    assert_eq!(again["hash"], saved["hash"]);
+}
+
+#[tokio::test]
+async fn body_mode_switch_keeps_other_bodies() {
+    let (_dir, root) = fixture_copy();
+    let app = app();
+    let id = open(&app, &root).await;
+    let before = fs::read_to_string(root.join(ECHO_JSON)).unwrap();
+    let uri = format!("/api/collections/{id}/requests?item={}", enc(ECHO_JSON));
+    let (_, read) = call(&app, "GET", &uri, None).await;
+    let json_body = read["request"]["body"].clone();
+    assert_eq!(json_body["mode"], "json");
+    assert_eq!(read["request"]["otherBodies"], json!([]));
+
+    // json -> none: keeps body:json, changes only the mode line.
+    let mut none = read["request"].clone();
+    none["body"] = json!({ "mode": "none" });
+    none["otherBodies"] = json!([json_body]);
+    let (_, saved) = call(
+        &app,
+        "PUT",
+        &uri,
+        Some(json!({ "request": none, "hash": read["hash"] })),
+    )
+    .await;
+    let after = fs::read_to_string(root.join(ECHO_JSON)).unwrap();
+    assert_eq!(changed_lines(&before, &after), (1, 1), "{after}");
+    assert_eq!(saved["request"]["otherBodies"], json!([json_body]));
+
+    // none -> json restores the file exactly.
+    let mut back = saved["request"].clone();
+    back["body"] = json_body;
+    back["otherBodies"] = json!([]);
+    let (status, _) = call(
+        &app,
+        "PUT",
+        &uri,
+        Some(json!({ "request": back, "hash": saved["hash"] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(fs::read_to_string(root.join(ECHO_JSON)).unwrap(), before);
 }

@@ -58,10 +58,17 @@ describe("runs store", () => {
   });
 
   it("server error events end the run", () => {
+    // What the client forwards for a failed start: the server echoes the runId.
     useRuns.getState().start("c1", "", "nope", "all");
-    emit({ type: "error", runId: null, error: "run_failed", message: "environment `nope` not found" });
+    emit({ type: "error", runId: "r1", error: "run_failed", message: "environment `nope` not found" });
     const run = useRuns.getState().runs.r1!;
     expect(run.status).toBe("error");
     expect(run.error).toBe("environment `nope` not found");
+  });
+
+  it("runId-less errors forwarded by the client also end the run", () => {
+    useRuns.getState().start("c1", "", null, "all");
+    emit({ type: "error", runId: null, error: "bad_message", message: "bad" });
+    expect(useRuns.getState().runs.r1!.status).toBe("error");
   });
 });

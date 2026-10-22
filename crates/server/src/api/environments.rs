@@ -1,11 +1,12 @@
 use axum::Json;
-use axum::extract::{Path as UrlPath, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use brs_core::bru::model::EnvironmentFile;
 use brs_core::request::KeyValue;
 use brs_core::store::{self, ContentHash};
 
 use super::dto::{EnvironmentDto, HashDto, KeyValueDto, SaveEnvironmentBody, SecretsBody};
+use super::extract::{ApiJson, ApiPath};
 use super::open_collection;
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -13,7 +14,7 @@ use crate::state::AppState;
 /// Environments as currently on disk, each with its content hash.
 pub async fn list(
     State(state): State<AppState>,
-    UrlPath(id): UrlPath<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> Result<Json<Vec<EnvironmentDto>>, ApiError> {
     let open = open_collection(&state, &id)?;
     let collection = open.collection();
@@ -28,6 +29,7 @@ pub async fn list(
             name: env.name.clone(),
             vars: file.vars.iter().map(KeyValueDto::from).collect(),
             secret_names: file.secrets.iter().map(|s| s.name.clone()).collect(),
+            secrets_set: open.secret_names_set(&env.name),
             hash: hash.0,
         });
     }
@@ -36,8 +38,8 @@ pub async fn list(
 
 pub async fn save(
     State(state): State<AppState>,
-    UrlPath((id, name)): UrlPath<(String, String)>,
-    Json(body): Json<SaveEnvironmentBody>,
+    ApiPath((id, name)): ApiPath<(String, String)>,
+    ApiJson(body): ApiJson<SaveEnvironmentBody>,
 ) -> Result<Json<HashDto>, ApiError> {
     let open = open_collection(&state, &id)?;
     let vars: Vec<KeyValue> = body.vars.into_iter().map(KeyValue::from).collect();
@@ -46,11 +48,12 @@ pub async fn save(
     Ok(Json(HashDto { hash: hash.0 }))
 }
 
-/// Secret values live in server memory only; they are never written to disk.
+/// Merges secret values (null clears one). They live in server memory only
+/// and are never written to disk or returned.
 pub async fn set_secrets(
     State(state): State<AppState>,
-    UrlPath((id, name)): UrlPath<(String, String)>,
-    Json(body): Json<SecretsBody>,
+    ApiPath((id, name)): ApiPath<(String, String)>,
+    ApiJson(body): ApiJson<SecretsBody>,
 ) -> Result<StatusCode, ApiError> {
     let open = open_collection(&state, &id)?;
     if open.collection().environment(&name).is_none() {
@@ -58,9 +61,6 @@ pub async fn set_secrets(
             "environment `{name}` not found"
         )));
     }
-    open.update_secrets(
-        &name,
-        body.values.into_iter().map(|(k, v)| (k, Some(v))).collect(),
-    );
+    open.update_secrets(&name, body.values);
     Ok(StatusCode::NO_CONTENT)
 }

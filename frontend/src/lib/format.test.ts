@@ -7,6 +7,7 @@ const res = (patch: Partial<ResponseDto>): ResponseDto => ({
   headers: [],
   elapsedMs: 1,
   size: 0,
+  sizeComplete: true,
   bodyText: "",
   bodyBase64: null,
   truncated: false,

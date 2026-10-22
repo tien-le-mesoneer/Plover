@@ -50,7 +50,14 @@ export const useTabs = create<TabsState>()((set, get) => {
   async function write(tab: Tab, hash: string): Promise<"saved" | "conflict"> {
     try {
       const saved = await api().saveRequest(tab.collectionId, tab.item, tab.draft, hash);
-      update(tab.key, { saved: tab.draft, hash: saved.hash, conflict: undefined, error: undefined });
+      // Adopt what the file now says (e.g. trimmed values), so "saved" matches disk.
+      update(tab.key, {
+        saved: saved.request,
+        draft: saved.request,
+        hash: saved.hash,
+        conflict: undefined,
+        error: undefined,
+      });
       void useWorkspace.getState().refreshTree(tab.collectionId).catch(() => {});
       return "saved";
     } catch (e) {

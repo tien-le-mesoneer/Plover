@@ -14,13 +14,11 @@ const MODES: { mode: Exclude<BodyDto["mode"], "unsupported">; label: string }[] 
 interface Props {
   body: BodyDto;
   onChange: (body: BodyDto) => void;
+  /** Switch modes; each mode keeps its own content (see `switchBodyMode`). */
+  onModeChange: (mode: Exclude<BodyDto["mode"], "unsupported">) => void;
 }
 
-function textOf(body: BodyDto): string {
-  return body.mode === "json" || body.mode === "text" || body.mode === "xml" ? body.text : "";
-}
-
-export function BodyTab({ body, onChange }: Props) {
+export function BodyTab({ body, onChange, onModeChange }: Props) {
   if (body.mode === "unsupported") {
     return (
       <p className="muted">
@@ -28,23 +26,9 @@ export function BodyTab({ body, onChange }: Props) {
       </p>
     );
   }
-  const select = (mode: (typeof MODES)[number]["mode"]) => {
-    switch (mode) {
-      case "json":
-      case "text":
-      case "xml":
-        return onChange({ mode, text: textOf(body) });
-      case "formUrlEncoded":
-        return onChange({ mode, fields: [] });
-      case "multipartForm":
-        return onChange({ mode, fields: [] });
-      default:
-        return onChange({ mode: "none" });
-    }
-  };
   return (
     <div className="body-tab">
-      <select aria-label="Body mode" value={body.mode} onChange={(e) => select(e.target.value as never)}>
+      <select aria-label="Body mode" value={body.mode} onChange={(e) => onModeChange(e.target.value as (typeof MODES)[number]["mode"])}>
         {MODES.map((m) => (
           <option key={m.mode} value={m.mode}>
             {m.label}

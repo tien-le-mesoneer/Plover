@@ -24,7 +24,11 @@ export function urlWithQuery(url: string, params: KeyValueDto[]): string {
   return `${base}?${enabled.map((p) => `${p.name}=${p.value}`).join("&")}${hash}`;
 }
 
-/** Params parsed from the URL, followed by the existing disabled rows. */
+/**
+ * Params after the URL changed: disabled rows (`~` in `.bru`, not in the URL)
+ * keep their positions; enabled rows are replaced, in order, by the URL's
+ * params, and extra URL params are appended.
+ */
 export function syncQueryFromUrl(url: string, existing: KeyValueDto[]): KeyValueDto[] {
   const { query } = splitUrl(url);
   const parsed =
@@ -34,8 +38,13 @@ export function syncQueryFromUrl(url: string, existing: KeyValueDto[]): KeyValue
           const eq = part.indexOf("=");
           return eq >= 0 ? row(part.slice(0, eq), part.slice(eq + 1)) : row(part, "");
         });
-  if (parsed.length === 0) return [];
-  return [...parsed, ...existing.filter((p) => !p.enabled)];
+  const out: KeyValueDto[] = [];
+  let next = 0;
+  for (const p of existing) {
+    if (!p.enabled) out.push(p);
+    else if (next < parsed.length) out.push(parsed[next++]!);
+  }
+  return [...out, ...parsed.slice(next)];
 }
 
 /** `:name` segments in the URL path (not in the query string). */

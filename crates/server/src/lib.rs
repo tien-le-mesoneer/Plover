@@ -16,6 +16,7 @@ use axum::{Json, Router, middleware};
 use brs_core::executor::ExecOptions;
 use brs_core::workspace::Workspace;
 
+pub use api::MAX_INLINE_BODY;
 pub use api::dto::typescript_bindings;
 pub use error::ApiError;
 pub use security::AllowList;
@@ -69,12 +70,12 @@ pub async fn start(
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, cfg.port)).await?;
     let addr = listener.local_addr()?;
     let token = security::new_token();
-    let workspace = Arc::new(Workspace::new(cfg.exec));
-    let state = AppState {
-        workspace: workspace.clone(),
-        token: Arc::from(token.as_str()),
-        allowed: Arc::new(AllowList::new(addr.port(), &cfg.dev_origins)),
-    };
+    let state = AppState::new(
+        cfg.exec,
+        &token,
+        AllowList::new(addr.port(), &cfg.dev_origins),
+    );
+    let workspace = state.workspace.clone();
     let server = axum::serve(listener, router(state))
         .with_graceful_shutdown(shutdown)
         .into_future();

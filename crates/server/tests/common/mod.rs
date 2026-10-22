@@ -3,12 +3,10 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use brs_core::executor::ExecOptions;
-use brs_core::workspace::Workspace;
 use brs_server::{AllowList, AppState, router};
 use http_body_util::BodyExt;
 use serde_json::Value;
@@ -22,11 +20,11 @@ pub const FIXTURE: &str = concat!(
 );
 
 pub fn app() -> axum::Router {
-    router(AppState {
-        workspace: Arc::new(Workspace::new(ExecOptions::default())),
-        token: Arc::from(TOKEN),
-        allowed: Arc::new(AllowList::new(PORT, &[])),
-    })
+    router(AppState::new(
+        ExecOptions::default(),
+        TOKEN,
+        AllowList::new(PORT, &[]),
+    ))
 }
 
 pub async fn call(
