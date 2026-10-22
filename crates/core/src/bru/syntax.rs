@@ -226,6 +226,14 @@ impl BruDocument {
         }
     }
 
+    /// Renames the first block named `old`, editing only the name in its source text.
+    pub fn rename_block(&mut self, old: &str, new: &str) {
+        if let Some(block) = self.block_mut(old) {
+            block.raw = format!("{new}{}", &block.raw[old.len()..]);
+            block.name = new.to_owned();
+        }
+    }
+
     fn block_mut(&mut self, name: &str) -> Option<&mut Block> {
         self.segments.iter_mut().find_map(|s| match s {
             Segment::Block(b) if b.name == name => Some(b),

@@ -104,3 +104,38 @@ fn render_parse_is_identity_on_content() {
         offenders.join("\n---\n")
     );
 }
+
+#[test]
+fn typed_files_roundtrip_unchanged() {
+    use brs_core::bru::model::{EnvironmentFile, RequestFile, ScopeFile};
+    let mut failures = Vec::new();
+    for path in all_fixtures() {
+        let src = std::fs::read_to_string(&path).expect("read fixture");
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let in_env_dir = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .is_some_and(|n| n == "environments");
+        let out = if in_env_dir {
+            EnvironmentFile::parse(&src).map(|f| f.to_bru())
+        } else if file_name == "collection.bru" || file_name == "folder.bru" {
+            ScopeFile::parse(&src).map(|f| f.to_bru())
+        } else {
+            match RequestFile::parse(&src) {
+                Ok(f) => Ok(f.to_bru()),
+                Err(brs_core::bru::model::ModelError::MissingHttpBlock) => continue,
+                Err(e) => Err(e),
+            }
+        };
+        match out {
+            Ok(out) if out == src => {}
+            Ok(_) => failures.push(format!("{}: output differs", path.display())),
+            Err(e) => failures.push(format!("{}: {e}", path.display())),
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "typed round-trip failures:\n{}",
+        failures.join("\n")
+    );
+}
