@@ -139,3 +139,105 @@ fn typed_files_roundtrip_unchanged() {
         failures.join("\n")
     );
 }
+
+fn changed_lines(before: &str, after: &str) -> (usize, usize) {
+    let diff = similar::TextDiff::from_lines(before, after);
+    let mut counts = (0, 0);
+    for change in diff.iter_all_changes() {
+        match change.tag() {
+            similar::ChangeTag::Delete => counts.0 += 1,
+            similar::ChangeTag::Insert => counts.1 += 1,
+            similar::ChangeTag::Equal => {}
+        }
+    }
+    counts
+}
+
+/// Editing one line of any text block (scripts, tests, docs, bodies) changes exactly
+/// that line in the file: untouched lines keep their bytes, including blank lines
+/// without indentation and tab indentation.
+#[test]
+fn one_line_text_block_edit_is_a_one_line_diff_in_all_fixtures() {
+    let mut checked = 0;
+    let mut failures = Vec::new();
+    for path in all_fixtures() {
+        let src = std::fs::read_to_string(&path).unwrap();
+        let doc = BruDocument::parse(&src).unwrap();
+        let texts: Vec<(String, String)> = doc
+            .blocks()
+            .filter_map(|b| match b.content() {
+                BlockContent::Text(t) if !t.is_empty() => Some((b.name.clone(), t.clone())),
+                _ => None,
+            })
+            .collect();
+        for (name, text) in texts {
+            // Skip a later duplicate name: set_block edits the first block with the name.
+            if doc.block(&name).and_then(|b| b.content().text()) != Some(text.as_str()) {
+                continue;
+            }
+            let mut lines: Vec<&str> = text.split('\n').collect();
+            let Some(i) = lines.iter().position(|l| !l.trim().is_empty()) else {
+                continue;
+            };
+            let edited_line = format!("{} // edited", lines[i]);
+            lines[i] = &edited_line;
+            let mut edited = doc.clone();
+            edited.set_block(&name, BlockContent::Text(lines.join("\n")));
+            let out = edited.write();
+            checked += 1;
+            if changed_lines(&src, &out) != (1, 1) {
+                failures.push(format!(
+                    "{} [{name}]: {:?}",
+                    path.display(),
+                    changed_lines(&src, &out)
+                ));
+            }
+        }
+    }
+    assert!(checked > 100, "only {checked} text blocks checked");
+    assert!(
+        failures.is_empty(),
+        "{} of {checked} edits were not 1/1:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn text_block_edit_keeps_blank_lines_and_tabs() {
+    let src = "tests {\n  test('a', () => {\n\n  \tconst x = 1;\n\t// tab only\n  });\n\n  test('b', () => {});\n}\n";
+    let doc = BruDocument::parse(src).unwrap();
+    let text = doc
+        .block("tests")
+        .unwrap()
+        .content()
+        .text()
+        .unwrap()
+        .to_owned();
+    let mut edited = doc.clone();
+    edited.set_block(
+        "tests",
+        BlockContent::Text(text.replace("test('b'", "test('renamed'")),
+    );
+    let out = edited.write();
+    assert_eq!(out, src.replace("test('b'", "test('renamed'"));
+    // CRLF files keep CRLF.
+    let crlf = src.replace('\n', "\r\n");
+    let doc = BruDocument::parse(&crlf).unwrap();
+    let mut edited = doc.clone();
+    edited.set_block(
+        "tests",
+        BlockContent::Text(text.replace("test('b'", "test('renamed'")),
+    );
+    assert_eq!(edited.write(), crlf.replace("test('b'", "test('renamed'"));
+    // Inserted lines are indented like Bruno writes them.
+    let mut edited = doc.clone();
+    edited.set_block("tests", BlockContent::Text(format!("{text}\nnew line")));
+    assert!(
+        edited
+            .write()
+            .ends_with("  test('b', () => {});\r\n  new line\r\n}\r\n"),
+        "{:?}",
+        edited.write()
+    );
+}

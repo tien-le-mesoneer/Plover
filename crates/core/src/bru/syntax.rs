@@ -198,7 +198,13 @@ impl BruDocument {
                 return;
             }
             if block.content != content {
-                block.raw = render(&content);
+                let merged = match (&block.content, &content) {
+                    (BlockContent::Text(old), BlockContent::Text(new)) => {
+                        merge_text_block(&block.raw, old, new, crlf)
+                    }
+                    _ => None,
+                };
+                block.raw = merged.unwrap_or_else(|| render(&content));
                 block.content = content;
             }
             return;
@@ -455,6 +461,75 @@ fn unescape_double_quoted(s: &str) -> String {
 }
 
 /// Bruno text blocks: leading newlines dropped, then two spaces of indent removed per line.
+/// Rewrites a text block's source for new text, keeping every unchanged line's bytes
+/// (blank lines without indentation, tab indentation) and indenting only new or changed
+/// lines the way Bruno writes them. `None` when the source doesn't have the expected
+/// shape; the caller then renders the block canonically.
+fn merge_text_block(raw: &str, old: &str, new: &str, crlf: bool) -> Option<String> {
+    let open = raw.find('{')?;
+    let close = raw.rfind("\n}")?;
+    let body_end = if raw[..close].ends_with('\r') {
+        close - 1
+    } else {
+        close
+    };
+    let body = raw.get(open + 1..body_end)?;
+    let leading = body.len() - body.trim_start_matches(['\r', '\n']).len();
+    let raw_lines: Vec<&str> = body[leading..]
+        .split('\n')
+        .map(|l| l.strip_suffix('\r').unwrap_or(l))
+        .collect();
+    let old_lines: Vec<&str> = old.split('\n').collect();
+    let text_of = |l: &str| l.strip_prefix("  ").unwrap_or(l).to_owned();
+    if raw_lines.len() != old_lines.len()
+        || raw_lines
+            .iter()
+            .zip(&old_lines)
+            .any(|(r, o)| text_of(r) != *o)
+    {
+        return None;
+    }
+    let new_lines: Vec<&str> = new.split('\n').collect();
+    let (n, m) = (old_lines.len(), new_lines.len());
+    if n.saturating_mul(m) > 4_000_000 {
+        return None;
+    }
+    // Longest common subsequence of lines, then walk it.
+    let mut lcs = vec![0u32; (n + 1) * (m + 1)];
+    let at = |i: usize, j: usize| i * (m + 1) + j;
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            lcs[at(i, j)] = if old_lines[i] == new_lines[j] {
+                lcs[at(i + 1, j + 1)] + 1
+            } else {
+                lcs[at(i + 1, j)].max(lcs[at(i, j + 1)])
+            };
+        }
+    }
+    let mut out_lines: Vec<String> = Vec::with_capacity(m);
+    let (mut i, mut j) = (0, 0);
+    while j < m {
+        if i < n && old_lines[i] == new_lines[j] {
+            out_lines.push(raw_lines[i].to_owned());
+            i += 1;
+            j += 1;
+        } else if i < n && (j == m || lcs[at(i + 1, j)] >= lcs[at(i, j + 1)]) {
+            i += 1; // deleted line
+        } else {
+            out_lines.push(format!("  {}", new_lines[j]));
+            j += 1;
+        }
+    }
+    let newline = if crlf { "\r\n" } else { "\n" };
+    Some(format!(
+        "{}{}{}{}",
+        &raw[..=open],
+        &body[..leading],
+        out_lines.join(newline),
+        &raw[body_end..]
+    ))
+}
+
 fn parse_text(body: &str) -> String {
     body.trim_start_matches(['\r', '\n'])
         .split('\n')
