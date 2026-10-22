@@ -490,3 +490,60 @@ async fn post_response_vars_and_test_script_errors() {
     let names: Vec<&str> = b.tests.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names, ["ok", "Test Script Error"]);
 }
+
+#[tokio::test]
+async fn object_variable_paths_in_urls() {
+    let server = MockServer::start().await;
+    Mock::given(path("/login"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "user": { "id": 42 } })))
+        .mount(&server)
+        .await;
+    Mock::given(path("/users/42"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let dir = setup(&server, None);
+    let root = dir.path();
+    write(
+        root,
+        "a.bru",
+        &request(
+            "a",
+            1,
+            "/login",
+            &text_block("script:post-response", "bru.setVar('user', res.body.user);"),
+        ),
+    );
+    write(root, "b.bru", &request("b", 2, "/users/{{user.id}}", ""));
+    let (report, events) = run_dir(root).await;
+    assert_eq!(report.passed, 2, "{events:#?}");
+}
+
+#[tokio::test]
+async fn deep_variable_chain_in_url_does_not_abort() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let dir = setup(&server, None);
+    let root = dir.path();
+    write(
+        root,
+        "a.bru",
+        &request(
+            "a",
+            1,
+            "/{{a0}}",
+            &text_block(
+                "script:pre-request",
+                "const N = 20000; for (let i = 0; i < N; i++) bru.setVar('a' + i, '{{a' + (i + 1) + '}}'); bru.setVar('a' + N, 'x');",
+            ),
+        ),
+    );
+    write(root, "b.bru", &request("b", 2, "/b", ""));
+    let (report, events) = run_dir(root).await;
+    assert_eq!(report.passed + report.failed, 2, "{events:#?}");
+    assert_eq!(started(&events), ["a", "b"]);
+}

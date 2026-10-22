@@ -22,7 +22,9 @@ use crate::script::{
     TestResult, run_asserts, run_post_response_vars, run_script,
 };
 use crate::store::{self, StoreError};
-use crate::vars::{ValueMap, VarMap, enabled_map, string_values};
+use crate::vars::{
+    InterpolateLimits, MAX_INTERPOLATED_BYTES, ValueMap, VarMap, enabled_map, string_values,
+};
 use crate::workspace::OpenCollection;
 
 #[derive(Debug, Clone, Default)]
@@ -585,7 +587,12 @@ impl Exec<'_> {
             }
         }
 
-        let resolved = match finalize(&prepared, &vars.var_stack(), &self.collection.root) {
+        let limits = InterpolateLimits {
+            max_bytes: MAX_INTERPOLATED_BYTES,
+            deadline: Some(Instant::now() + self.engine.limits().timeout),
+        };
+        let resolved = match finalize(&prepared, &vars.var_stack(), &self.collection.root, &limits)
+        {
             Ok(resolved) => resolved,
             Err(e) => {
                 executed.stopped = Some(Stopped::Resolve(e));

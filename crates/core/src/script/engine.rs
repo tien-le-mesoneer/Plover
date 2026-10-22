@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
 use super::libs::LIBS;
+use crate::vars::InterpolateLimits;
 
 const PRELUDE_JS: &str = include_str!("prelude.js");
 const API_JS: &str = include_str!("api.js");
@@ -322,9 +323,18 @@ impl Worker {
             })
             .map_err(internal_err)?;
             globals.set("__brsNow", now).map_err(internal_err)?;
-            let interpolate = Function::new(ctx.clone(), |text: String, layers: String| {
-                super::api::interpolate_with_layers(&text, &layers)
-            })
+            let max_bytes = self.limits.memory_bytes;
+            let interpolate = Function::new(
+                ctx.clone(),
+                move |ctx: Ctx<'_>, text: String, layers: String| {
+                    let limits = InterpolateLimits {
+                        max_bytes,
+                        deadline: Some(deadline),
+                    };
+                    super::api::interpolate_with_layers(&text, &layers, &limits)
+                        .map_err(|e| rquickjs::Exception::throw_message(&ctx, &e.to_string()))
+                },
+            )
             .map_err(internal_err)?;
             globals
                 .set("__brsInterpolate", interpolate)

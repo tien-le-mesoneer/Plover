@@ -18,15 +18,10 @@
   for (const scope of SCOPES) vars[scope] = vars[scope] || {};
   const info = input.info || {};
 
+  // Values go as JSON so `{{obj.path}}` can walk objects (lodash `get`, like Bruno).
   const layersJson = () => {
     const layers = {};
-    for (const scope of SCOPES) {
-      layers[scope] = {};
-      for (const [name, value] of Object.entries(vars[scope])) {
-        if (value === undefined) continue;
-        layers[scope][name] = typeof value === 'string' ? value : JSON.stringify(value);
-      }
-    }
+    for (const scope of SCOPES) layers[scope] = vars[scope];
     return JSON.stringify(layers);
   };
   // bru.js `interpolate`: strings are interpolated, objects via their JSON, anything else as is.

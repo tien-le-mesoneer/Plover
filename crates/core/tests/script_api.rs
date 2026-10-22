@@ -281,3 +281,44 @@ async fn state_survives_a_thrown_error() {
     assert!(out.error.is_some());
     assert_eq!(out.vars.runtime["before"], json!(1));
 }
+
+#[tokio::test]
+async fn interpolate_deep_chain_terminates() {
+    let out = ok(
+        &context(),
+        "const N = 200000; for (let i = 0; i < N; i++) bru.setVar('a' + i, '{{a' + (i + 1) + '}}'); bru.setVar('a' + N, 'x'); console.log(bru.interpolate('{{a0}}'));",
+    )
+    .await;
+    // Past the depth cap the placeholder stays literal instead of overflowing a stack.
+    assert_eq!(out.console[0].text, "{{a1000}}");
+}
+
+#[tokio::test]
+async fn interpolate_output_is_capped() {
+    let out = run_script(
+        &engine(),
+        &context(),
+        vec![Segment::new(
+            "request",
+            "for (let i = 0; i < 29; i++) bru.setVar('a' + i, '{{a' + (i + 1) + '}}{{a' + (i + 1) + '}}'); bru.setVar('a29', 'x'); bru.interpolate('{{a0}}');",
+        )],
+    )
+    .await;
+    match out.error {
+        Some(ScriptError::Thrown { message, .. }) => assert!(
+            message.starts_with("interpolating variables produced more than"),
+            "{message}"
+        ),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn interpolate_walks_object_variables() {
+    let out = ok(
+        &context(),
+        "bru.setVar('user', { id: 42, tags: ['a', { b: 'x' }] }); console.log(bru.interpolate('{{user.id}}/{{user.tags[1].b}}'));",
+    )
+    .await;
+    assert_eq!(out.console[0].text, "42/x");
+}

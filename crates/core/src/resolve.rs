@@ -10,7 +10,9 @@ use crate::request::{
     Auth, Body, KeyValue, Method, MultipartField, MultipartValue, RequestSettings,
 };
 use crate::script::ScriptVars;
-use crate::vars::{ValueMap, VarStack, enabled_map, string_values};
+use crate::vars::{
+    InterpolateError, InterpolateLimits, ValueMap, VarStack, enabled_map, string_values,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedRequest {
@@ -61,6 +63,8 @@ pub enum ResolveError {
     Unsupported(String),
     #[error("invalid URL: {0}")]
     InvalidUrl(String),
+    #[error(transparent)]
+    Interpolate(#[from] InterpolateError),
 }
 
 /// A request after Bruno's `prepareRequest`: scopes merged, auth and the default content
@@ -140,7 +144,12 @@ pub fn resolve(
 ) -> Result<ResolvedRequest, ResolveError> {
     let prepared = prepare(ctx, req)?;
     let vars = initial_vars(ctx, req)?;
-    finalize(&prepared, &vars.var_stack(), &ctx.collection.root)
+    finalize(
+        &prepared,
+        &vars.var_stack(),
+        &ctx.collection.root,
+        &InterpolateLimits::default(),
+    )
 }
 
 /// Bruno's `prepareRequest` (bruno-cli/src/runner/prepare-request.js): merges headers and
@@ -251,37 +260,28 @@ pub fn finalize(
     prepared: &PreparedRequest,
     vars: &VarStack,
     root: &std::path::Path,
+    limits: &InterpolateLimits,
 ) -> Result<ResolvedRequest, ResolveError> {
+    let interp =
+        |text: &str| -> Result<String, ResolveError> { Ok(vars.try_interpolate(text, limits)?) };
     // 4. interpolate-vars.js:83-86: each key is deleted and re-set interpolated, in order.
     let mut headers = prepared.headers.clone();
     for (name, _) in headers.clone() {
         if let Some(pos) = headers.iter().position(|(k, _)| *k == name) {
             let (_, value) = headers.remove(pos);
-            set_exact(
-                &mut headers,
-                &vars.interpolate(&name),
-                vars.interpolate(&value),
-            );
+            set_exact(&mut headers, &interp(&name)?, interp(&value)?);
         }
     }
 
     // 5. Basic auth is added after interpolation (interpolate-vars.js:216-222).
     if let Some((username, password)) = &prepared.basic_auth {
-        let raw = format!(
-            "{}:{}",
-            vars.interpolate(username),
-            vars.interpolate(password)
-        );
+        let raw = format!("{}:{}", interp(username)?, interp(password)?);
         let encoded = base64::engine::general_purpose::STANDARD.encode(raw);
         set_exact(&mut headers, "Authorization", format!("Basic {encoded}"));
     }
     let headers = fold_case_variants(headers);
 
-    let mut url = substitute_path_params(
-        &vars.interpolate(&prepared.url),
-        &prepared.path_params,
-        vars,
-    )?;
+    let mut url = substitute_path_params(&interp(&prepared.url)?, &prepared.path_params, &interp)?;
     // run-single-request.js:391-393.
     if !has_explicit_scheme(&url) {
         url = format!("http://{url}");
@@ -289,30 +289,32 @@ pub fn finalize(
 
     let body = match &prepared.body {
         PreparedBody::None => ResolvedBody::None,
-        PreparedBody::Text(t) => ResolvedBody::Bytes(vars.interpolate(t).into_bytes()),
+        PreparedBody::Text(t) => ResolvedBody::Bytes(interp(t)?.into_bytes()),
         PreparedBody::Form(items) => ResolvedBody::Form(
             items
                 .iter()
-                .map(|(k, v)| (vars.interpolate(k), vars.interpolate(v)))
-                .collect(),
+                .map(|(k, v)| Ok((interp(k)?, interp(v)?)))
+                .collect::<Result<_, ResolveError>>()?,
         ),
         PreparedBody::Multipart(fields) => {
             let mut parts = Vec::new();
             for field in fields {
-                let name = vars.interpolate(&field.name);
+                let name = interp(&field.name)?;
                 let content_type = field.content_type.clone();
                 match &field.value {
                     MultipartValue::Text(v) => parts.push(ResolvedPart::Text {
                         name,
-                        value: vars.interpolate(v),
+                        value: interp(v)?,
                         content_type,
                     }),
                     MultipartValue::Files(files) => {
-                        parts.extend(files.iter().map(|f| ResolvedPart::File {
-                            name: name.clone(),
-                            path: root.join(vars.interpolate(f)),
-                            content_type: content_type.clone(),
-                        }))
+                        for f in files {
+                            parts.push(ResolvedPart::File {
+                                name: name.clone(),
+                                path: root.join(interp(f)?),
+                                content_type: content_type.clone(),
+                            });
+                        }
                     }
                 }
             }
@@ -458,7 +460,7 @@ fn strip_json_comments(text: &str) -> Option<String> {
 fn substitute_path_params(
     url: &str,
     params: &[KeyValue],
-    vars: &VarStack,
+    interp: &dyn Fn(&str) -> Result<String, ResolveError>,
 ) -> Result<String, ResolveError> {
     if params.is_empty() {
         return Ok(url.to_owned());
@@ -466,12 +468,12 @@ fn substitute_path_params(
     let values: Vec<(&str, Option<String>)> = params
         .iter()
         .map(|p| {
-            let value = vars.interpolate(&p.value);
+            let value = interp(&p.value)?;
             // interpolate-vars.js:6-22 `hasResolvablePathParamValue`.
             let resolvable = p.enabled && !value.trim().is_empty();
-            (p.name.as_str(), resolvable.then_some(value))
+            Ok((p.name.as_str(), resolvable.then_some(value)))
         })
-        .collect();
+        .collect::<Result<_, ResolveError>>()?;
     // `find` returns the first param with that name, resolvable or not.
     let lookup = |name: &str| {
         values

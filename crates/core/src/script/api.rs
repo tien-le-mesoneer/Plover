@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::engine::{ConsoleLine, EngineJob, Main, ScriptEngine, ScriptError, Segment};
-use crate::vars::{ValueMap, VarMap, VarStack};
+use crate::vars::{InterpolateError, InterpolateLimits, ValueMap, VarStack};
 
 /// Variable scopes a script reads and writes. Folder variables are merged outermost
 /// first, so inner folders win.
@@ -21,13 +21,12 @@ pub struct ScriptVars {
 impl ScriptVars {
     /// The interpolation stack these variables form (Phase 1 precedence).
     pub fn var_stack(&self) -> VarStack {
-        use crate::vars::value_texts;
-        VarStack::new(
-            value_texts(&self.runtime),
-            value_texts(&self.request),
-            vec![value_texts(&self.folder)],
-            value_texts(&self.environment),
-            value_texts(&self.collection),
+        VarStack::from_values(
+            self.runtime.clone(),
+            self.request.clone(),
+            vec![self.folder.clone()],
+            self.environment.clone(),
+            self.collection.clone(),
         )
     }
 }
@@ -257,26 +256,31 @@ async fn run(
     }
 }
 
-/// Variable layers as `api.js` sends them to `__brsInterpolate` (already stringified).
+/// Variable layers as `api.js` sends them to `__brsInterpolate`.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct Layers {
-    runtime: VarMap,
-    request: VarMap,
-    folder: VarMap,
-    environment: VarMap,
-    collection: VarMap,
+    runtime: ValueMap,
+    request: ValueMap,
+    folder: ValueMap,
+    environment: ValueMap,
+    collection: ValueMap,
 }
 
-/// `bru.interpolate` and friends: Phase 1 interpolation over the script's current variables.
-pub(crate) fn interpolate_with_layers(text: &str, layers_json: &str) -> String {
+/// `bru.interpolate` and friends: Phase 1 interpolation over the script's current
+/// variables, bounded by the script's memory limit and deadline.
+pub(crate) fn interpolate_with_layers(
+    text: &str,
+    layers_json: &str,
+    limits: &InterpolateLimits,
+) -> Result<String, InterpolateError> {
     let layers: Layers = serde_json::from_str(layers_json).unwrap_or_default();
-    VarStack::new(
+    VarStack::from_values(
         layers.runtime,
         layers.request,
         vec![layers.folder],
         layers.environment,
         layers.collection,
     )
-    .interpolate(text)
+    .try_interpolate(text, limits)
 }
