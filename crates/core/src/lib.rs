@@ -6,4 +6,6 @@ pub mod executor;
 pub mod request;
 pub mod resolve;
 pub mod runner;
+pub mod store;
 pub mod vars;
+pub mod workspace;
