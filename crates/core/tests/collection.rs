@@ -62,6 +62,8 @@ fn find_root_from_nested_file() {
     assert_eq!(root, std::path::absolute(testbench()).unwrap());
 }
 
+// utils/collection.js:85-87: folders (sortByNameThenSequence) first, then requests by seq.
+// Names are chosen so that alphabetical order differs from seq order.
 #[test]
 fn ordering_folders_then_requests_by_seq() {
     let dir = tempfile::tempdir().unwrap();
@@ -71,21 +73,71 @@ fn ordering_folders_then_requests_by_seq() {
         "bruno.json",
         r#"{"version":"1","name":"t","type":"collection"}"#,
     );
-    write(root, "b/folder.bru", &folder(1));
-    write(root, "b/x.bru", &request("x", 1));
+    write(root, "z/folder.bru", &folder(1));
+    write(root, "z/x.bru", &request("x", 1));
     write(root, "a/folder.bru", &folder(2));
     write(root, "a/y.bru", &request("y", 1));
-    write(root, "r2.bru", &request("r2", 2));
-    write(root, "r1.bru", &request("r1", 1));
+    write(root, "z.bru", &request("z", 1));
+    write(root, "a.bru", &request("a", 2));
     write(root, "environments/local.bru", "vars {\n  host: h\n}\n");
-    write(root, "node_modules/z.bru", &request("z", 1));
+    write(root, "node_modules/n.bru", &request("n", 1));
     let c = Collection::load(root).unwrap();
-    assert_eq!(names(&c, root), ["b/x.bru", "a/y.bru", "r1.bru", "r2.bru"]);
+    assert_eq!(names(&c, root), ["z/x.bru", "a/y.bru", "z.bru", "a.bru"]);
     assert_eq!(names(&c, &root.join("a")), ["a/y.bru"]);
-    assert_eq!(names(&c, &root.join("r2.bru")), ["r2.bru"]);
+    assert_eq!(names(&c, &root.join("a.bru")), ["a.bru"]);
     assert_eq!(c.environment("local").unwrap().file.vars[0].value, "h");
-    let refs = c.requests_under(&root.join("b/x.bru"));
+    let refs = c.requests_under(&root.join("z/x.bru"));
     assert_eq!(refs[0].folders.len(), 1);
+}
+
+// bruno-common/src/collection/index.ts:10 sorts folder names with `localeCompare`
+// (ICU root collation): punctuation < digits < letters, case-insensitive first.
+#[test]
+fn folders_without_seq_use_locale_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "bruno.json",
+        r#"{"version":"1","name":"t","type":"collection"}"#,
+    );
+    // (`beta` vs `Beta` can't both exist on case-insensitive filesystems; the
+    // lowercase-first tie-break is covered by the unit test in collection.rs.)
+    for name in ["Beta", "alpha", "01-users", "_setup", "-dash"] {
+        write(root, &format!("{name}/r.bru"), &request(name, 1));
+    }
+    let c = Collection::load(root).unwrap();
+    assert_eq!(
+        names(&c, root),
+        [
+            "_setup/r.bru",
+            "-dash/r.bru",
+            "01-users/r.bru",
+            "alpha/r.bru",
+            "Beta/r.bru"
+        ]
+    );
+}
+
+// utils/collection.js:61-63 uses lstat: a symlinked directory is not a folder, while a
+// symlinked .bru file is read through the link.
+#[cfg(unix)]
+#[test]
+fn symlinked_dirs_are_not_folders() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "bruno.json",
+        r#"{"version":"1","name":"t","type":"collection"}"#,
+    );
+    write(root, "a.bru", &request("a", 1));
+    write(root, "real/b.bru", &request("b", 1));
+    std::os::unix::fs::symlink(".", root.join("loop")).unwrap();
+    std::os::unix::fs::symlink(root.join("real"), root.join("linked")).unwrap();
+    std::os::unix::fs::symlink(root.join("a.bru"), root.join("s.bru")).unwrap();
+    let c = Collection::load(root).unwrap();
+    assert_eq!(names(&c, root), ["real/b.bru", "a.bru", "s.bru"]);
 }
 
 #[test]

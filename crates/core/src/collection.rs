@@ -246,7 +246,9 @@ fn load_folder(root: &Path, dir: &Path, ignore: &[String]) -> Result<Folder, Loa
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or_default();
-        if path.is_dir() {
+        // utils/collection.js:61-63: lstat, so a symlinked directory is not a folder.
+        let is_dir = std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir());
+        if is_dir {
             let ignored = file_name.starts_with('.')
                 || ALWAYS_IGNORED.contains(&file_name)
                 || (dir == root && file_name == "environments")
@@ -315,10 +317,10 @@ fn sort_folders(mut folders: Vec<Folder>) -> Vec<Folder> {
     let dir_name = |f: &Folder| {
         f.path
             .file_name()
-            .map(|n| n.to_string_lossy().to_lowercase())
+            .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default()
     };
-    folders.sort_by_key(dir_name);
+    folders.sort_by(|a, b| locale_compare(&dir_name(a), &dir_name(b)));
     let valid = |f: &Folder| f.seq.is_some_and(|s| s.fract() == 0.0 && s > 0.0);
     let (mut with_seq, without): (Vec<Folder>, Vec<Folder>) = folders.into_iter().partition(valid);
     with_seq.sort_by(|a, b| a.seq.partial_cmp(&b.seq).unwrap_or(Ordering::Equal));
@@ -331,4 +333,55 @@ fn sort_folders(mut folders: Vec<Folder>) -> Vec<Folder> {
         }
     }
     slots.into_iter().flatten().collect()
+}
+
+/// Approximates JavaScript `localeCompare` with ICU root collation for ASCII:
+/// primary order is whitespace and punctuation (in CLDR root order) < digits <
+/// letters (case-insensitive); ties break lowercase-first, then by code point.
+/// Non-ASCII characters sort after ASCII letters by code point, case-folded;
+/// accents and other scripts are not collated like ICU.
+fn locale_compare(a: &str, b: &str) -> Ordering {
+    let primary = |s: &str| s.chars().map(primary_weight).collect::<Vec<_>>();
+    primary(a)
+        .cmp(&primary(b))
+        .then_with(|| {
+            let tertiary = |s: &str| s.chars().map(|c| c.is_uppercase()).collect::<Vec<_>>();
+            tertiary(a).cmp(&tertiary(b))
+        })
+        .then_with(|| a.cmp(b))
+}
+
+/// CLDR root order of ASCII whitespace, punctuation and symbols.
+const PUNCTUATION_ORDER: &str = " _-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$";
+
+fn primary_weight(c: char) -> u32 {
+    if let Some(i) = PUNCTUATION_ORDER.find(c) {
+        return i as u32;
+    }
+    let base = PUNCTUATION_ORDER.len() as u32;
+    match c {
+        '0'..='9' => base + (c as u32 - '0' as u32),
+        'a'..='z' | 'A'..='Z' => base + 10 + (c.to_ascii_lowercase() as u32 - 'a' as u32),
+        _ if c.is_ascii() => c as u32,
+        _ => base + 36 + c.to_lowercase().next().map_or(c as u32, |l| l as u32),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn locale_compare_like_icu_root() {
+        let mut names = vec![
+            "beta", "Beta", "alpha", "01-users", "_setup", "-dash", "a b", "10", "9",
+        ];
+        names.sort_by(|a, b| locale_compare(a, b));
+        assert_eq!(
+            names,
+            [
+                "_setup", "-dash", "01-users", "10", "9", "a b", "alpha", "beta", "Beta"
+            ]
+        );
+    }
 }

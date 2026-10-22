@@ -46,15 +46,15 @@ fn env_opts() -> RunOptions {
 #[tokio::test]
 async fn runs_in_order_and_reports() {
     let server = MockServer::start().await;
-    Mock::given(path("/a"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("aa"))
+    Mock::given(path("/z"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("zz"))
         .mount(&server)
         .await;
-    Mock::given(path("/b"))
+    Mock::given(path("/a"))
         .respond_with(ResponseTemplate::new(200))
         .mount(&server)
         .await;
-    Mock::given(path("/c"))
+    Mock::given(path("/m"))
         .respond_with(ResponseTemplate::new(500))
         .mount(&server)
         .await;
@@ -66,9 +66,10 @@ async fn runs_in_order_and_reports() {
         "environments/local.bru",
         &format!("vars {{\n  host: {}\n}}\n", server.uri()),
     );
-    write(root, "c.bru", &request("c", 3));
-    write(root, "a.bru", &request("a", 1));
-    write(root, "b.bru", &request("b", 2));
+    // Seq order (z, a, m) differs from name order, so this fails if seq is ignored.
+    write(root, "m.bru", &request("m", 3));
+    write(root, "z.bru", &request("z", 1));
+    write(root, "a.bru", &request("a", 2));
     let (report, events) = run_all(root, &env_opts()).await;
     let report = report.unwrap();
     assert_eq!((report.passed, report.failed, report.skipped), (3, 0, 0));
@@ -79,7 +80,7 @@ async fn runs_in_order_and_reports() {
             _ => None,
         })
         .collect();
-    assert_eq!(started, ["a", "b", "c"]);
+    assert_eq!(started, ["z", "a", "m"]);
     assert!(matches!(
         events[1],
         RunEvent::Passed {
