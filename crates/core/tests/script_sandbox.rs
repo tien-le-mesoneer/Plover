@@ -270,3 +270,27 @@ async fn per_run_overhead_is_reported() {
     }
     eprintln!("per-script overhead: {:?}", start.elapsed() / n);
 }
+
+#[tokio::test]
+async fn cancelling_a_run_frees_its_worker() {
+    let e = engine(); // default 30 s timeout
+    run(&e, "").await; // start the workers
+    let busy: Vec<_> = (0..8)
+        .map(|_| {
+            let e = e.clone();
+            tokio::spawn(async move { run(&e, "while (true) {}").await })
+        })
+        .collect();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    for task in &busy {
+        task.abort();
+    }
+    let start = Instant::now();
+    let out = run(&e, "console.log('free')").await;
+    assert_eq!(out.console[0].text, "free");
+    assert!(
+        start.elapsed() < Duration::from_millis(1500),
+        "{:?}",
+        start.elapsed()
+    );
+}

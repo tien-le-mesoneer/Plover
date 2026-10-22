@@ -11,6 +11,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
@@ -160,6 +161,18 @@ struct Inner {
 struct Job {
     job: EngineJob,
     reply: oneshot::Sender<EngineOutput>,
+    /// Set when the caller stops waiting (its future was dropped): the worker skips or
+    /// interrupts the job.
+    cancelled: Arc<AtomicBool>,
+}
+
+/// Marks the job cancelled when `ScriptEngine::run`'s future is dropped before it ends.
+struct CancelOnDrop(Arc<AtomicBool>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
 }
 
 impl ScriptEngine {
@@ -194,16 +207,26 @@ impl ScriptEngine {
 
     pub async fn run(&self, job: EngineJob) -> EngineOutput {
         let (reply, rx) = oneshot::channel();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let guard = CancelOnDrop(Arc::clone(&cancelled));
         let sent = self
             .sender()
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .send(Job { job, reply });
+            .send(Job {
+                job,
+                reply,
+                cancelled,
+            });
         if sent.is_err() {
             return internal("script workers are not running");
         }
-        rx.await
-            .unwrap_or_else(|_| internal("script worker stopped unexpectedly"))
+        let output = rx
+            .await
+            .unwrap_or_else(|_| internal("script worker stopped unexpectedly"));
+        // Finished normally: nothing to cancel.
+        std::mem::forget(guard);
+        output
     }
 
     fn sender(&self) -> &Mutex<mpsc::Sender<Job>> {
@@ -245,9 +268,17 @@ fn worker_loop(limits: ScriptLimits, rx: &Mutex<mpsc::Receiver<Job>>) {
             let rx = rx.lock().unwrap_or_else(PoisonError::into_inner);
             rx.recv()
         };
-        let Ok(Job { job, reply }) = job else {
+        let Ok(Job {
+            job,
+            reply,
+            cancelled,
+        }) = job
+        else {
             return;
         };
+        if cancelled.load(Ordering::Relaxed) {
+            continue;
+        }
         if worker.is_none() {
             match Worker::new(limits) {
                 Ok(w) => worker = Some(w),
@@ -258,7 +289,7 @@ fn worker_loop(limits: ScriptLimits, rx: &Mutex<mpsc::Receiver<Job>>) {
             }
         }
         let Some(w) = worker.as_ref() else { continue };
-        let output = catch_unwind(AssertUnwindSafe(|| w.execute(job)));
+        let output = catch_unwind(AssertUnwindSafe(|| w.execute(job, cancelled)));
         let output = output.unwrap_or_else(|_| {
             // Start over with a fresh runtime after a panic.
             worker = None;
@@ -272,6 +303,8 @@ struct Worker {
     runtime: Runtime,
     limits: ScriptLimits,
     deadline: Rc<Cell<Option<Instant>>>,
+    /// The running job's cancel flag, read by the interrupt handler.
+    cancelled: Rc<RefCell<Arc<AtomicBool>>>,
     /// Module bytecode of each library from `LIBS`, compiled on first use.
     libs: Rc<RefCell<HashMap<&'static str, Vec<u8>>>>,
 }
@@ -282,24 +315,30 @@ impl Worker {
         runtime.set_memory_limit(limits.memory_bytes);
         runtime.set_max_stack_size(limits.max_stack_bytes);
         let deadline: Rc<Cell<Option<Instant>>> = Rc::new(Cell::new(None));
+        let cancelled: Rc<RefCell<Arc<AtomicBool>>> = Rc::default();
         let watched = Rc::clone(&deadline);
+        let watched_cancel = Rc::clone(&cancelled);
         runtime.set_interrupt_handler(Some(Box::new(move || {
             watched.get().is_some_and(|d| Instant::now() >= d)
+                || watched_cancel.borrow().load(Ordering::Relaxed)
         })));
         Ok(Worker {
             runtime,
             limits,
             deadline,
             libs: Rc::default(),
+            cancelled,
         })
     }
 
-    fn execute(&self, job: EngineJob) -> EngineOutput {
+    fn execute(&self, job: EngineJob, cancelled: Arc<AtomicBool>) -> EngineOutput {
+        *self.cancelled.borrow_mut() = cancelled;
         let started = Instant::now();
         let deadline = started + self.limits.timeout;
         self.deadline.set(Some(deadline));
         let output = self.execute_in_context(job, started, deadline);
         self.deadline.set(None);
+        *self.cancelled.borrow_mut() = Arc::default();
         output
     }
 
@@ -471,14 +510,29 @@ impl Worker {
                 return Some(ScriptError::Unsettled);
             }
             let wake = Instant::now() + Duration::from_secs_f64(delay / 1000.0);
+            if self.sleep_until(wake.min(deadline)) {
+                return Some(ScriptError::Internal("script cancelled".to_owned()));
+            }
             if wake >= deadline {
-                std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
                 return Some(ScriptError::Timeout(self.limits.timeout));
             }
-            std::thread::sleep(wake.saturating_duration_since(Instant::now()));
             if let Err(e) = context.with(|ctx| call_global::<()>(&ctx, "__brsFireTimer")) {
                 return Some(context.with(|ctx| self.classify(&ctx, e, deadline, segments)));
             }
+        }
+    }
+
+    /// Sleeps until `until` in short slices; `true` if the job was cancelled meanwhile.
+    fn sleep_until(&self, until: Instant) -> bool {
+        loop {
+            if self.cancelled.borrow().load(Ordering::Relaxed) {
+                return true;
+            }
+            let left = until.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return false;
+            }
+            std::thread::sleep(left.min(Duration::from_millis(20)));
         }
     }
 
