@@ -27,6 +27,23 @@ struct Cli {
 enum Command {
     /// Run a collection, a folder, or a single .bru request.
     Run(RunArgs),
+    /// Start the local web UI on 127.0.0.1.
+    Serve(ServeArgs),
+}
+
+#[derive(clap::Args)]
+struct ServeArgs {
+    /// Collection to open at startup (its root, a folder, or a .bru file).
+    path: Option<PathBuf>,
+    /// Port to listen on; 0 picks a random free port.
+    #[arg(long, default_value_t = 0)]
+    port: u16,
+    /// Print the URL without opening a browser.
+    #[arg(long)]
+    no_open: bool,
+    /// Also allow this origin to call the API (repeatable), e.g. the Vite dev server.
+    #[arg(long = "dev-origin", value_name = "URL")]
+    dev_origins: Vec<String>,
 }
 
 #[derive(clap::Args)]
@@ -68,8 +85,11 @@ async fn main() -> ExitCode {
         )
         .with_writer(std::io::stderr)
         .init();
-    let Command::Run(args) = Cli::parse().command;
-    match run(args).await {
+    let result = match Cli::parse().command {
+        Command::Run(args) => run(args).await,
+        Command::Serve(args) => serve(args).await,
+    };
+    match result {
         Ok(code) => code,
         Err(message) => {
             eprintln!("error: {message}");
@@ -106,4 +126,34 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
     } else {
         ExitCode::SUCCESS
     })
+}
+
+async fn serve(args: ServeArgs) -> Result<ExitCode, String> {
+    let shutdown = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    let (running, server) = brs_server::start(
+        brs_server::ServerConfig {
+            port: args.port,
+            dev_origins: args.dev_origins,
+            exec: ExecOptions::default(),
+        },
+        shutdown,
+    )
+    .await
+    .map_err(|e| format!("cannot start server: {e}"))?;
+    if let Some(path) = &args.path {
+        running
+            .workspace
+            .open(path)
+            .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    }
+    println!("bru-rs listening on {}", running.url);
+    if !args.no_open
+        && let Err(e) = webbrowser::open(&running.url)
+    {
+        eprintln!("could not open a browser ({e}); open the URL above");
+    }
+    server.await.map_err(|e| format!("server error: {e}"))?;
+    Ok(ExitCode::SUCCESS)
 }

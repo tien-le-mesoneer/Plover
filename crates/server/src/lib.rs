@@ -2,6 +2,7 @@
 //! the embedded UI. Binds to 127.0.0.1 only.
 
 mod api;
+mod assets;
 mod error;
 mod security;
 mod state;
@@ -51,6 +52,7 @@ pub fn router(state: AppState) -> Router {
         ));
     Router::new()
         .nest("/api", api)
+        .fallback(assets::serve)
         .layer(middleware::from_fn_with_state(
             state.clone(),
             security::check_host_and_origin,
