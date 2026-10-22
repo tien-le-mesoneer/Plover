@@ -1,0 +1,20 @@
+[package]
+name = "brs-cli"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "bru-rs"
+path = "src/main.rs"
+
+[dependencies]
+brs-core = { path = "../core" }
+clap = { version = "4.6.7", features = ["derive"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[dev-dependencies]
+assert_cmd = "2.2.2"
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }
+wiremock = "0.6.5"

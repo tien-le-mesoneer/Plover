@@ -275,10 +275,7 @@ fn load_folder(root: &Path, dir: &Path, ignore: &[String]) -> Result<Folder, Loa
                     file: Box::new(file),
                 },
             )),
-            Err(error) => {
-                tracing::warn!(path = %path.display(), %error, "skipping invalid file");
-                invalid.push(Item::Invalid { path, error });
-            }
+            Err(error) => invalid.push(Item::Invalid { path, error }),
         }
     }
     // Bruno `utils/collection.js`: folders (name, then seq) first, then requests by seq.

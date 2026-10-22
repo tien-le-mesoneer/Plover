@@ -1,0 +1,109 @@
+//! `bru-rs`: run Bruno collections from the command line.
+
+mod print;
+
+use std::path::PathBuf;
+use std::process::ExitCode;
+use std::time::Duration;
+
+use brs_core::collection::Collection;
+use brs_core::executor::ExecOptions;
+use brs_core::runner::{self, RunOptions};
+use brs_core::vars::VarMap;
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(
+    name = "bru-rs",
+    version,
+    about = "Run Bruno-compatible API collections"
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Run a collection, a folder, or a single .bru request.
+    Run(RunArgs),
+}
+
+#[derive(clap::Args)]
+struct RunArgs {
+    /// Collection directory, folder, or .bru file.
+    path: PathBuf,
+    /// Environment name from the collection's `environments/` folder.
+    #[arg(long)]
+    env: Option<String>,
+    /// Override or supply an environment variable (repeatable), e.g. `--env-var token=abc`.
+    #[arg(long = "env-var", value_name = "KEY=VALUE", value_parser = parse_key_value)]
+    env_vars: Vec<(String, String)>,
+    /// Do not verify TLS certificates.
+    #[arg(long)]
+    insecure: bool,
+    /// Request timeout in milliseconds (default: none).
+    #[arg(long, value_name = "N")]
+    timeout_ms: Option<u64>,
+    /// Do not follow HTTP redirects.
+    #[arg(long)]
+    no_follow_redirects: bool,
+}
+
+const EXIT_FAILED: u8 = 1;
+const EXIT_SETUP: u8 = 2;
+
+fn parse_key_value(s: &str) -> Result<(String, String), String> {
+    s.split_once('=')
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .filter(|(k, _)| !k.is_empty())
+        .ok_or_else(|| format!("expected KEY=VALUE, got `{s}`"))
+}
+
+#[tokio::main]
+async fn main() -> ExitCode {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
+        )
+        .with_writer(std::io::stderr)
+        .init();
+    let Command::Run(args) = Cli::parse().command;
+    match run(args).await {
+        Ok(code) => code,
+        Err(message) => {
+            eprintln!("error: {message}");
+            ExitCode::from(EXIT_SETUP)
+        }
+    }
+}
+
+async fn run(args: RunArgs) -> Result<ExitCode, String> {
+    if !args.path.exists() {
+        return Err(format!("{} does not exist", args.path.display()));
+    }
+    let root = Collection::find_root(&args.path).map_err(|e| e.to_string())?;
+    let collection = Collection::load(&root).map_err(|e| e.to_string())?;
+    let opts = RunOptions {
+        env: args.env,
+        env_overrides: args.env_vars.into_iter().collect::<VarMap>(),
+        exec: ExecOptions {
+            timeout: args.timeout_ms.map(Duration::from_millis),
+            follow_redirects: !args.no_follow_redirects,
+            verify_tls: !args.insecure,
+            ..ExecOptions::default()
+        },
+    };
+    let mut printer = print::Printer::new(&collection.root);
+    let report = runner::run(&collection, &args.path, &opts, &mut |event| {
+        printer.event(event)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    print::summary(&report);
+    Ok(if report.failed > 0 {
+        ExitCode::from(EXIT_FAILED)
+    } else {
+        ExitCode::SUCCESS
+    })
+}
