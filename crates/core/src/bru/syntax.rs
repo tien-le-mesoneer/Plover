@@ -7,6 +7,7 @@ use pest::iterators::Pair as PestPair;
 use pest_derive::Parser;
 
 use super::kind::{BlockKind, block_kind};
+use super::render::render_block;
 
 #[derive(Parser)]
 #[grammar = "bru/grammar.pest"]
@@ -160,6 +161,82 @@ impl BruDocument {
     /// First block with this name.
     pub fn block(&self, name: &str) -> Option<&Block> {
         self.blocks().find(|b| b.name == name)
+    }
+
+    /// Sets the first block named `name`. A block whose content already
+    /// equals `content` keeps its source text; a changed block is rendered
+    /// canonically; a missing block is appended after the last block.
+    pub fn set_block(&mut self, name: &str, content: BlockContent) {
+        let crlf = self.uses_crlf();
+        let render = |content: &BlockContent| {
+            let text = render_block(name, content);
+            if crlf {
+                text.replace('\n', "\r\n")
+            } else {
+                text
+            }
+        };
+        if let Some(block) = self.block_mut(name) {
+            if block.content != content {
+                block.raw = render(&content);
+                block.content = content;
+            }
+            return;
+        }
+        let new = Segment::Block(Block {
+            name: name.to_owned(),
+            raw: render(&content),
+            content,
+        });
+        let newline = if crlf { "\r\n" } else { "\n" };
+        match self
+            .segments
+            .iter()
+            .rposition(|s| matches!(s, Segment::Block(_)))
+        {
+            Some(last) => {
+                self.segments
+                    .insert(last + 1, Segment::Trivia(newline.repeat(2)));
+                self.segments.insert(last + 2, new);
+            }
+            None => {
+                self.segments.push(new);
+                self.segments.push(Segment::Trivia(newline.to_owned()));
+            }
+        }
+    }
+
+    /// Removes the first block named `name` and the whitespace separating it from its neighbour.
+    pub fn remove_block(&mut self, name: &str) {
+        let Some(index) = self
+            .segments
+            .iter()
+            .position(|s| matches!(s, Segment::Block(b) if b.name == name))
+        else {
+            return;
+        };
+        let before = index
+            .checked_sub(1)
+            .filter(|i| matches!(self.segments[*i], Segment::Trivia(_)));
+        let after =
+            Some(index + 1).filter(|i| matches!(self.segments.get(*i), Some(Segment::Trivia(_))));
+        self.segments.remove(index);
+        if let Some(i) = before.filter(|i| *i > 0).or(after.map(|i| i - 1)) {
+            self.segments.remove(i);
+        }
+    }
+
+    fn block_mut(&mut self, name: &str) -> Option<&mut Block> {
+        self.segments.iter_mut().find_map(|s| match s {
+            Segment::Block(b) if b.name == name => Some(b),
+            _ => None,
+        })
+    }
+
+    fn uses_crlf(&self) -> bool {
+        let text = self.write();
+        text.find('\n')
+            .is_some_and(|i| i > 0 && text.as_bytes()[i - 1] == b'\r')
     }
 }
 

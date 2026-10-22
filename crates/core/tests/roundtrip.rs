@@ -75,3 +75,32 @@ fn all_fixtures_have_no_unexpected_opaque() {
         offenders.join("\n")
     );
 }
+
+#[test]
+fn render_parse_is_identity_on_content() {
+    let mut offenders = Vec::new();
+    for path in all_fixtures() {
+        let src = std::fs::read_to_string(&path).expect("read fixture");
+        let doc = BruDocument::parse(&src).expect("parse");
+        for block in doc.blocks() {
+            if *block.content() == BlockContent::Opaque {
+                continue;
+            }
+            let rendered = brs_core::bru::render::render_block(&block.name, block.content());
+            let reparsed = BruDocument::parse(&rendered);
+            let same = reparsed
+                .as_ref()
+                .ok()
+                .and_then(|d| d.block(&block.name))
+                .is_some_and(|b| b.content() == block.content());
+            if !same {
+                offenders.push(format!("{}: {}\n{rendered}", path.display(), block.name));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "render/parse mismatch:\n{}",
+        offenders.join("\n---\n")
+    );
+}
