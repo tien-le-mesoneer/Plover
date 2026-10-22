@@ -215,11 +215,12 @@ async fn run_task(
         ..RunOptions::default()
     };
     let environment = opts.env.as_deref().and_then(|e| collection.environment(e));
+    let runtime_before = open.runtime();
     let mut state = RunVars::start(
         &collection,
         environment,
         &opts.env_overrides,
-        open.runtime(),
+        runtime_before.clone(),
     );
     let environment_before = state.environment.clone();
     let events = tx.clone();
@@ -238,7 +239,7 @@ async fn run_task(
     .await;
     match result {
         Ok(_) => {
-            open.set_runtime(state.runtime);
+            open.record_runtime_changes(&runtime_before, &state.runtime);
             if let Some(env) = &opts.env {
                 open.record_env_changes(env, &environment_before, &state.environment);
             }

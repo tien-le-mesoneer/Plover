@@ -847,7 +847,8 @@ pub async fn send_one_with(
         });
     }
     let overrides = input.env.map(|e| open.env_overrides(e)).unwrap_or_default();
-    let mut state = RunVars::start(&collection, environment, &overrides, open.runtime());
+    let runtime_before = open.runtime();
+    let mut state = RunVars::start(&collection, environment, &overrides, runtime_before.clone());
     let environment_before = state.environment.clone();
     let engine = ScriptEngine::shared(limits);
     let exec = Exec {
@@ -859,7 +860,7 @@ pub async fn send_one_with(
     let executed = exec
         .execute(&found, input.draft, &mut state, &mut |_, _| {})
         .await;
-    open.set_runtime(state.runtime.clone());
+    open.record_runtime_changes(&runtime_before, &state.runtime);
     if let Some(env) = input.env {
         open.record_env_changes(env, &environment_before, &state.environment);
     }

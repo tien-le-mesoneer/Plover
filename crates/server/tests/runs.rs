@@ -272,3 +272,55 @@ async fn run_events_include_tests() {
     assert_eq!(failed["asserts"][0]["error"], "expected 200 to equal 201");
     assert_eq!(failed["console"][0]["text"], "ran");
 }
+
+#[tokio::test]
+async fn concurrent_send_and_run_keep_each_others_runtime_vars() {
+    use brs_core::runner::{SendInput, send_one};
+    let mock = MockServer::start().await;
+    Mock::given(path_regex("^/slow$"))
+        .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_millis(600)))
+        .mount(&mock)
+        .await;
+    Mock::given(path_regex("^/login$"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&mock)
+        .await;
+    let dir = small_collection(&mock.uri());
+    write(
+        dir.path(),
+        "slow.bru",
+        "meta {\n  name: slow\n  type: http\n  seq: 9\n}\n\nget {\n  url: {{host}}/slow\n}\n\nscript:post-response {\n  bru.setVar('fromRun', 1);\n  bru.deleteVar('stale');\n}\n",
+    );
+    write(
+        dir.path(),
+        "login.bru",
+        "meta {\n  name: login\n  type: http\n  seq: 10\n}\n\nget {\n  url: {{host}}/login\n}\n\nscript:post-response {\n  bru.setVar('token', 't');\n}\n",
+    );
+    let running = server().await;
+    let id = running.workspace.open(dir.path()).unwrap();
+    let open = running.workspace.get(&id).unwrap();
+    open.set_runtime([("stale".to_owned(), json!(1))].into());
+    let mut socket = authed(&running).await;
+    start_run(&mut socket, "r1", &id.0, "slow.bru").await;
+    assert_eq!(next_json(&mut socket).await["type"], "started");
+    // While the run's request is in flight, a send from the UI sets `token`.
+    send_one(
+        &open,
+        SendInput {
+            item_id: "login.bru",
+            draft: None,
+            env: Some("local"),
+        },
+    )
+    .await
+    .unwrap();
+    loop {
+        if next_json(&mut socket).await["type"] == "finished" {
+            break;
+        }
+    }
+    let runtime = open.runtime();
+    assert_eq!(runtime.get("token"), Some(&json!("t")), "{runtime:?}");
+    assert_eq!(runtime.get("fromRun"), Some(&json!(1)), "{runtime:?}");
+    assert!(!runtime.contains_key("stale"), "{runtime:?}");
+}

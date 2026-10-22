@@ -67,6 +67,14 @@ impl OpenCollection {
         *self.runtime.lock().unwrap_or_else(PoisonError::into_inner) = vars;
     }
 
+    /// Applies what one send or run changed in the runtime variables (`before` → `after`):
+    /// values it set or changed, and names it deleted. Changes other sends or runs made
+    /// meanwhile are kept.
+    pub fn record_runtime_changes(&self, before: &ValueMap, after: &ValueMap) {
+        let mut runtime = self.runtime.lock().unwrap_or_else(PoisonError::into_inner);
+        apply_changes(&mut runtime, before, after);
+    }
+
     /// What overrides environment `env`'s file values: secrets entered for it, then
     /// values scripts set earlier in this session.
     pub fn env_overrides(&self, env: &str) -> ValueMap {
@@ -126,6 +134,19 @@ impl OpenCollection {
     /// Names (never values) of the secrets that currently have a value, sorted.
     pub fn secret_names_set(&self, env: &str) -> Vec<String> {
         self.secrets(env).into_keys().collect()
+    }
+}
+
+/// Sets the values `after` has that differ from `before`, and removes names `before` had
+/// that `after` lacks; everything else in `target` stays.
+fn apply_changes(target: &mut ValueMap, before: &ValueMap, after: &ValueMap) {
+    for (name, value) in after {
+        if before.get(name) != Some(value) {
+            target.insert(name.clone(), value.clone());
+        }
+    }
+    for name in before.keys().filter(|k| !after.contains_key(*k)) {
+        target.remove(name);
     }
 }
 
