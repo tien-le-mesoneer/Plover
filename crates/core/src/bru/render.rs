@@ -17,8 +17,20 @@ pub fn render_block(name: &str, content: &BlockContent) -> String {
         BlockContent::Text(text) if text.is_empty() => format!("{name} {{\n\n}}"),
         BlockContent::Text(text) => format!("{name} {{\n{}\n}}", indent(text, "  ")),
         BlockContent::List(items) if items.is_empty() => format!("{name} [\n]"),
+        // jsonToEnv.js:36-43: annotations, `~` for disabled, items joined by `,\n`.
         BlockContent::List(items) => {
-            let body: Vec<String> = items.iter().map(|i| format!("  {i}")).collect();
+            let body: Vec<String> = items
+                .iter()
+                .map(|item| {
+                    let mut entry = String::new();
+                    for a in &item.annotations {
+                        entry.push_str(&format!("  {}\n", render_annotation(a)));
+                    }
+                    let prefix = if item.enabled { "" } else { "~" };
+                    entry.push_str(&format!("  {prefix}{}", item.name));
+                    entry
+                })
+                .collect();
             format!("{name} [\n{}\n]", body.join(",\n"))
         }
         BlockContent::Opaque => format!("{name} {{\n}}"),

@@ -72,10 +72,14 @@ pub fn resolve(
         .filter_map(|f| f.scope.as_ref())
         .collect();
 
-    let mut environment = ctx
-        .environment
-        .map(|e| enabled_map(&e.file.vars))
-        .unwrap_or_default();
+    let mut environment = VarMap::new();
+    if let Some(env) = ctx.environment {
+        environment = enabled_map(&env.file.vars);
+        // Secret names get '' (envToJson.js:168, :325) unless `--env-var` supplies a value.
+        for secret in env.file.secrets.iter().filter(|s| s.enabled) {
+            environment.insert(secret.name.clone(), String::new());
+        }
+    }
     environment.extend(
         ctx.env_overrides
             .iter()
@@ -486,28 +490,37 @@ mod tests {
         assert_eq!(run(&f, "r.bru", None, &[]).unwrap().url, "http://h/?a=1");
     }
 
+    // Secret names get '' (envToJson.js:168, :325); `--env-var` values win over the file.
     #[test]
     fn env_override_wins() {
         let f = fixture(&[
             (
                 "environments/dev.bru",
-                "vars {\n  token: a\n}\nvars:secret [\n  secret\n]\n",
+                "vars {\n  token: a\n}\nvars:secret [\n  secret,\n  ~off\n]\n",
             ),
             (
                 "r.bru",
-                "get {\n  url: http://h/{{secret}}\n  auth: bearer\n}\n\nauth:bearer {\n  token: {{token}}\n}\n",
+                "get {\n  url: http://h/{{secret}}/{{off}}\n  auth: bearer\n}\n\nauth:bearer {\n  token: {{token}}\n}\n",
             ),
         ]);
         let r = run(&f, "r.bru", Some("dev"), &[("token", "b"), ("secret", "s")]).unwrap();
         assert_eq!(header(&r, "authorization"), Some("Bearer b"));
-        assert_eq!(r.url, "http://h/s");
+        assert_eq!(r.url, "http://h/s/{{off}}");
         let r = run(&f, "r.bru", Some("dev"), &[]).unwrap();
         assert_eq!(header(&r, "authorization"), Some("Bearer a"));
-        assert_eq!(r.url, "http://h/{{secret}}");
+        assert_eq!(r.url, "http://h//{{off}}");
     }
 
-    // prepare-request.js:36 detects an explicit content type case-insensitively;
-    // only without one does :366-367 add `content-type: application/json`.
+    // `@name` vars are request vars named `name` (bruToJson.js:1155-1165).
+    #[test]
+    fn local_var_resolves() {
+        let f = fixture(&[(
+            "r.bru",
+            "get {\n  url: http://h/{{token}}\n}\n\nvars:pre-request {\n  @token: abc\n}\n",
+        )]);
+        assert_eq!(run(&f, "r.bru", None, &[]).unwrap().url, "http://h/abc");
+    }
+
     #[test]
     fn json_content_type_default_and_explicit() {
         let body = "post {\n  url: http://h\n  body: json\n}\n\nbody:json {\n  {\"a\": \"{{v}}\"}\n}\n\nvars:pre-request {\n  v: 1\n}\n";

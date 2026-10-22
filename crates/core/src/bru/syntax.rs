@@ -38,8 +38,16 @@ pub struct Block {
 pub enum BlockContent {
     Dict(Vec<Pair>),
     Text(String),
-    List(Vec<String>),
+    List(Vec<ListItem>),
     Opaque,
+}
+
+/// One name of a list block such as `vars:secret`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListItem {
+    pub name: String,
+    pub enabled: bool,
+    pub annotations: Vec<Annotation>,
 }
 
 /// A `key: value` entry of a dictionary block.
@@ -133,7 +141,15 @@ impl BruDocument {
                 Rule::bom | Rule::trivia => {
                     segments.push(Segment::Trivia(part.as_str().to_owned()))
                 }
-                Rule::block => segments.push(Segment::Block(block_from_pest(part))),
+                Rule::block => {
+                    let (line, column) = part.line_col();
+                    let block = block_from_pest(part).map_err(|message| SyntaxError {
+                        line,
+                        column,
+                        message,
+                    })?;
+                    segments.push(Segment::Block(block));
+                }
                 _ => {}
             }
         }
@@ -177,6 +193,10 @@ impl BruDocument {
             }
         };
         if let Some(block) = self.block_mut(name) {
+            if block.content == BlockContent::Opaque {
+                tracing::warn!(block = name, "not overwriting a block that was not parsed");
+                return;
+            }
             if block.content != content {
                 block.raw = render(&content);
                 block.content = content;
@@ -248,14 +268,10 @@ impl BruDocument {
     }
 }
 
-fn block_from_pest(block: PestPair<'_, Rule>) -> Block {
+fn block_from_pest(block: PestPair<'_, Rule>) -> Result<Block, String> {
     let raw = block.as_str().to_owned();
     let Some(form) = block.into_inner().next() else {
-        return Block {
-            name: String::new(),
-            raw,
-            content: BlockContent::Opaque,
-        };
+        return Err("empty block".into());
     };
     let opener = match form.as_rule() {
         Rule::bracket_block => '[',
@@ -268,25 +284,21 @@ fn block_from_pest(block: PestPair<'_, Rule>) -> Block {
         .map(|n| n.as_str().to_owned())
         .unwrap_or_default();
     let body = parts.next().map(|b| b.as_str()).unwrap_or("");
-    let content = parse_content(&name, opener, body);
-    Block { name, raw, content }
+    let content = parse_content(&name, opener, body)?;
+    Ok(Block { name, raw, content })
 }
 
-pub(crate) fn parse_content(name: &str, opener: char, body: &str) -> BlockContent {
-    let parsed = match block_kind(name, opener) {
+/// Content of a known block that does not match Bruno's grammar is an error,
+/// as in Bruno; unknown blocks are kept opaque.
+pub(crate) fn parse_content(name: &str, opener: char, body: &str) -> Result<BlockContent, String> {
+    let parsed = match block_kind(name, opener)? {
         BlockKind::Dict => parse_dict(body, Rule::dict),
         BlockKind::AssertDict => parse_dict(body, Rule::assert_dict),
         BlockKind::Text => Some(BlockContent::Text(parse_text(body))),
         BlockKind::List => parse_list(body),
         BlockKind::Opaque => Some(BlockContent::Opaque),
     };
-    parsed.unwrap_or_else(|| {
-        tracing::warn!(
-            block = name,
-            "block content not understood; preserving it verbatim"
-        );
-        BlockContent::Opaque
-    })
+    parsed.ok_or_else(|| format!("invalid content in block `{name}`"))
 }
 
 fn parse_dict(body: &str, rule: Rule) -> Option<BlockContent> {
@@ -302,7 +314,7 @@ fn parse_dict(body: &str, rule: Rule) -> Option<BlockContent> {
 
 fn pair_from_pest(pair: PestPair<'_, Rule>) -> Pair {
     let mut key = String::new();
-    let mut enabled = true;
+    let mut tilde = false;
     let mut annotations = Vec::new();
     let mut value = PairValue::Single(String::new());
     for part in pair.into_inner() {
@@ -310,7 +322,7 @@ fn pair_from_pest(pair: PestPair<'_, Rule>) -> Pair {
             Rule::annotations => {
                 annotations = part.into_inner().map(annotation_from_pest).collect()
             }
-            Rule::disabled => enabled = false,
+            Rule::disabled => tilde = true,
             Rule::quoted_key => {
                 let inner = part.into_inner().next().map(|i| i.as_str()).unwrap_or("");
                 key = inner.replace("\\\"", "\"");
@@ -337,6 +349,8 @@ fn pair_from_pest(pair: PestPair<'_, Rule>) -> Pair {
             _ => {}
         }
     }
+    // bruToJson.js `quoted_key` keeps the `~` prefix; the name is then disabled if it starts with `~`.
+    let (key, enabled) = strip_disabled(if tilde { format!("~{key}") } else { key });
     Pair {
         key,
         value,
@@ -452,17 +466,41 @@ fn parse_text(body: &str) -> String {
         .join("\n")
 }
 
-/// `[ a, b ]` or one item per line. Annotated or quoted items are not modelled.
+/// envToJson.js `array`: comma-separated names with optional annotations; `~` disables.
 fn parse_list(body: &str) -> Option<BlockContent> {
-    if body.contains(['@', '"']) {
-        return None;
-    }
-    let items = body
-        .split(|c: char| c == ',' || c.is_whitespace())
-        .filter(|s| !s.is_empty())
-        .map(str::to_owned)
+    let list = BruParser::parse(Rule::list_body, body).ok()?.next()?;
+    let items = list
+        .into_inner()
+        .filter(|e| e.as_rule() == Rule::list_entry)
+        .filter_map(|entry| {
+            let mut annotations = Vec::new();
+            let mut raw = "";
+            for part in entry.into_inner() {
+                match part.as_rule() {
+                    Rule::annotations => {
+                        annotations = part.into_inner().map(annotation_from_pest).collect()
+                    }
+                    Rule::list_name => raw = part.as_str(),
+                    _ => {}
+                }
+            }
+            let (name, enabled) = strip_disabled(raw.to_owned());
+            (!name.is_empty()).then_some(ListItem {
+                name,
+                enabled,
+                annotations,
+            })
+        })
         .collect();
     Some(BlockContent::List(items))
+}
+
+/// Bruno `mapPairListToKeyValPairs`: a name starting with `~` is disabled and loses one `~`.
+fn strip_disabled(name: String) -> (String, bool) {
+    match name.strip_prefix('~') {
+        Some(rest) => (rest.to_owned(), false),
+        None => (name, true),
+    }
 }
 
 fn syntax_error(src: &str, e: pest::error::Error<Rule>) -> SyntaxError {
@@ -674,10 +712,11 @@ mod tests {
     #[test]
     fn secret_list_block() {
         let doc = BruDocument::parse("vars:secret [\n  token,\n  other\n]\n").unwrap();
-        assert_eq!(
-            *doc.block("vars:secret").unwrap().content(),
-            BlockContent::List(vec!["token".into(), "other".into()])
-        );
+        let BlockContent::List(items) = doc.block("vars:secret").unwrap().content() else {
+            panic!("not a list")
+        };
+        let names: Vec<_> = items.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["token", "other"]);
     }
 
     #[test]
@@ -730,5 +769,66 @@ mod tests {
         let doc = BruDocument::parse(src).unwrap();
         assert_eq!(names(&doc), ["docs", "headers"]);
         assert_eq!(doc.write(), src);
+    }
+
+    // bruToJson.js `quoted_key` keeps a leading `~` inside the quotes; mapPairListToKeyValPairs
+    // then disables any name starting with `~` and strips one `~`.
+    #[test]
+    fn quoted_tilde_key_is_disabled() {
+        let src = "headers {\n  \"~x\": 1\n  ~\"~y\": 2\n  ~~z: 3\n}\n";
+        let doc = BruDocument::parse(src).unwrap();
+        assert_eq!(doc.write(), src);
+        let pairs: Vec<_> = doc
+            .block("headers")
+            .unwrap()
+            .content()
+            .pairs()
+            .iter()
+            .map(kv)
+            .collect();
+        assert_eq!(
+            pairs,
+            [
+                ("x", "1".into(), false),
+                ("~y", "2".into(), false),
+                ("~z", "3".into(), false)
+            ]
+        );
+    }
+
+    // A known block whose content does not match Bruno's grammar fails the whole file
+    // (Bruno skips such files: bruno-cli/src/utils/collection.js:74-79).
+    #[test]
+    fn malformed_known_block_is_error() {
+        let err =
+            BruDocument::parse("get {\n  url: http://h\n}\n\nheaders {\n  x-a 1\n}\n").unwrap_err();
+        assert!(err.message.contains("headers"), "{}", err.message);
+        assert!(BruDocument::parse("headers [\n  a\n]\n").is_err());
+        assert!(
+            BruDocument::parse("vars:secret [\n  a\n  b\n]\n").is_err(),
+            "envToJson.js valuelist needs commas"
+        );
+        // Unknown blocks stay opaque and never fail the file.
+        assert!(BruDocument::parse("future {\n  anything ::: goes\n}\n").is_ok());
+    }
+
+    // envToJson.js:205-212 `arrayvalue` = annotations + name; :160-166 `~` disables.
+    #[test]
+    fn annotated_secret_list() {
+        let src = "vars:secret [\n  @description('api key')\n  token,\n  ~old\n]\n";
+        let doc = BruDocument::parse(src).unwrap();
+        assert_eq!(doc.write(), src);
+        let BlockContent::List(items) = doc.block("vars:secret").unwrap().content() else {
+            panic!("not a list")
+        };
+        assert_eq!(items[0].name, "token");
+        assert!(items[0].enabled);
+        assert_eq!(items[0].annotations[0].arg.as_deref(), Some("api key"));
+        assert_eq!((items[1].name.as_str(), items[1].enabled), ("old", false));
+        let rendered = crate::bru::render::render_block(
+            "vars:secret",
+            doc.block("vars:secret").unwrap().content(),
+        );
+        assert_eq!(format!("{rendered}\n"), src);
     }
 }

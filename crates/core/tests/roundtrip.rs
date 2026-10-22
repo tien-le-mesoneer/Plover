@@ -63,7 +63,7 @@ fn all_fixtures_have_no_unexpected_opaque() {
             } else {
                 '{'
             };
-            let known = block_kind(&block.name, opener) != BlockKind::Opaque;
+            let known = !matches!(block_kind(&block.name, opener), Ok(BlockKind::Opaque));
             if known && *block.content() == BlockContent::Opaque {
                 offenders.push(format!("{}: {}", path.display(), block.name));
             }

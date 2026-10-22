@@ -79,3 +79,10 @@ ann_sq_inner    = @{ (!"'" ~ ANY)* }
 ann_dq          = ${ "\"" ~ ann_dq_inner ~ "\"" }
 ann_dq_inner    = @{ ("\\" ~ ANY | !"\"" ~ ANY)* }
 ann_raw         = @{ (!")" ~ ANY)* }
+
+// ---- `vars:secret [ ... ]` content (envToJson.js `array`/`valuelist`/`arrayvalue`):
+// comma-separated names, each optionally preceded by annotation lines.
+list_body  = { SOI ~ stnl* ~ list_entry ~ (stnl* ~ "," ~ stnl* ~ list_entry)* ~ stnl* ~ EOI }
+stnl       = _{ hs | nl }
+list_entry = { annotations ~ hs* ~ list_name }
+list_name  = @{ (!("\r" | "\n" | " " | "\t" | "[" | "]" | ",") ~ ANY)* }

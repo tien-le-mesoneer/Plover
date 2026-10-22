@@ -53,23 +53,30 @@ const DICT_BLOCKS: &[&str] = &[
     "app",
 ];
 
-/// `raw_opener` is the character that opened the block: `{`, `[` or `:`.
-pub fn block_kind(name: &str, raw_opener: char) -> BlockKind {
-    match raw_opener {
-        '[' => return BlockKind::List,
-        '{' => {}
-        _ => return BlockKind::Opaque,
-    }
-    if name == "assert" {
-        BlockKind::AssertDict
+/// Bracket blocks Bruno parses as arrays of names (envToJson.js `secretvars`).
+const LIST_BLOCKS: &[&str] = &["vars:secret"];
+
+/// How a block is interpreted. `raw_opener` is the character that opened it:
+/// `{`, `[` or `:`. `Err` means a block name Bruno knows, written in a form its
+/// grammar rejects; Bruno fails the whole file in that case.
+pub fn block_kind(name: &str, raw_opener: char) -> Result<BlockKind, String> {
+    let known = if name == "assert" {
+        Some(('{', BlockKind::AssertDict))
     } else if TEXT_BLOCKS.contains(&name) || name.starts_with("script:") {
-        BlockKind::Text
+        Some(('{', BlockKind::Text))
     } else if DICT_BLOCKS.contains(&name)
         || name.starts_with("auth:")
         || name.starts_with("vars:externalsecrets:")
     {
-        BlockKind::Dict
+        Some(('{', BlockKind::Dict))
+    } else if LIST_BLOCKS.contains(&name) {
+        Some(('[', BlockKind::List))
     } else {
-        BlockKind::Opaque
+        None
+    };
+    match known {
+        Some((opener, kind)) if opener == raw_opener => Ok(kind),
+        Some((opener, _)) => Err(format!("block `{name}` must be opened with `{opener}`")),
+        None => Ok(BlockKind::Opaque),
     }
 }

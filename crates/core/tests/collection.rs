@@ -98,11 +98,18 @@ fn invalid_file_is_item_not_error() {
         r#"{"version":"1","name":"t","type":"collection"}"#,
     );
     write(root, "broken.bru", "get {\n");
+    // A known block with content Bruno's grammar rejects fails the file (collection.js:74-79).
+    write(
+        root,
+        "bad-headers.bru",
+        "get {\n  url: http://h\n}\n\nheaders {\n  x-a 1\n}\n",
+    );
     write(root, "ok.bru", &request("ok", 1));
     let c = Collection::load(root).unwrap();
     let refs = c.requests_under(root);
-    assert_eq!(refs.len(), 2);
+    assert_eq!(refs.len(), 3);
     assert!(matches!(refs[1].item, Item::Invalid { .. }));
+    assert!(matches!(refs[2].item, Item::Invalid { .. }));
 }
 
 #[test]

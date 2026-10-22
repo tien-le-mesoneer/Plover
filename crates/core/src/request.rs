@@ -67,6 +67,8 @@ pub struct KeyValue {
     pub name: String,
     pub value: String,
     pub enabled: bool,
+    /// `@name` in `vars:*` blocks: a request-local variable (Bruno `local: true`).
+    pub local: bool,
 }
 
 impl KeyValue {
@@ -75,6 +77,7 @@ impl KeyValue {
             name: name.into(),
             value: value.into(),
             enabled: true,
+            local: false,
         }
     }
 }

@@ -1,7 +1,7 @@
 //! Typed layer: maps `.bru` blocks to the request model and writes model
 //! changes back by touching only the blocks whose meaning changed.
 
-use super::syntax::{BlockContent, BruDocument, Pair, PairValue, SyntaxError};
+use super::syntax::{BlockContent, BruDocument, ListItem, Pair, PairValue, SyntaxError};
 use crate::request::{
     Auth, Body, HttpRequest, KeyValue, Method, MultipartField, MultipartValue, RequestSettings,
 };
@@ -46,7 +46,22 @@ pub struct EnvironmentFile {
     pub doc: BruDocument,
     pub vars: Vec<KeyValue>,
     /// Names from `vars:secret`; values live outside the file.
-    pub secret_names: Vec<String>,
+    pub secrets: Vec<SecretVar>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecretVar {
+    pub name: String,
+    pub enabled: bool,
+}
+
+impl SecretVar {
+    pub fn new(name: impl Into<String>) -> SecretVar {
+        SecretVar {
+            name: name.into(),
+            enabled: true,
+        }
+    }
 }
 
 impl RequestFile {
@@ -120,11 +135,28 @@ impl EnvironmentFile {
         if old.vars != self.vars {
             write_kv_block(&mut doc, "vars", &self.vars);
         }
-        if old.secret_names != self.secret_names {
-            if self.secret_names.is_empty() {
+        if old.secrets != self.secrets {
+            if self.secrets.is_empty() {
                 doc.remove_block("vars:secret");
             } else {
-                doc.set_block("vars:secret", BlockContent::List(self.secret_names.clone()));
+                let existing = match doc.block("vars:secret").map(|b| b.content()) {
+                    Some(BlockContent::List(items)) => items.clone(),
+                    _ => Vec::new(),
+                };
+                let items = self
+                    .secrets
+                    .iter()
+                    .map(|s| ListItem {
+                        name: s.name.clone(),
+                        enabled: s.enabled,
+                        annotations: existing
+                            .iter()
+                            .find(|e| e.name == s.name)
+                            .map(|e| e.annotations.clone())
+                            .unwrap_or_default(),
+                    })
+                    .collect();
+                doc.set_block("vars:secret", BlockContent::List(items));
             }
         }
         doc.write()
@@ -189,13 +221,19 @@ fn read_scope(doc: BruDocument) -> ScopeFile {
 }
 
 fn read_environment(doc: BruDocument) -> EnvironmentFile {
-    let secret_names = match doc.block("vars:secret").map(|b| b.content()) {
-        Some(BlockContent::List(items)) => items.clone(),
+    let secrets = match doc.block("vars:secret").map(|b| b.content()) {
+        Some(BlockContent::List(items)) => items
+            .iter()
+            .map(|i| SecretVar {
+                name: i.name.clone(),
+                enabled: i.enabled,
+            })
+            .collect(),
         _ => Vec::new(),
     };
     EnvironmentFile {
         vars: kv_list(&doc, "vars"),
-        secret_names,
+        secrets,
         doc,
     }
 }
@@ -278,15 +316,33 @@ fn dict_value(doc: &BruDocument, block: &str, key: &str) -> Option<String> {
         .map(|p| p.value.as_text())
 }
 
+/// Blocks whose `@name` keys are local variables (bruToJson.js:1155-1186,
+/// collectionBruToJson.js:673-683).
+const VAR_BLOCKS: &[&str] = &["vars:pre-request", "vars:post-response"];
+
 fn kv_list(doc: &BruDocument, block: &str) -> Vec<KeyValue> {
+    let locals = VAR_BLOCKS.contains(&block);
     pairs(doc, block)
         .iter()
-        .map(|p| KeyValue {
-            name: p.key.clone(),
-            value: p.value.as_text(),
-            enabled: p.enabled,
+        .map(|p| {
+            let local_name = p.key.strip_prefix('@').filter(|_| locals);
+            KeyValue {
+                name: local_name.unwrap_or(&p.key).to_owned(),
+                value: p.value.as_text(),
+                enabled: p.enabled,
+                local: local_name.is_some(),
+            }
         })
         .collect()
+}
+
+/// The `.bru` key for a key/value item: local variables keep their `@` prefix.
+fn kv_key(kv: &KeyValue) -> String {
+    if kv.local {
+        format!("@{}", kv.name)
+    } else {
+        kv.name.clone()
+    }
 }
 
 fn text(doc: &BruDocument, block: &str) -> Option<String> {
@@ -443,7 +499,7 @@ fn write_body_block(doc: &mut BruDocument, body: &Body) {
             let merged = merge_pairs(
                 &existing,
                 fields,
-                |f| &f.name,
+                |f| f.name.clone(),
                 multipart_pair_value,
                 |p, f| multipart_field(p) == *f,
             );
@@ -543,7 +599,7 @@ fn write_kv_block(doc: &mut BruDocument, block: &str, items: &[KeyValue]) {
     let merged = merge_pairs(
         &existing,
         items,
-        |kv| &kv.name,
+        kv_key,
         |kv| (value_for(&kv.value), kv.enabled),
         |p, kv| p.value.as_text() == kv.value && p.enabled == kv.enabled,
     );
@@ -553,7 +609,7 @@ fn write_kv_block(doc: &mut BruDocument, block: &str, items: &[KeyValue]) {
 fn merge_pairs<T>(
     existing: &[Pair],
     items: &[T],
-    key: impl Fn(&T) -> &String,
+    key: impl Fn(&T) -> String,
     value: impl Fn(&T) -> (PairValue, bool),
     same: impl Fn(&Pair, &T) -> bool,
 ) -> Vec<Pair> {
@@ -563,10 +619,10 @@ fn merge_pairs<T>(
         .enumerate()
         .map(|(i, item)| {
             let name = key(item);
-            let matched = if existing.get(i).is_some_and(|p| &p.key == name) && !used[i] {
+            let matched = if existing.get(i).is_some_and(|p| p.key == name) && !used[i] {
                 Some(i)
             } else {
-                (0..existing.len()).find(|&j| !used[j] && &existing[j].key == name)
+                (0..existing.len()).find(|&j| !used[j] && existing[j].key == name)
             };
             match matched {
                 Some(j) => {
@@ -582,7 +638,7 @@ fn merge_pairs<T>(
                 None => {
                     let (v, enabled) = value(item);
                     Pair {
-                        key: name.clone(),
+                        key: name,
                         value: v,
                         enabled,
                         annotations: Vec::new(),
@@ -724,7 +780,7 @@ mod tests {
     fn environment_secrets() {
         let src = "vars {\n  host: http://localhost\n}\nvars:secret [\n  client_secret\n]\n";
         let env = EnvironmentFile::parse(src).unwrap();
-        assert_eq!(env.secret_names, ["client_secret"]);
+        assert_eq!(env.secrets, [SecretVar::new("client_secret")]);
         assert_eq!(env.vars, [KeyValue::new("host", "http://localhost")]);
         assert_eq!(env.to_bru(), src);
     }
@@ -738,5 +794,57 @@ mod tests {
         assert_eq!(file.to_bru(), src);
         file.request.headers[0].value = "2".into();
         assert_eq!(file.to_bru(), src.replace("x: 1", "x: 2"));
+    }
+
+    // bruToJson.js:1155-1165 / collectionBruToJson.js:673-683: `@name` is a local var
+    // named `name`; jsonToBru.js:685-695 writes it back with the `@` prefix.
+    #[test]
+    fn local_vars_strip_at_and_write_back() {
+        let src = "get {\n  url: http://h\n}\n\nvars:pre-request {\n  @token: abc\n  ~@off: 1\n  plain: 2\n}\n";
+        let mut file = RequestFile::parse(src).unwrap();
+        let vars = &file.request.vars_pre;
+        assert_eq!(
+            (vars[0].name.as_str(), vars[0].local, vars[0].enabled),
+            ("token", true, true)
+        );
+        assert_eq!(
+            (vars[1].name.as_str(), vars[1].local, vars[1].enabled),
+            ("off", true, false)
+        );
+        assert!(!vars[2].local);
+        assert_eq!(file.to_bru(), src);
+        file.request.vars_pre[0].value = "xyz".into();
+        assert_eq!(file.to_bru(), src.replace("@token: abc", "@token: xyz"));
+        let scope = ScopeFile::parse("vars:pre-request {\n  @c: 1\n}\n").unwrap();
+        assert_eq!(
+            (scope.vars_pre[0].name.as_str(), scope.vars_pre[0].local),
+            ("c", true)
+        );
+    }
+
+    #[test]
+    fn malformed_request_file_is_error() {
+        assert!(
+            RequestFile::parse("get {\n  url: http://h\n}\n\nheaders {\n  x-a 1\n}\n").is_err()
+        );
+    }
+
+    #[test]
+    fn environment_secret_entries() {
+        let src = "vars {\n  a: 1\n}\nvars:secret [\n  @description('k')\n  token,\n  ~old\n]\n";
+        let mut env = EnvironmentFile::parse(src).unwrap();
+        assert_eq!(
+            env.secrets,
+            [
+                SecretVar::new("token"),
+                SecretVar {
+                    name: "old".into(),
+                    enabled: false
+                }
+            ]
+        );
+        assert_eq!(env.to_bru(), src);
+        env.secrets.push(SecretVar::new("more"));
+        assert_eq!(env.to_bru(), src.replace("  ~old\n]", "  ~old,\n  more\n]"));
     }
 }

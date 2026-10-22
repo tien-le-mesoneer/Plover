@@ -186,6 +186,7 @@ mod tests {
         let items = [
             KeyValue::new("a", "1"),
             KeyValue {
+                local: false,
                 name: "b".into(),
                 value: "2".into(),
                 enabled: false,
