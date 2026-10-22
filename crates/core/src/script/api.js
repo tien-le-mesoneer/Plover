@@ -268,6 +268,278 @@
     };
   };
 
+  // ---- chai plugins: Bruno's custom assertions (runtime/assert-runtime.js:14-200 and
+  // sandbox/quickjs/shims/test.js) plus chai-string's startWith/endWith ------------------
+  brs.onLibLoad('chai', (chai) => {
+    chai.use((chai, utils) => {
+      const A = chai.Assertion;
+      A.addProperty('json', function () {
+        const obj = this._obj;
+        const isJson =
+          typeof obj === 'object' &&
+          obj !== null &&
+          (Array.isArray(obj) || Object.prototype.toString.call(obj) === '[object Object]');
+        this.assert(isJson, 'expected #{this} to be JSON', 'expected #{this} not to be JSON');
+      });
+      const SCHEMA_VERSIONS = ['http://json-schema.org/draft-07/schema#', 'http://json-schema.org/draft-07/schema'];
+      let defaultAjv = null;
+      A.addMethod('jsonSchema', function (schema, ajvOptions) {
+        if (schema && schema.$schema && !SCHEMA_VERSIONS.includes(schema.$schema)) {
+          this.assert(
+            false,
+            'Unsupported JSON Schema version: "' + schema.$schema + '". Bruno currently only supports Draft-07 (http://json-schema.org/draft-07/schema#). Please update your schema to be Draft-07 compatible and remove the $schema property.',
+            'Unsupported JSON Schema version: "' + schema.$schema + '".'
+          );
+        }
+        const { Ajv, addFormats } = brs.lib('ajv');
+        let ajv;
+        if (ajvOptions) {
+          ajv = new Ajv(Object.assign({ allErrors: true }, ajvOptions));
+          addFormats(ajv);
+        } else {
+          if (!defaultAjv) {
+            defaultAjv = new Ajv({ allErrors: true });
+            addFormats(defaultAjv);
+          }
+          ajv = defaultAjv;
+        }
+        let validate;
+        try {
+          validate = ajv.compile(schema);
+        } catch (e) {
+          this.assert(false, 'JSON schema compile error: ' + e.message, 'JSON schema compile error: ' + e.message);
+        }
+        const isValid = validate(this._obj);
+        this.assert(
+          isValid,
+          'expected #{this} to match JSON schema, validation errors: ' + (validate.errors ? JSON.stringify(validate.errors) : 'none'),
+          'expected #{this} to not match JSON schema'
+        );
+      });
+      A.addMethod('match', function (regex) {
+        const obj = this._obj;
+        const match = obj === undefined ? false : regex.test(obj);
+        this.assert(match, 'expected ' + utils.inspect(obj) + ' to match ' + regex, 'expected ' + utils.inspect(obj) + ' not to match ' + regex);
+      });
+      const parsePath = (path) => {
+        const keys = [];
+        let i = 0;
+        while (i < path.length) {
+          if (path[i] === '.') {
+            i++;
+          } else if (path[i] === '[') {
+            i++;
+            let key = '';
+            if (i < path.length && (path[i] === "'" || path[i] === '"')) {
+              const quote = path[i++];
+              while (i < path.length && path[i] !== quote) {
+                if (path[i] === '\\' && i + 1 < path.length && path[i + 1] === quote) {
+                  key += quote;
+                  i += 2;
+                } else key += path[i++];
+              }
+              i += 2;
+            } else {
+              while (i < path.length && path[i] !== ']') key += path[i++];
+              i++;
+            }
+            keys.push(key);
+          } else {
+            let key = '';
+            while (i < path.length && path[i] !== '.' && path[i] !== '[') key += path[i++];
+            keys.push(key);
+          }
+        }
+        return keys;
+      };
+      const nested = (obj, path) => {
+        let current = obj;
+        for (const key of parsePath(path)) {
+          if (current === null || current === undefined || !hasOwn(Object(current), key)) return { found: false };
+          current = current[key];
+        }
+        return { found: true, value: current };
+      };
+      A.addMethod('jsonBody', function (...args) {
+        const obj = this._obj;
+        if (args.length === 0) {
+          this.assert(typeof obj === 'object' && obj !== null, 'expected ' + utils.inspect(obj) + ' to be a JSON body (object or array)', 'expected ' + utils.inspect(obj) + ' not to be a JSON body');
+        } else if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null) {
+          this.assert(utils.eql(obj, args[0]), 'expected body to deeply equal ' + utils.inspect(args[0]), 'expected body to not deeply equal ' + utils.inspect(args[0]));
+        } else if (args.length === 1) {
+          const result = nested(obj, String(args[0]));
+          this.assert(result.found, "expected body to have nested property '" + args[0] + "'", "expected body to not have nested property '" + args[0] + "'");
+        } else {
+          const result = nested(obj, String(args[0]));
+          this.assert(
+            result.found && utils.eql(result.value, args[1]),
+            "expected body to have nested property '" + args[0] + "' equal to " + utils.inspect(args[1]),
+            "expected body to not have nested property '" + args[0] + "' equal to " + utils.inspect(args[1])
+          );
+        }
+      });
+      // chai-string (used by Bruno's assert runtime for startsWith/endsWith).
+      const stringCheck = (name, verb, test) =>
+        A.addMethod(name, function (expected) {
+          const actual = this._obj;
+          this.assert(
+            typeof actual === 'string' && typeof expected === 'string' && test(actual, expected),
+            'expected ' + actual + ' to ' + verb + ' ' + expected,
+            'expected ' + actual + ' not to ' + verb + ' ' + expected
+          );
+        });
+      stringCheck('startWith', 'start with', (a, e) => a.startsWith(e));
+      stringCheck('startsWith', 'start with', (a, e) => a.startsWith(e));
+      stringCheck('endWith', 'end with', (a, e) => a.endsWith(e));
+      stringCheck('endsWith', 'end with', (a, e) => a.endsWith(e));
+    });
+  });
+
+  // ---- test() (bruno-js/src/test.js; results in completion order) -----------------------
+  const testResults = [];
+  const pendingTests = [];
+  const errorMessage = (e, fallback) =>
+    e && typeof e === 'object' && e.message !== undefined && e.message !== '' ? String(e.message) : e && typeof e !== 'object' ? String(e) : fallback;
+  g.test = (description, callback) => {
+    const run = (async () => {
+      try {
+        await callback();
+        testResults.push({ name: String(description), passed: true, error: null });
+      } catch (e) {
+        testResults.push({ name: String(description), passed: false, error: errorMessage(e, 'An unexpected error occurred.') });
+      }
+    })();
+    pendingTests.push(run);
+    return run;
+  };
+  // Like Bruno's waitForPendingTests: the phase ends when every test() has settled,
+  // including tests registered by other tests.
+  brs.onFinish(async () => {
+    while (pendingTests.length) await Promise.all(pendingTests.splice(0));
+  });
+  brs.resultParts.tests = () => testResults;
+
+  // ---- expressions --------------------------------------------------------------------
+  // Bruno evaluates assert/post-response expressions with variables and bru/req/res in
+  // scope (utils.js evaluateJsExpression). `with` over a null-prototype object gives the
+  // same lookup; Function bodies are sloppy-mode code, so `with` is allowed.
+  const scopeOf = (layers) => {
+    const scope = Object.create(null);
+    for (const layer of layers) Object.assign(scope, layer);
+    scope.bru = bru;
+    scope.req = req;
+    if (brs.res) scope.res = brs.res;
+    return scope;
+  };
+  const evaluate = (scope, code) => new Function('__brsScope', 'with (__brsScope) { return (' + code + '\n); }')(scope);
+  // sandbox/quickjs/index.js executeQuickJsVm with scriptType 'template-literal'.
+  const evaluateTemplateLiteral = (text, scope) => {
+    if (typeof text !== 'string' || !text.length) return text;
+    text = text.trim();
+    if (!text.length) return text;
+    if (!isNaN(Number(text))) {
+      const number = Number(text);
+      if (number > Number.MAX_SAFE_INTEGER) return text;
+      return Number.isInteger(number) ? parseInt(text, 10) : parseFloat(text);
+    }
+    if (text === 'true') return true;
+    if (text === 'false') return false;
+    if (text === 'null') return null;
+    if (text === 'undefined') return undefined;
+    if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) text = text.slice(1, -1);
+    return evaluate(scope, '`' + text + '`');
+  };
+
+  // ---- assert block (runtime/assert-runtime.js) ---------------------------------------
+  const OPERATORS = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'notIn', 'contains', 'notContains', 'length', 'matches', 'notMatches', 'startsWith', 'endsWith', 'between', 'isEmpty', 'isNotEmpty', 'isNull', 'isUndefined', 'isDefined', 'isTruthy', 'isFalsy', 'isJson', 'isNumber', 'isString', 'isBoolean', 'isArray'];
+  const UNARY = ['isEmpty', 'isNotEmpty', 'isNull', 'isUndefined', 'isDefined', 'isTruthy', 'isFalsy', 'isJson', 'isNumber', 'isString', 'isBoolean', 'isArray'];
+  const parseAssertionOperator = (str) => {
+    if (!str || typeof str !== 'string' || !str.length) return { operator: 'eq', value: str };
+    const [operator, ...rest] = str.trim().split(' ');
+    if (UNARY.includes(operator)) return { operator, value: '' };
+    if (OPERATORS.includes(operator)) return { operator, value: rest.join(' ') };
+    return { operator: 'eq', value: str };
+  };
+  const evaluateRhs = (rhs, operator, scope) => {
+    if (UNARY.includes(operator)) return undefined;
+    if (operator === 'in' || operator === 'notIn') {
+      if (rhs.startsWith('[') && rhs.endsWith(']')) rhs = rhs.substring(1, rhs.length - 1);
+      return rhs.split(',').map((v) => evaluateTemplateLiteral(interpolate(v.trim()), scope));
+    }
+    if (operator === 'between') {
+      return rhs.split(',').map((v) => evaluateTemplateLiteral(interpolate(v.trim()), scope)).slice(0, 2);
+    }
+    if (operator === 'matches' || operator === 'notMatches') {
+      if (rhs.startsWith('/') && rhs.endsWith('/')) rhs = rhs.substring(1, rhs.length - 1);
+      return interpolate(rhs);
+    }
+    return evaluateTemplateLiteral(interpolate(rhs), scope);
+  };
+  const assertResults = [];
+  brs.runAsserts = async () => {
+    const { expect } = brs.lib('chai');
+    const scope = scopeOf([vars.collection, vars.environment, vars.folder, vars.request, vars.runtime]);
+    for (const [lhsExpr, rhsExpr] of input.asserts || []) {
+      const { operator, value: rhsOperand } = parseAssertionOperator(rhsExpr);
+      try {
+        const lhs = evaluate(scope, lhsExpr);
+        const rhs = evaluateRhs(rhsOperand, operator, scope);
+        switch (operator) {
+          case 'eq': expect(lhs).to.equal(rhs); break;
+          case 'neq': expect(lhs).to.not.equal(rhs); break;
+          case 'gt': expect(lhs).to.be.greaterThan(rhs); break;
+          case 'gte': expect(lhs).to.be.greaterThanOrEqual(rhs); break;
+          case 'lt': expect(lhs).to.be.lessThan(rhs); break;
+          case 'lte': expect(lhs).to.be.lessThanOrEqual(rhs); break;
+          case 'in': expect(lhs).to.be.oneOf(rhs); break;
+          case 'notIn': expect(lhs).to.not.be.oneOf(rhs); break;
+          case 'contains': expect(lhs).to.include(rhs); break;
+          case 'notContains': expect(lhs).to.not.include(rhs); break;
+          case 'length': expect(lhs).to.have.lengthOf(rhs); break;
+          case 'matches': expect(lhs).to.match(new RegExp(rhs)); break;
+          case 'notMatches': expect(lhs).to.not.match(new RegExp(rhs)); break;
+          case 'startsWith': expect(lhs).to.startWith(rhs); break;
+          case 'endsWith': expect(lhs).to.endWith(rhs); break;
+          case 'between': expect(lhs).to.be.within(rhs[0], rhs[1]); break;
+          case 'isEmpty': expect(lhs).to.be.empty; break;
+          case 'isNotEmpty': expect(lhs).to.not.be.empty; break;
+          case 'isNull': expect(lhs).to.be.null; break;
+          case 'isUndefined': expect(lhs).to.be.undefined; break;
+          case 'isDefined': expect(lhs).to.not.be.undefined; break;
+          case 'isTruthy': expect(lhs).to.be.true; break;
+          case 'isFalsy': expect(lhs).to.be.false; break;
+          case 'isJson': expect(lhs).to.be.json; break;
+          case 'isNumber': expect(lhs).to.be.a('number'); break;
+          case 'isString': expect(lhs).to.be.a('string'); break;
+          case 'isBoolean': expect(lhs).to.be.a('boolean'); break;
+          case 'isArray': expect(lhs).to.be.a('array'); break;
+          default: expect(lhs).to.equal(rhs);
+        }
+        assertResults.push({ lhs: lhsExpr, rhs: rhsExpr, operator, passed: true, error: null });
+      } catch (e) {
+        assertResults.push({ lhs: lhsExpr, rhs: rhsExpr, operator, passed: false, error: errorMessage(e, String(e)) });
+      }
+    }
+  };
+  brs.resultParts.asserts = () => assertResults;
+
+  // ---- vars:post-response (runtime/vars-runtime.js) -----------------------------------
+  brs.runPostVars = async () => {
+    const scope = scopeOf([vars.environment, vars.runtime]);
+    const errors = [];
+    for (const [name, expr] of input.postVars || []) {
+      try {
+        const value = evaluate(scope, expr);
+        if (name) bru.setVar(name, value);
+      } catch (e) {
+        errors.push(name + ': ' + (e && e.message !== undefined ? e.message : e));
+      }
+    }
+    if (errors.length) {
+      g.console.error(errors.length + ' error' + (errors.length === 1 ? '' : 's') + ' in post response variables: \n' + errors.join('\n'));
+    }
+  };
+
   // ---- res -----------------------------------------------------------------------------
   const utf8Length = (text) => {
     let n = 0;
