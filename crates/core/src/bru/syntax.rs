@@ -258,9 +258,9 @@ fn block_from_pest(block: PestPair<'_, Rule>) -> Block {
         };
     };
     let opener = match form.as_rule() {
-        Rule::brace_block => '{',
         Rule::bracket_block => '[',
-        _ => ':',
+        Rule::line_block => ':',
+        _ => '{',
     };
     let mut parts = form.into_inner();
     let name = parts
@@ -293,6 +293,7 @@ fn parse_dict(body: &str, rule: Rule) -> Option<BlockContent> {
     let dict = BruParser::parse(rule, body).ok()?.next()?;
     let pairs = dict
         .into_inner()
+        .flat_map(|body| body.into_inner())
         .filter(|p| matches!(p.as_rule(), Rule::pair | Rule::assert_pair))
         .map(pair_from_pest)
         .collect();
@@ -471,11 +472,18 @@ fn syntax_error(src: &str, e: pest::error::Error<Rule>) -> SyntaxError {
     let offset = match e.location {
         pest::error::InputLocation::Pos(p) | pest::error::InputLocation::Span((p, _)) => p,
     };
-    let rest = src.get(offset..).unwrap_or("");
-    let name: String = rest
-        .chars()
-        .take_while(|c| !c.is_whitespace() && *c != '{' && *c != '[')
-        .collect();
+    // Name the block the error falls in: the last column-0 line that opens one.
+    let before = src.get(..offset).unwrap_or(src);
+    let name: String = before
+        .lines()
+        .chain(src.get(offset..).and_then(|rest| rest.lines().next()))
+        .rfind(|l| l.starts_with(|c: char| !c.is_whitespace() && c != '}' && c != ']'))
+        .map(|l| {
+            l.chars()
+                .take_while(|c| !c.is_whitespace() && *c != '{' && *c != '[')
+                .collect()
+        })
+        .unwrap_or_default();
     let message = if name.is_empty() {
         "expected a block".to_owned()
     } else {
@@ -679,5 +687,48 @@ mod tests {
             *doc.block("headers").unwrap().content(),
             BlockContent::Dict(vec![])
         );
+    }
+
+    // Bruno bruToJson.js:66 `multilinetextblock` consumes everything up to the closing
+    // `'''`, so a column-0 `}` line inside it is content, not the block's `tagend`.
+    const BRACE_IN_MULTILINE: &str = "vars:pre-request {\n  obj: '''\n    {\n      \"a\": 1\n}\n  '''\n  after: 2\n}\n\nheaders {\n  x: 1\n}\n";
+
+    #[test]
+    fn multiline_value_with_column0_brace() {
+        let doc = BruDocument::parse(BRACE_IN_MULTILINE).unwrap();
+        assert_eq!(doc.write(), BRACE_IN_MULTILINE);
+        assert_eq!(names(&doc), ["vars:pre-request", "headers"]);
+        let pairs = doc.block("vars:pre-request").unwrap().content().pairs();
+        assert_eq!(pairs.len(), 2);
+        // Bruno drops the first 4 characters of each line (`line.slice(4)`, bruToJson.js:515)
+        // and trims, so the column-0 `}` line itself becomes empty and is trimmed away.
+        assert_eq!(
+            pairs[0].value,
+            PairValue::Multiline {
+                text: "{\n  \"a\": 1".to_owned(),
+                content_type: None
+            }
+        );
+        assert_eq!(pairs[1].value, PairValue::Single("2".into()));
+    }
+
+    // Bruno bruToJson.js `annotationmultilinetextblock` has the same delimiter-only rule.
+    #[test]
+    fn annotation_multiline_arg_with_column0_brace() {
+        let src = "headers {\n  @description('''\n    a\n}\n  ''')\n  x: 1\n}\n";
+        let doc = BruDocument::parse(src).unwrap();
+        assert_eq!(doc.write(), src);
+        let pair = &doc.block("headers").unwrap().content().pairs()[0];
+        assert_eq!(pair.key, "x");
+        assert_eq!(pair.annotations[0].arg.as_deref(), Some("    a\n}"));
+    }
+
+    #[test]
+    fn text_block_still_ends_at_first_column0_brace() {
+        // Bruno `textblock` has no `'''` handling: the first `\n}` ends script/body/docs blocks.
+        let src = "docs {\n  '''\n}\n\nheaders {\n  x: 1\n}\n";
+        let doc = BruDocument::parse(src).unwrap();
+        assert_eq!(names(&doc), ["docs", "headers"]);
+        assert_eq!(doc.write(), src);
     }
 }

@@ -728,4 +728,15 @@ mod tests {
         assert_eq!(env.vars, [KeyValue::new("host", "http://localhost")]);
         assert_eq!(env.to_bru(), src);
     }
+
+    #[test]
+    fn multiline_var_with_column0_brace_through_request_file() {
+        let src = "get {\n  url: http://h\n}\n\nvars:pre-request {\n  obj: '''\n    {\n}\n  '''\n}\n\nheaders {\n  x: 1\n}\n";
+        let mut file = RequestFile::parse(src).unwrap();
+        assert_eq!(file.request.vars_pre, [KeyValue::new("obj", "{")]);
+        assert_eq!(file.request.headers, [KeyValue::new("x", "1")]);
+        assert_eq!(file.to_bru(), src);
+        file.request.headers[0].value = "2".into();
+        assert_eq!(file.to_bru(), src.replace("x: 1", "x: 2"));
+    }
 }

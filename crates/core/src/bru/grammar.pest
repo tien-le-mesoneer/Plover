@@ -9,11 +9,24 @@ hs = _{ " " | "\t" }
 file    = { SOI ~ bom? ~ (trivia | block)* ~ EOI }
 bom     = { "\u{FEFF}" }
 trivia  = { (" " | "\t" | "\r" | "\n")+ }
-block   = { line_block | brace_block | bracket_block }
+block   = { line_block | text_brace_block | assert_brace_block | dict_brace_block | brace_block | bracket_block }
+tagend  = _{ nl ~ "}" }
 
-// `name {` ... a line that is exactly `}` (Bruno's `tagend = nl "}"`).
-brace_block   = { block_name ~ hs* ~ "{" ~ brace_body ~ nl ~ "}" }
-brace_body    = { (!(nl ~ "}") ~ ANY)* }
+// Text blocks (Bruno `textblock`): content ends at the first line that is exactly `}`.
+text_brace_block = { text_name ~ hs* ~ "{" ~ brace_body ~ tagend }
+text_name = @{
+    ( "body:graphql:vars" | "body:graphql" | "body:sparql" | "body:json" | "body:text" | "body:xml"
+    | "body" | "tests" | "docs" | "example" | "script:" ~ (!(" " | "\t" | "\r" | "\n" | "{") ~ ANY)+ )
+    ~ &(hs | "{")
+}
+// Dictionary blocks (Bruno `dictionary`): scanned pair by pair, so a `'''` value or
+// annotation argument may contain a column-0 `}` line (bruToJson.js:66, :78).
+assert_brace_block = { assert_name ~ hs* ~ "{" ~ assert_body ~ tagend }
+assert_name        = { "assert" ~ &(hs | "{") }
+dict_brace_block   = { block_name ~ hs* ~ "{" ~ dict_body ~ tagend }
+// Anything else that is brace-delimited: ends at the first `}` line; content stays opaque.
+brace_block   = { block_name ~ hs* ~ "{" ~ brace_body ~ tagend }
+brace_body    = { (!tagend ~ ANY)* }
 // `name [` ... `]` (environment `vars:secret`, `extends`).
 bracket_block = { block_name ~ hs* ~ "[" ~ bracket_body ~ "]" }
 bracket_body  = { (!"]" ~ ANY)* }
@@ -23,13 +36,18 @@ line_name     = { "color" | "extends" }
 line_value    = { (!nl ~ ANY)* }
 block_name    = @{ (!(" " | "\t" | "\r" | "\n" | "{" | "[") ~ ANY)+ }
 
-// ---- Dictionary block content (the text between `{` and the closing `}` line).
-dict        = { SOI ~ (blank | pair)* ~ EOI }
-assert_dict = { SOI ~ (blank | assert_pair)* ~ EOI }
-blank       = _{ hs* ~ nl | hs+ ~ &EOI }
+// ---- Dictionary block content. The same rules run inside a block (stopping
+// at `tagend`) and on an extracted body (stopping at EOI).
+dict        = { SOI ~ dict_body ~ EOI }
+assert_dict = { SOI ~ assert_body ~ EOI }
+dict_body   = { (blank | pair)* }
+assert_body = { (blank | assert_pair)* }
+body_end    = _{ &tagend | &EOI }
+blank       = _{ hs+ ~ body_end | hs* ~ !tagend ~ nl }
+pair_end    = _{ !tagend ~ nl | body_end }
 
-pair        = { hs* ~ annotations ~ hs* ~ disabled? ~ key ~ hs* ~ ":" ~ hs* ~ value ~ hs* ~ (nl | &EOI) }
-assert_pair = { hs* ~ annotations ~ hs* ~ disabled? ~ assert_key ~ ":" ~ hs* ~ value ~ hs* ~ (nl | &EOI) }
+pair        = { hs* ~ annotations ~ hs* ~ disabled? ~ key ~ hs* ~ ":" ~ hs* ~ value ~ hs* ~ pair_end }
+assert_pair = { hs* ~ annotations ~ hs* ~ disabled? ~ assert_key ~ ":" ~ hs* ~ value ~ hs* ~ pair_end }
 
 disabled    = { "~" }
 key         = _{ quoted_key | plain_key }
