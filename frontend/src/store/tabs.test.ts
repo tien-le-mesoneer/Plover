@@ -23,6 +23,7 @@ function request(url: string): HttpRequestDto {
     scriptPre: null,
     scriptPost: null,
     tests: null,
+    asserts: [],
     settings: { followRedirects: null, maxRedirects: null, timeoutMs: null },
   };
 }

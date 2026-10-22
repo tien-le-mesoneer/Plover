@@ -29,7 +29,11 @@ method: string, url: string, query: Array<KeyValueDto>, pathParams: Array<KeyVal
 /**
  * Bodies of the other modes present in the file (Bruno keeps one per mode).
  */
-otherBodies: Array<BodyDto>, auth: AuthDto, varsPre: Array<KeyValueDto>, varsPost: Array<KeyValueDto>, scriptPre: string | null, scriptPost: string | null, tests: string | null, settings: RequestSettingsDto, };
+otherBodies: Array<BodyDto>, auth: AuthDto, varsPre: Array<KeyValueDto>, varsPost: Array<KeyValueDto>, scriptPre: string | null, scriptPost: string | null, tests: string | null, 
+/**
+ * The `assert` block: `name` is the left-hand expression, `value` is `operator rhs`.
+ */
+asserts: Array<KeyValueDto>, settings: RequestSettingsDto, };
 
 export type CollectionSummaryDto = { id: string, name: string, root: string, };
 

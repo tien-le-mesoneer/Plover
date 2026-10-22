@@ -111,6 +111,9 @@ pub struct HttpRequestDto {
     pub script_pre: Option<String>,
     pub script_post: Option<String>,
     pub tests: Option<String>,
+    /// The `assert` block: `name` is the left-hand expression, `value` is `operator rhs`.
+    #[serde(default)]
+    pub asserts: Vec<KeyValueDto>,
     pub settings: RequestSettingsDto,
 }
 
@@ -323,6 +326,7 @@ impl From<&HttpRequest> for HttpRequestDto {
             script_pre: r.script_pre.clone(),
             script_post: r.script_post.clone(),
             tests: r.tests.clone(),
+            asserts: kvs(&r.asserts),
             settings: RequestSettingsDto {
                 follow_redirects: r.settings.follow_redirects,
                 max_redirects: r.settings.max_redirects,
@@ -359,6 +363,7 @@ impl From<HttpRequestDto> for HttpRequest {
             script_pre: d.script_pre,
             script_post: d.script_post,
             tests: d.tests,
+            asserts: from_kvs(d.asserts),
             settings: RequestSettings {
                 follow_redirects: d.settings.follow_redirects,
                 max_redirects: d.settings.max_redirects,

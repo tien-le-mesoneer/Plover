@@ -153,5 +153,7 @@ pub struct HttpRequest {
     pub script_pre: Option<String>,
     pub script_post: Option<String>,
     pub tests: Option<String>,
+    /// The `assert` block: `res.status: eq 200` is `KeyValue { name: "res.status", value: "eq 200" }`.
+    pub asserts: Vec<KeyValue>,
     pub settings: RequestSettings,
 }

@@ -200,6 +200,7 @@ fn read_request(doc: &BruDocument) -> Result<HttpRequest, ModelError> {
         script_pre: text(doc, "script:pre-request"),
         script_post: text(doc, "script:post-response"),
         tests: text(doc, "tests"),
+        asserts: kv_list(doc, "assert"),
         settings: RequestSettings {
             follow_redirects: dict_value(doc, "settings", "followRedirects")
                 .and_then(|v| v.parse().ok()),
@@ -442,6 +443,7 @@ fn write_request(doc: &mut BruDocument, req: &HttpRequest) {
         ("vars:post-response", &req.vars_post, |o| {
             o.vars_post.clone()
         }),
+        ("assert", &req.asserts, |o| o.asserts.clone()),
     ] {
         if changed(&|o| get(o) == *new) {
             write_kv_block(doc, block, new);
@@ -867,5 +869,74 @@ mod tests {
         assert_eq!(env.to_bru(), src);
         env.secrets.push(SecretVar::new("more"));
         assert_eq!(env.to_bru(), src.replace("  ~old\n]", "  ~old,\n  more\n]"));
+    }
+
+    const SCRIPTED: &str = include_str!(
+        "../../../../fixtures/bruno-tests/collection/string interpolation/process env vars.bru"
+    );
+
+    #[test]
+    fn asserts_and_scripts_are_owned() {
+        let file = RequestFile::parse(SCRIPTED).unwrap();
+        assert_eq!(
+            file.request.asserts,
+            [KeyValue::new("res.status", "eq 200")]
+        );
+        assert!(
+            file.request
+                .tests
+                .as_deref()
+                .unwrap()
+                .starts_with("test(\"should return json\"")
+        );
+        assert_eq!(file.to_bru(), SCRIPTED);
+    }
+
+    #[test]
+    fn edit_one_test_line_minimal_diff() {
+        let mut file = RequestFile::parse(SCRIPTED).unwrap();
+        let tests = file.request.tests.clone().unwrap();
+        file.request.tests = Some(tests.replace("should return json", "returns json"));
+        assert_eq!(line_changes(SCRIPTED, &file.to_bru()), (1, 1));
+    }
+
+    #[test]
+    fn add_and_edit_asserts_touch_only_the_assert_block() {
+        let mut file = RequestFile::parse(SCRIPTED).unwrap();
+        file.request
+            .asserts
+            .push(KeyValue::new("res.body.bark", "eq woof"));
+        let out = file.to_bru();
+        assert_eq!(line_changes(SCRIPTED, &out), (0, 1));
+        assert!(
+            out.contains("assert {\n  res.status: eq 200\n  res.body.bark: eq woof\n}"),
+            "{out}"
+        );
+
+        let mut file = RequestFile::parse(REQUEST).unwrap();
+        assert!(file.request.asserts.is_empty() || file.doc.block("assert").is_some());
+        file.request.asserts = vec![
+            KeyValue::new("res.status", "eq 200"),
+            KeyValue {
+                enabled: false,
+                ..KeyValue::new("res.body.length + 1", "gt 2")
+            },
+        ];
+        let out = file.to_bru();
+        let reparsed = RequestFile::parse(&out).unwrap();
+        assert_eq!(reparsed.request.asserts, file.request.asserts);
+        assert!(out.contains("  ~res.body.length + 1: gt 2\n"), "{out}");
+    }
+
+    #[test]
+    fn add_post_response_script_appends_one_block() {
+        let mut file = RequestFile::parse(SCRIPTED).unwrap();
+        file.request.script_post = Some("bru.setVar('a', res.body.bark);".into());
+        let out = file.to_bru();
+        assert!(
+            out.ends_with("script:post-response {\n  bru.setVar('a', res.body.bark);\n}\n"),
+            "{out}"
+        );
+        assert_eq!(line_changes(SCRIPTED, &out), (0, 4));
     }
 }
