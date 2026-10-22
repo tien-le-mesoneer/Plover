@@ -1,18 +1,13 @@
 # Phase 3 report — scripts & tests (2026-10-22)
 
-## Tóm tắt cho sáng mai (đọc 2 phút)
+## Tóm tắt (cập nhật 2026-10-23)
 
-Phase 3 đã build xong: 9 task đã commit lên `main` (chưa push), chưa sang Phase 4. Toàn bộ check đã được chạy lại và đều pass: 207 test Rust, 47 test frontend, clippy, no-cdn, không lỗi console trên trình duyệt, và bundle thư viện build lại ra đúng bản đã commit.
+Phase 3 đã xong, kể cả 10 lỗi review: **đã sửa cả 10, không lỗi nào bị bác bỏ**, trong 8 commit trên `main` (chưa push, chưa sang Phase 4).
 
-**Nhưng chưa nên coi Phase 3 là xong.** Review độc lập (bên dưới) tìm ra 3 lỗi nặng:
-
-1. Một script có thể **làm sập cả process**: biến `{{a}}` lồng nhau rất sâu gây tràn stack Rust, exit 134.
-2. Một test fail có thể **biến mất âm thầm** và request vẫn báo pass, chẳng hạn khi `console.log` một chuỗi Unicode lỗi, hoặc `setVar` một object vòng lặp hay lồng quá sâu.
-3. `bru.interpolate` **né được giới hạn RAM** của sandbox (đo được 2 GB RSS).
-
-Mình đề xuất sửa 3 lỗi này trước, rồi đến lỗi #4–#7 (đều mức trung bình). Ước tính 1–1.5 giờ. Việc cần làm: đọc mục "Independent review findings" ở cuối file, rồi trả lời "sửa review" hoặc chọn số.
-
-Benchmark khi có script: 1000 request mất 4.6 s với bru-rs và 128.7 s với Bruno CLI.
+- 3 lỗi nặng đã hết. Biến lồng sâu không còn làm sập process: quá 1000 tầng thì giữ nguyên `{{x}}`. Kết quả script lỗi giờ làm request fail rõ ràng, không còn mất âm thầm. `bru.interpolate` bị giới hạn kích thước và thời gian; probe cũ từng lên 1776 MB RAM giờ chỉ còn 174 MB và báo lỗi rõ.
+- `{{user.id}}` đọc được object như Bruno. JUnit có test case "Post-Response Script Error". Sửa 1 dòng script thì diff đúng 1 dòng; đã kiểm tra trên 427 block. Run và send chạy đồng thời không còn ghi đè biến của nhau. Huỷ run thì script dừng ngay.
+- Check đầy đủ đều pass: 226 test Rust, 47 test frontend, clippy, no-cdn, console. So với Bruno CLI trên 2 collection thì không còn khác biệt nào.
+- Benchmark với script, 1000 request: 4.07 s (trước là 4.64 s), so với 128.7 s của Bruno.
 
 Plan: `docs/superpowers/plans/2026-10-23-phase-3-scripts-tests.md`. All 9 tasks done on `main`, not pushed; Phase 4 not started.
 
@@ -48,7 +43,7 @@ Plan: `docs/superpowers/plans/2026-10-23-phase-3-scripts-tests.md`. All 9 tasks 
 
 | Requests | Bruno wall / CPU / RSS | bru-rs wall / CPU / RSS |
 |---|---|---|
-| 1 | 1.33 s / 1.49 s / 232 MB | 0.05 s / 0.01 s / 16 MB (first, cold run 0.18 s) |
+| 1 | 1.33 s / 1.49 s / 232 MB | 0.05 s / 0.01 s / 16 MB (first, cold run 0.18 s) | fixed b128523: iterative port of `replace`, depth cap 1000 (literal past it); 200k via `bru.interpolate`, 20k in URL: exit 0 |
 | 200 | 27.5 s / 26.5 s / 284 MB | 0.80 s / 0.77 s / 24 MB |
 | 1000 | 128.7 s / 125.5 s / 432 MB | 4.64 s / 4.08 s / 29 MB |
 
@@ -85,22 +80,22 @@ Plan: `docs/superpowers/plans/2026-10-23-phase-3-scripts-tests.md`. All 9 tasks 
    - Bruno's own scripting fixtures in `fixtures/bruno-tests` (they need Bruno's test server).
    - Console output is formatted with JSON, not Node's `util.inspect`.
 
-## Independent review findings (not fixed yet)
+## Independent review findings (all fixed, 2026-10-23)
 
 Read-only review of a89d348..967a1f6. Each finding was verified by a localhost probe, by a differential run against Bruno CLI 4.3.0 `--sandbox safe`, or by reading the code, as noted. Probes: `/private/tmp/claude-501/-Users-tienle-projects-rea/1bb5dcfd-43a5-447b-a541-d24ed1b9cd89/scratchpad/review3/`.
 
-| # | Sev | Where | Defect → effect | Verified |
-|---|---|---|---|---|
-| 1 | HIGH | `core/src/vars.rs:118-121` via `script/api.rs:272`, `runner.rs:588` | `VarStack::replace` recurses once per nested `{{var}}` level with no depth limit. A deep chain (20k levels in a URL, or 200k via `bru.interpolate`) overflows the Rust stack and the process aborts (exit 134). | probes `p_deep`, `p_deep2` |
-| 2 | HIGH | `script/engine.rs:358-376`, `prelude.js:214` | If collecting a phase's result fails, the error is swallowed. Tests, console output, `setVar`s and request edits from that phase disappear, and a failing test is silently dropped so the request passes. Triggers: a lone surrogate (`console.log('\ud800')`), a circular object or an array nested deeper than 128 in `setVar`, or a 70 MB `setVar` that runs out of memory during stringify. Bruno fails all three requests. | probes `p_surrogate`, `p_nest`, `p_big` + Bruno diff |
-| 3 | HIGH | `api.rs:272`, `vars.rs:76` | `bru.interpolate` builds its result in Rust, outside the QuickJS memory limit and deadline. 29 doubling variables make a 512 MiB string, with peak RSS 2.06 GB before the request is reported as out of memory. | probe `p_interp` |
-| 4 | MED | `vars.rs:64-69` | `{{obj.path}}` doesn't resolve JSON object variables. Bruno uses lodash `get`. `bru.setVar('user', {...})` then `/users/{{user.id}}` → bru-rs sends a literal `{{user.id}}`; Bruno sends `/users/42`. | Bruno diff `p_nested` |
-| 5 | MED | `cli/src/report/junit.rs:21-26` | Post-response script errors are not emitted as JUnit testcases: the exit code is 1 but the suite shows `tests="0" failures="0"`, which CI reads as green. Bruno emits a failing "Post-Response Script Error" testcase. | Bruno diff `p_posterr` |
-| 6 | MED | `bru/syntax.rs:185-206`, `bru/render.rs:86-90` | Editing one line of a script/tests block re-indents the whole block: trimmed blank lines become `"  "` and tab indentation changes, so a one-line edit produces a multi-line diff. `fixtures/` has 399 such blank lines. | Rust probe test |
-| 7 | MED | `runner.rs:843,855`, `server/src/api/runs.rs:222,240` | Server runtime vars are copied at the start of a send or run and fully replaced at the end, so concurrent sends and runs overwrite each other. Example: a slow folder run wipes the `token` set by a `login` send from the UI. Env changes are merged as diffs, but runtime vars are not. | code reading |
-| 8 | LOW | `engine.rs:190-202` | Cancelling a run doesn't interrupt the running script. Four cancelled `while(true){}` runs keep every worker busy until the 30 s timeout, so UI sends stall. | code reading |
-| 9 | LOW | `api.js:401-402` | `throw 'plain'` inside `test()` reports `plain`; Bruno reports `An unexpected error occurred.` | Bruno diff |
-| 10 | LOW | `cli/src/report/mod.rs:82-88` | Requests never started (e.g. after `stopExecution`) are named by file stem (`04-r4`) instead of meta name (`r4`). | Bruno diff |
+| # | Sev | Where | Defect → effect | Verified | Status |
+|---|---|---|---|---|---|
+| 1 | HIGH | `core/src/vars.rs:118-121` via `script/api.rs:272`, `runner.rs:588` | `VarStack::replace` recurses once per nested `{{var}}` level with no depth limit. A deep chain (20k levels in a URL, or 200k via `bru.interpolate`) overflows the Rust stack and the process aborts (exit 134). | probes `p_deep`, `p_deep2` | fixed b128523: iterative port of `replace`, depth cap 1000 (literal past it); 200k via `bru.interpolate`, 20k in URL: exit 0 |
+| 2 | HIGH | `script/engine.rs:358-376`, `prelude.js:214` | If collecting a phase's result fails, the error is swallowed. Tests, console output, `setVar`s and request edits from that phase disappear, and a failing test is silently dropped so the request passes. Triggers: a lone surrogate (`console.log('\ud800')`), a circular object or an array nested deeper than 128 in `setVar`, or a 70 MB `setVar` that runs out of memory during stringify. Bruno fails all three requests. | probes `p_surrogate`, `p_nest`, `p_big` + Bruno diff | fixed ef4a09a: per-part JSON results, lone surrogates → U+FFFD, unserializable/deep/OOM → `ResultUnavailable` fails the request; all 3 probes fail like Bruno |
+| 3 | HIGH | `api.rs:272`, `vars.rs:76` | `bru.interpolate` builds its result in Rust, outside the QuickJS memory limit and deadline. 29 doubling variables make a 512 MiB string, with peak RSS 2.06 GB before the request is reported as out of memory. | probe `p_interp` | fixed b128523: output cap (script memory limit; 64 MiB for requests), 2× work budget, deadline; probe RSS 1776 MB → 174 MB, clear error |
+| 4 | MED | `vars.rs:64-69` | `{{obj.path}}` doesn't resolve JSON object variables. Bruno uses lodash `get`. `bru.setVar('user', {...})` then `/users/{{user.id}}` → bru-rs sends a literal `{{user.id}}`; Bruno sends `/users/42`. | Bruno diff `p_nested` | fixed b128523: variables keep JSON values; lodash-`get` paths incl. `a[0].b`; Bruno diff `p_nested` now identical |
+| 5 | MED | `cli/src/report/junit.rs:21-26` | Post-response script errors are not emitted as JUnit testcases: the exit code is 1 but the suite shows `tests="0" failures="0"`, which CI reads as green. Bruno emits a failing "Post-Response Script Error" testcase. | Bruno diff `p_posterr` | fixed 11fa12e: failing `Post-Response Script Error` testcase with the thrown message |
+| 6 | MED | `bru/syntax.rs:185-206`, `bru/render.rs:86-90` | Editing one line of a script/tests block re-indents the whole block: trimmed blank lines become `"  "` and tab indentation changes, so a one-line edit produces a multi-line diff. `fixtures/` has 399 such blank lines. | Rust probe test | fixed ef7c1c6: LCS line merge; golden test edits 1 line in all 427 fixture text blocks → 1/1 |
+| 7 | MED | `runner.rs:843,855`, `server/src/api/runs.rs:222,240` | Server runtime vars are copied at the start of a send or run and fully replaced at the end, so concurrent sends and runs overwrite each other. Example: a slow folder run wipes the `token` set by a `login` send from the UI. Env changes are merged as diffs, but runtime vars are not. | code reading | fixed 7791c54: sends and runs apply set/delete diffs; concurrency test |
+| 8 | LOW | `engine.rs:190-202` | Cancelling a run doesn't interrupt the running script. Four cancelled `while(true){}` runs keep every worker busy until the 30 s timeout, so UI sends stall. | code reading | fixed a77ee6f: cancel flag checked by interrupt handler, timer sleeps and job start; 8 cancelled loops free workers in < 1.5 s |
+| 9 | LOW | `api.js:401-402` | `throw 'plain'` inside `test()` reports `plain`; Bruno reports `An unexpected error occurred.` | Bruno diff | fixed 7370068 |
+| 10 | LOW | `cli/src/report/mod.rs:82-88` | Requests never started (e.g. after `stopExecution`) are named by file stem (`04-r4`) instead of meta name (`r4`). | Bruno diff | fixed 7370068 |
 
 **What held up:**
 - In a 5-request differential run against Bruno, everything matched except #9 and #10: counts, chai and assert messages, `{{n}}` on an assert's right side, `req.setBody` and `setMethod` being sent, unknown `setNextRequest`, and `stopExecution`.
@@ -109,4 +104,9 @@ Read-only review of a89d348..967a1f6. Each finding was verified by a localhost p
 - `require` limits hold.
 - No escape to the filesystem, network or process was found.
 
-**Suggested fix order:** 1, 2, 3 (these block calling Phase 3 done), then 7, 4, 5, 6, then 8–10.
+**Fix notes (2026-10-23):**
+- Tests were confirmed failing before each fix, except #1, #3 and #4. For those I ran the new tests together with the new interpolation code; the failure was confirmed by running the reviewer's probes on the old release binary (exit 134, 1776 MB, literal `{{user.id}}`).
+- Re-running the 5-request Bruno comparison (`p_par`) and `p_nested` shows no differences in summaries, statuses, names, test messages or assert messages.
+- Benchmark after the fixes (bru-rs, scripted): 1 request 0.014 s, 200 requests 0.83 s (was 0.80 s), 1000 requests 4.07 s (was 4.64 s); RSS unchanged at 16, 25 and 29 MB.
+- Still open (unchanged from "Gaps"): unsupported APIs, Windows and Linux are untested, and Node `util.inspect` console formatting is not matched.
+- #1 caps nesting at 1000 levels, which is lower than where Bruno's JS stack would overflow.
