@@ -239,14 +239,14 @@
   }
   pub fn enabled_map(items: &[KeyValue]) -> VarMap; // disabled entries skipped, later wins
   ```
-- Rules: placeholder `{{name}}`; `name` is trimmed; `{{` without `}}` left as is. Substituted values are themselves interpolated, max depth 10; on exceeding depth or a cycle, leave the remaining placeholder literal. Unknown names stay literal.
+- Rules (port of bruno-common `interpolate` `replace`): placeholders match `{{[^}]+}}` and are looked up exactly as written, so `{{ host }}` (with spaces) stays literal. Each placeholder is resolved once per call and cached; self-references stop via a visited set. Unknown names stay literal.
 
 - [ ] **Step 1: Failing tests:**
   - `precedence_matches_bruno`: `host` set in all five scopes to `"runtime"`, `"request"`, `"folder"`, `"env"`, `"collection"` → `"runtime"`; remove runtime → `"request"`; remove request → `"folder"`; remove folder → `"env"`; remove env → `"collection"`.
   - `inner_folder_beats_outer`.
   - `nested_reference`: `base={{host}}/api`, `host=http://h` → `interpolate("{{base}}/x") == "http://h/api/x"`.
   - `cycle_terminates`: `a={{b}}`, `b={{a}}` → returns without hang, output contains `{{`.
-  - `unknown_left_literal`: `"{{nope}}"` → `"{{nope}}"`; `"{{ host }}"` resolves.
+  - `unknown_left_literal`: `"{{nope}}"` → `"{{nope}}"`; `"{{ host }}"` stays literal (Bruno `get(obj, " host ")`).
 - [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS.
 - [ ] **Step 5: Commit** `feat(core): variable scopes and interpolation`
 

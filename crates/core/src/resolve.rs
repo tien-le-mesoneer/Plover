@@ -55,6 +55,8 @@ pub enum ResolveError {
     NotARequest(PathBuf),
     #[error("unsupported {0}")]
     Unsupported(String),
+    #[error("invalid URL: {0}")]
+    InvalidUrl(String),
 }
 
 pub fn resolve(
@@ -168,7 +170,7 @@ pub fn resolve(
     }
     let headers = fold_case_variants(headers);
 
-    let url = substitute_path_params(&vars.interpolate(&request.url), &request.path_params, &vars);
+    let url = substitute_path_params(&vars.interpolate(&request.url), &request.path_params, &vars)?;
     let body = match &request.body {
         Body::None => ResolvedBody::None,
         Body::Json(t) | Body::Text(t) | Body::Xml(t) => {
@@ -262,30 +264,104 @@ fn effective_auth<'a>(
     effective
 }
 
-/// Replaces `:name` path segments with enabled path params; query and fragment are untouched.
-fn substitute_path_params(url: &str, params: &[KeyValue], vars: &VarStack) -> String {
-    if params.iter().all(|p| !p.enabled) {
-        return url.to_owned();
+/// Port of bruno-cli/src/runner/interpolate-vars.js:139-198. With any path params
+/// declared, the URL is parsed (WHATWG) and rebuilt as origin + path + trailing
+/// slash + search; `:name` segments and OData `Name(:key)` segments are filled in.
+fn substitute_path_params(
+    url: &str,
+    params: &[KeyValue],
+    vars: &VarStack,
+) -> Result<String, ResolveError> {
+    if params.is_empty() {
+        return Ok(url.to_owned());
     }
-    let path_start = url
-        .find("://")
-        .map(|i| url[i + 3..].find('/').map_or(url.len(), |j| i + 3 + j))
-        .unwrap_or(0);
-    let path_end = url[path_start..]
-        .find(['?', '#'])
-        .map_or(url.len(), |i| path_start + i);
-    let path = url[path_start..path_end]
-        .split('/')
-        .map(|segment| {
-            let name = segment.strip_prefix(':');
-            match name.and_then(|n| params.iter().find(|p| p.enabled && p.name == n)) {
-                Some(p) => vars.interpolate(&p.value),
-                None => segment.to_owned(),
-            }
+    let values: Vec<(&str, Option<String>)> = params
+        .iter()
+        .map(|p| {
+            let value = vars.interpolate(&p.value);
+            // interpolate-vars.js:6-22 `hasResolvablePathParamValue`.
+            let resolvable = p.enabled && !value.trim().is_empty();
+            (p.name.as_str(), resolvable.then_some(value))
         })
-        .collect::<Vec<_>>()
-        .join("/");
-    format!("{}{}{}", &url[..path_start], path, &url[path_end..])
+        .collect();
+    // `find` returns the first param with that name, resolvable or not.
+    let lookup = |name: &str| {
+        values
+            .iter()
+            .find(|(n, _)| *n == name)
+            .and_then(|(_, v)| v.as_deref())
+    };
+
+    let with_scheme = if url.starts_with("http://") || url.starts_with("https://") {
+        url.to_owned()
+    } else {
+        format!("http://{url}")
+    };
+    let parsed =
+        url::Url::parse(&with_scheme).map_err(|e| ResolveError::InvalidUrl(e.to_string()))?;
+    let mut path = String::new();
+    for segment in parsed.path().split('/').filter(|s| !s.is_empty()) {
+        path.push('/');
+        match segment.strip_prefix(':') {
+            Some(name) => path.push_str(lookup(name).unwrap_or(segment)),
+            None if is_odata_segment(segment) => path.push_str(&fill_odata(segment, &lookup)),
+            None => path.push_str(segment),
+        }
+    }
+    let trailing = if parsed.path().ends_with('/') {
+        "/"
+    } else {
+        ""
+    };
+    let search = parsed
+        .query()
+        .filter(|q| !q.is_empty())
+        .map(|q| format!("?{q}"))
+        .unwrap_or_default();
+    Ok(format!(
+        "{}{path}{trailing}{search}",
+        parsed.origin().ascii_serialization()
+    ))
+}
+
+/// `/^[A-Za-z0-9_.-]+\([^)]*\)$/`
+fn is_odata_segment(segment: &str) -> bool {
+    let Some(open) = segment.find('(') else {
+        return false;
+    };
+    let (head, rest) = segment.split_at(open);
+    !head.is_empty()
+        && head
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+        && rest.ends_with(')')
+        && !rest[1..rest.len() - 1].contains(')')
+}
+
+/// Replaces the first occurrence of each `:name` (`/[:]([a-zA-Z_]\w*)/g`) with its value.
+fn fill_odata<'a>(segment: &str, lookup: &impl Fn(&str) -> Option<&'a str>) -> String {
+    let mut result = segment.to_owned();
+    let bytes = segment.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let starts_name = bytes[i] == b':'
+            && bytes
+                .get(i + 1)
+                .is_some_and(|c| c.is_ascii_alphabetic() || *c == b'_');
+        if !starts_name {
+            i += 1;
+            continue;
+        }
+        let end = (i + 1..bytes.len())
+            .find(|&j| !(bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_'))
+            .unwrap_or(bytes.len());
+        let name = &segment[i + 1..end];
+        if let Some(value) = lookup(name) {
+            result = result.replacen(&format!(":{name}"), value, 1);
+        }
+        i = end;
+    }
+    result
 }
 
 #[cfg(test)]
@@ -548,5 +624,32 @@ mod tests {
             run(&f, "r.bru", None, &[]),
             Err(ResolveError::Unsupported(_))
         ));
+    }
+
+    // interpolate-vars.js:6-22 `hasResolvablePathParamValue`: blank or disabled values keep `:name`.
+    #[test]
+    fn blank_or_disabled_path_param_kept() {
+        let f = fixture(&[(
+            "r.bru",
+            "get {\n  url: http://h/users/:id/:x\n}\n\nparams:path {\n  id:\n  ~x: 1\n}\n",
+        )]);
+        assert_eq!(
+            run(&f, "r.bru", None, &[]).unwrap().url,
+            "http://h/users/:id/:x"
+        );
+    }
+
+    // interpolate-vars.js:144-198 rebuilds the URL from `new URL(...)`:
+    // origin + substituted path + trailing slash + search. The fragment is dropped.
+    #[test]
+    fn path_params_rebuild_url_like_bruno() {
+        let f = fixture(&[(
+            "r.bru",
+            "get {\n  url: localhost:3000/users/:id/People(:key)/?q=1#frag\n}\n\nparams:path {\n  id: 7\n  key: 5\n}\n",
+        )]);
+        assert_eq!(
+            run(&f, "r.bru", None, &[]).unwrap().url,
+            "http://localhost:3000/users/7/People(5)/?q=1"
+        );
     }
 }
