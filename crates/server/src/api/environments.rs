@@ -58,6 +58,9 @@ pub async fn set_secrets(
             "environment `{name}` not found"
         )));
     }
-    open.set_secrets(&name, body.values.into_iter().collect());
+    open.update_secrets(
+        &name,
+        body.values.into_iter().map(|(k, v)| (k, Some(v))).collect(),
+    );
     Ok(StatusCode::NO_CONTENT)
 }

@@ -1,8 +1,10 @@
 //! Reads and writes request and environment files inside a collection root,
 //! with content-hash conflict detection and atomic replacement.
 
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 
 use sha2::{Digest, Sha256};
 
@@ -97,18 +99,29 @@ pub fn read_request(root: &Path, item_id: &str) -> Result<Stored<HttpRequest>, S
 
 /// Writes `request` into the file at `item_id`, touching only changed blocks.
 /// Fails with `Conflict` (and writes nothing) when the file no longer hashes to `expected`.
+///
+/// Returns the request as parsed back from the written text, which can differ
+/// from `request` where `.bru` cannot represent an input (e.g. values are trimmed).
 pub fn save_request(
     root: &Path,
     item_id: &str,
     request: &HttpRequest,
     expected: &ContentHash,
-) -> Result<ContentHash, StoreError> {
+) -> Result<Stored<HttpRequest>, StoreError> {
     let path = resolve_item_path(root, item_id)?;
+    let lock = lock_file(&path).map_err(|e| not_found_as(e, item_id))?;
+    let _guard = lock.lock().unwrap_or_else(PoisonError::into_inner);
     let current = check_current(&path, item_id, expected)?;
     let mut file =
         RequestFile::parse(&current.value).map_err(|e| StoreError::Parse(e.to_string()))?;
     file.request = request.clone();
-    write_atomic(&path, file.to_bru().as_bytes())
+    let text = file.to_bru();
+    let reread = RequestFile::parse(&text).map_err(|e| StoreError::Parse(e.to_string()))?;
+    let hash = write_atomic(&path, text.as_bytes())?;
+    Ok(Stored {
+        value: reread.request,
+        hash,
+    })
 }
 
 /// Replaces the `vars` of `environments/<name>.bru`. Secret names and other blocks are kept.
@@ -124,11 +137,24 @@ pub fn save_environment(
     let item_id = format!("environments/{name}.bru");
     let path =
         resolve_item_path(root, &item_id).map_err(|_| StoreError::OutsideRoot(name.to_owned()))?;
+    let lock = lock_file(&path).map_err(|e| not_found_as(e, &item_id))?;
+    let _guard = lock.lock().unwrap_or_else(PoisonError::into_inner);
     let current = check_current(&path, &item_id, expected)?;
     let mut file =
         EnvironmentFile::parse(&current.value).map_err(|e| StoreError::Parse(e.to_string()))?;
     file.vars = vars.to_vec();
     write_atomic(&path, file.to_bru().as_bytes())
+}
+
+/// One lock per file (by canonical path), held from the hash check to the
+/// rename so two saves with the same base hash cannot both succeed.
+/// Guards writers in this process; other programs editing the file are
+/// caught by the hash check on the next save.
+fn lock_file(path: &Path) -> Result<Arc<Mutex<()>>, StoreError> {
+    static LOCKS: LazyLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> = LazyLock::new(Mutex::default);
+    let key = path.canonicalize()?;
+    let mut locks = LOCKS.lock().unwrap_or_else(PoisonError::into_inner);
+    Ok(locks.entry(key).or_default().clone())
 }
 
 fn check_current(
@@ -141,6 +167,15 @@ fn check_current(
         return Err(StoreError::Conflict { current });
     }
     Ok(current)
+}
+
+fn not_found_as(e: StoreError, item_id: &str) -> StoreError {
+    match e {
+        StoreError::Io(io) if io.kind() == std::io::ErrorKind::NotFound => {
+            StoreError::NotFound(item_id.to_owned())
+        }
+        e => e,
+    }
 }
 
 /// Writes to a temp file in the same directory, then renames it over `path`,

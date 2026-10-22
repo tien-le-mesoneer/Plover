@@ -43,9 +43,9 @@ pub async fn save(
 ) -> Result<Json<HashDto>, ApiError> {
     let open = open_collection(&state, &id)?;
     let request = HttpRequest::from(body.request);
-    let hash = store::save_request(&open.root(), &q.item, &request, &ContentHash(body.hash))?;
+    let saved = store::save_request(&open.root(), &q.item, &request, &ContentHash(body.hash))?;
     open.reload()?;
-    Ok(Json(HashDto { hash: hash.0 }))
+    Ok(Json(HashDto { hash: saved.hash.0 }))
 }
 
 pub async fn send(

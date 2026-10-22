@@ -74,12 +74,22 @@ impl OpenCollection {
             .unwrap_or_default()
     }
 
-    /// Replaces the in-memory secret values for environment `env`.
-    pub fn set_secrets(&self, env: &str, values: VarMap) {
-        self.secrets
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(env.to_owned(), values);
+    /// Merges secret values for environment `env`: `Some` sets a value, `None` clears it.
+    /// Names not mentioned keep their current value.
+    pub fn update_secrets(&self, env: &str, changes: BTreeMap<String, Option<String>>) {
+        let mut secrets = self.secrets.lock().unwrap_or_else(PoisonError::into_inner);
+        let values = secrets.entry(env.to_owned()).or_default();
+        for (name, value) in changes {
+            match value {
+                Some(v) => values.insert(name, v),
+                None => values.remove(&name),
+            };
+        }
+    }
+
+    /// Names (never values) of the secrets that currently have a value, sorted.
+    pub fn secret_names_set(&self, env: &str) -> Vec<String> {
+        self.secrets(env).into_keys().collect()
     }
 }
 

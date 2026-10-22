@@ -94,7 +94,9 @@ fn save_minimal_diff() {
     assert_eq!(stored.hash, ContentHash::of(before.as_bytes()));
     let mut request = stored.value;
     request.headers[0].value = "baz".into();
-    let hash = store::save_request(&root, ECHO_JSON, &request, &stored.hash).unwrap();
+    let hash = store::save_request(&root, ECHO_JSON, &request, &stored.hash)
+        .unwrap()
+        .hash;
     let after = fs::read_to_string(root.join(ECHO_JSON)).unwrap();
     assert_eq!(changed_lines(&before, &after), (1, 1));
     assert!(after.contains("  foo: baz\n"));
@@ -171,7 +173,7 @@ async fn send_one_uses_draft_and_secrets() {
     let ws = Workspace::new(ExecOptions::default());
     let id = ws.open(root).unwrap();
     let open = ws.get(&id).unwrap();
-    open.set_secrets("local", [("host".to_owned(), server.uri())].into());
+    open.update_secrets("local", [("host".to_owned(), Some(server.uri()))].into());
     let mut draft = store::read_request(&open.root(), "r.bru").unwrap().value;
     draft.url = "{{host}}/draft".into();
     let res = send_one(
@@ -186,4 +188,104 @@ async fn send_one_uses_draft_and_secrets() {
     .unwrap();
     assert_eq!(res.status, 201);
     assert_eq!(res.body, b"ok");
+}
+
+#[test]
+fn concurrent_saves_with_same_base_hash_one_wins() {
+    for round in 0..10 {
+        let (_dir, root) = fixture_copy();
+        let stored = store::read_request(&root, ECHO_JSON).unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let handles: Vec<_> = (0..8)
+            .map(|k| {
+                let root = root.clone();
+                let hash = stored.hash.clone();
+                let mut request = stored.value.clone();
+                request.url = format!("http://race/{round}/{k}");
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    store::save_request(&root, ECHO_JSON, &request, &hash)
+                })
+            })
+            .collect();
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        let ok = results.iter().filter(|r| r.is_ok()).count();
+        let conflicts = results
+            .iter()
+            .filter(|r| matches!(r, Err(StoreError::Conflict { .. })))
+            .count();
+        assert_eq!((ok, conflicts), (1, 7), "round {round}");
+    }
+}
+
+#[test]
+fn save_returns_request_as_reread_from_disk() {
+    let (_dir, root) = fixture_copy();
+    let stored = store::read_request(&root, ECHO_JSON).unwrap();
+    let mut request = stored.value;
+    request.headers[0].name = "~x".into();
+    request.headers[0].value = "  v  ".into();
+    let saved = store::save_request(&root, ECHO_JSON, &request, &stored.hash).unwrap();
+    // `~x` can only be written as a disabled `x`; values are trimmed on read.
+    assert_eq!(saved.value.headers[0].name, "x");
+    assert!(!saved.value.headers[0].enabled);
+    assert_eq!(saved.value.headers[0].value, "v");
+    assert_eq!(
+        saved.value,
+        store::read_request(&root, ECHO_JSON).unwrap().value
+    );
+    assert_eq!(
+        saved.hash,
+        ContentHash::of(&fs::read(root.join(ECHO_JSON)).unwrap())
+    );
+}
+
+#[test]
+fn inactive_bodies_survive_mode_switches() {
+    use brs_core::request::Body;
+    let (_dir, root) = fixture_copy();
+    let before = fs::read_to_string(root.join(ECHO_JSON)).unwrap();
+    let stored = store::read_request(&root, ECHO_JSON).unwrap();
+    let json = stored.value.body.clone();
+    assert!(matches!(json, Body::Json(_)));
+    assert!(stored.value.other_bodies.is_empty());
+
+    // json -> none: the body:json block stays, only the mode line changes.
+    let mut none = stored.value.clone();
+    none.other_bodies = vec![json.clone()];
+    none.body = Body::None;
+    let saved = store::save_request(&root, ECHO_JSON, &none, &stored.hash).unwrap();
+    let after = fs::read_to_string(root.join(ECHO_JSON)).unwrap();
+    assert_eq!(changed_lines(&before, &after), (1, 1), "{after}");
+    assert!(after.contains("  body: none\n") && after.contains("body:json {"));
+    assert_eq!(saved.value.other_bodies, vec![json.clone()]);
+
+    // none -> json again: the file is back to the original bytes.
+    let mut back = saved.value.clone();
+    back.body = json;
+    back.other_bodies.clear();
+    store::save_request(&root, ECHO_JSON, &back, &saved.hash).unwrap();
+    assert_eq!(fs::read_to_string(root.join(ECHO_JSON)).unwrap(), before);
+}
+
+#[test]
+fn secrets_merge_and_clear() {
+    let (_dir, root) = fixture_copy();
+    let ws = Workspace::new(ExecOptions::default());
+    let open = ws.get(&ws.open(&root).unwrap()).unwrap();
+    open.update_secrets("Local", [("a".to_owned(), Some("1".to_owned()))].into());
+    open.update_secrets("Local", [("b".to_owned(), Some("2".to_owned()))].into());
+    assert_eq!(
+        open.secrets("Local"),
+        [
+            ("a".to_owned(), "1".to_owned()),
+            ("b".to_owned(), "2".to_owned())
+        ]
+        .into()
+    );
+    assert_eq!(open.secret_names_set("Local"), ["a", "b"]);
+    open.update_secrets("Local", [("a".to_owned(), None)].into());
+    assert_eq!(open.secret_names_set("Local"), ["b"]);
+    assert!(open.secret_names_set("Prod").is_empty());
 }

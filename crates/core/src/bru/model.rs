@@ -189,6 +189,11 @@ fn read_request(doc: &BruDocument) -> Result<HttpRequest, ModelError> {
         path_params: kv_list(doc, "params:path"),
         headers: kv_list(doc, "headers"),
         body: read_body(doc, &body_mode),
+        other_bodies: BODY_BLOCKS
+            .iter()
+            .filter(|(mode, block)| *mode != body_mode && doc.block(block).is_some())
+            .map(|(mode, _)| read_body(doc, mode))
+            .collect(),
         auth: read_auth(doc, &auth_mode),
         vars_pre: kv_list(doc, "vars:pre-request"),
         vars_post: kv_list(doc, "vars:post-response"),
@@ -237,6 +242,15 @@ fn read_environment(doc: BruDocument) -> EnvironmentFile {
         doc,
     }
 }
+
+/// Body modes that have their own block, in Bruno's serialization order.
+const BODY_BLOCKS: &[(&str, &str)] = &[
+    ("json", "body:json"),
+    ("text", "body:text"),
+    ("xml", "body:xml"),
+    ("formUrlEncoded", "body:form-urlencoded"),
+    ("multipartForm", "body:multipart-form"),
+];
 
 fn read_body(doc: &BruDocument, mode: &str) -> Body {
     match mode {
@@ -404,6 +418,13 @@ fn write_request(doc: &mut BruDocument, req: &HttpRequest) {
     if changed(&|o| o.body == req.body) {
         set_dict_key(doc, &target, "body", Some(&body_mode(&req.body)));
         write_body_block(doc, &req.body);
+    }
+    if changed(&|o| o.other_bodies == req.other_bodies) {
+        let active = body_mode(&req.body);
+        // Inactive bodies are written when edited; ones left out are kept, as in Bruno.
+        for body in req.other_bodies.iter().filter(|b| body_mode(b) != active) {
+            write_body_block(doc, body);
+        }
     }
     if changed(&|o| o.auth == req.auth) {
         set_dict_key(doc, &target, "auth", Some(&auth_mode(&req.auth)));

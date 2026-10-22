@@ -142,7 +142,11 @@ pub struct HttpRequest {
     pub query: Vec<KeyValue>,
     pub path_params: Vec<KeyValue>,
     pub headers: Vec<KeyValue>,
+    /// The active body (the HTTP block's `body:` mode).
     pub body: Body,
+    /// Bodies of other modes present in the file. Bruno keeps one body per
+    /// mode, so switching modes and back restores the earlier content.
+    pub other_bodies: Vec<Body>,
     pub auth: Auth,
     pub vars_pre: Vec<KeyValue>,
     pub vars_post: Vec<KeyValue>,

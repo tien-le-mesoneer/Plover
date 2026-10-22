@@ -355,6 +355,7 @@ impl From<HttpRequestDto> for HttpRequest {
             query: from_kvs(d.query),
             path_params: from_kvs(d.path_params),
             headers: from_kvs(d.headers),
+            other_bodies: Vec::new(),
             body: match d.body {
                 BodyDto::None => Body::None,
                 BodyDto::Json { text } => Body::Json(text),
