@@ -110,3 +110,82 @@ Read-only review of a89d348..967a1f6. Each finding was verified by a localhost p
 - Benchmark after the fixes (bru-rs, scripted): 1 request 0.014 s, 200 requests 0.83 s (was 0.80 s), 1000 requests 4.07 s (was 4.64 s); RSS unchanged at 16, 25 and 29 MB.
 - Still open (unchanged from "Gaps"): unsupported APIs, Windows and Linux are untested, and Node `util.inspect` console formatting is not matched.
 - #1 caps nesting at 1000 levels, which is lower than where Bruno's JS stack would overflow.
+
+## Script gaps (A–D)
+
+**Tóm tắt:** Đã đóng cả 4 gap người dùng chọn, mỗi gap đối chiếu với Bruno CLI 4.3.0 `--sandbox safe`:
+- `process.env` và `.env`
+- các module của safe mode: `uuid`, `nanoid`, `path`, `jsonwebtoken`, `axios`
+- `bru.sendRequest` và `bru.cookies`
+- lưu thay đổi biến xuống file (Bruno 4.3 luôn lưu, không cần `{persist: true}`)
+
+Kết quả kiểm tra: 249 test Rust và 48 test frontend đều pass. Probe của reviewer cho kết quả như cũ. Benchmark có script nhanh hơn trước khoảng 43% (1000 request: 4.17 s xuống 2.39 s). Một số điểm khác Bruno là cố ý, liệt kê bên dưới.
+
+Plan: `docs/superpowers/plans/2026-10-23-script-gaps.md`. Commits on `main` (not pushed):
+
+| Commit | What |
+|---|---|
+| 74b8f58 | plan |
+| b7b2d6c | (A) `.env` parsed like dotenv 16 (16 edge cases match node dotenv 16.6.1); `{{process.env.X}}` as the highest interpolation layer, also inside env-file values; `bru.getProcessEnv` |
+| 6744ceb | (B, C) host calls from scripts; `uuid`, `nanoid`, `path`, `jsonwebtoken`, `axios`; `bru.sendRequest`; `bru.cookies` and `bru.cookies.jar()` |
+| ff15af9 | scripted requests in `SendResultDto.scriptedRequests`, the UI Console tab and CLI `--verbose`; licenses for the new bundles |
+| d71427d | (D) persisting script variable changes |
+| 786a5d4 | prelude/API compiled to bytecode once per worker; JWT error shape |
+
+**Bruno behavior found (source + probes):**
+- *Process environment:* `.env` overrides the process environment and `process: { env }` is the last key in the combined variables (`commands/run.js:661-674`, `interpolate-vars.js:36-75`).
+- *Modules:* safe mode's module shims are `bruno-js/src/sandbox/quickjs/shims/lib/*`. `sendRequest` resolves `{status, statusText, headers, data, config, request, responseTime}`. It rejects 4xx with `{code, config, message, name, stack, status}` and no `response`; `axios` rejects with `{code, config, isAxiosError, message, response}`.
+- *Persistence:* Bruno 4.3 persists after every request with no flag (`utils/persist-variables.js`). The output of our merge for the probe collection is byte-identical to what Bruno CLI wrote.
+
+**Design:**
+- *Host calls:* scripts call `__brsHost`. Random bytes and JWT signatures are answered on the worker. HTTP and cookie operations go over a channel to the runner, which serves them with the run's `Session` inside the script deadline; cancellation interrupts the wait.
+- *Persistence:* `RunOptions.persist` selects what is written.
+  - The CLI writes both the environment file and `collection.bru`.
+  - The server writes the environment file only, as the Bruno app does; secrets stay in memory and the collection is reloaded.
+  - Library callers write nothing by default.
+  - Only changed variables are touched, at the syntax layer, under the store's per-file lock with an atomic rename. A write failure only warns.
+
+**Deliberate deviations:**
+- *Cookies and `sendRequest`:* like Bruno, `bru.sendRequest` and `axios` don't use the run's cookie jar; a Bruno CLI probe showed no `cookie` header. This overrides the "same session cookies" design note.
+- *Cookie data:*
+  - `jar.setCookie(url, name, value)` works here; in Bruno 4.3.0 it silently does nothing.
+  - Cookie objects have no `creation`/`lastAccessed`.
+  - Cookies with equal path length are ordered by name, not by creation time.
+- *`path.resolve`:* relative paths start at the collection root, not the host process's working directory.
+- *Response `config`:* contains only `url, method, headers, data, timeout`, not axios internals.
+- *Persisted rows:* new rows are appended in name order, not script order.
+- *`jwt.verify`:* with a PEM key and no `algorithms` option, it accepts RS*/PS*/ES*/EdDSA; jsonwebtoken narrows by key type.
+
+**Gate:** `cargo test --workspace` 249 passed, 0 failed. `cargo clippy -D warnings` is clean. Frontend: typecheck and lint are clean, 48/48 tests pass. `check:no-cdn`, `check:console` and the library `npm run check` (9 bundles) are clean, and the release build succeeds.
+
+**Test-first:** the new B and C tests failed on the commit before them (6/7 in a worktree at `b7b2d6c`; the seventh is A, which that commit already had). The dotenv, persist and runner persistence tests were seen failing first against `todo!()` or a missing API.
+
+**Regression:**
+- *Phase 3 sandbox tests:* pass.
+- *Reviewer probes* (`scratchpad/review3`): unchanged on all 7 probes with earlier results. For example, `p_interp` peaks at 178 MB and fails with a clear error, and `p_deep` exits 0.
+- *Scripted benchmark* (macOS, localhost, one post-response script and one chai test per request, old vs new binary run alternately):
+
+| Requests | before gaps (51badc5) wall / CPU / RSS | now (786a5d4) wall / CPU / RSS | Bruno CLI 4.3.0 safe (earlier run) |
+|---|---|---|---|
+| 1 | 0.020 s / 0.010 s / 16 MB | 0.020 s / 0.010 s / 18 MB | 1.33 s / 232 MB |
+| 200 | 0.850 s / 0.794 s / 24 MB | 0.486 s / 0.438 s / 28 MB | 27.5 s / 284 MB |
+| 1000 | 4.17 s / 3.95 s / 28 MB | 2.39 s / 2.18 s / 33 MB | 128.7 s / 432 MB |
+
+Before the bytecode change, the gaps had made 1000 requests 5.52 s (api.js parsed per context); that was measured and fixed in 786a5d4. The benchmark collection doesn't use the new APIs, so their own per-call cost is not measured: each `sendRequest` is one round trip to the runner plus the HTTP request.
+
+**Security notes:**
+- *Process environment:* as in Bruno, collection scripts and `{{process.env.*}}` see the whole process environment. Values are never logged.
+- *Host calls:* a closed allow-list (`random`, `jwt.sign`, `jwt.verify`, `http`, `cookies.*`). HTTP goes only through `Session::send_without_cookies`, with the session's TLS options and body cap; there are still no sockets, files or process access in JS.
+- *Persistence:* never writes secret values; secret rows stay name-only. Values from `--env-var` reach disk only when a script changed them.
+- *Test keys:* `crates/core/tests/fixtures/jwt/` holds throwaway RSA keys for tests only.
+
+**Still open (supersedes gaps 1–3 above where they overlap):**
+1. **Missing APIs:** `bru.runRequest`, global environments, `--env-file`/`extends`-aware persistence and local `require('./x')` modules (Bruno safe mode allows the last one).
+2. **Typed environment values:** `@number/@boolean/@object` annotations are *written* on persist, but values read from environment files are still strings.
+3. **Server collection variables:** `setCollectionVar` changes are not persisted by the server; they stay in session memory.
+4. **`sendRequest` parity:** calls inside one script run one at a time; `Promise.all` waits for each. There is no proxy or client-certificate configuration, as before.
+5. **Unverified:**
+   - Windows/Linux builds.
+   - Bruno's own scripting fixtures (they need Bruno's test server).
+   - The per-call cost of the new APIs.
+   - The UI display of scripted requests, which has a unit test only.
