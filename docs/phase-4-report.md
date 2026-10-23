@@ -2,11 +2,11 @@
 
 ## Tóm tắt
 
-- Đã xong 8 task Phase 4 trên `main` (chưa push). Gate pass: 268 test Rust, 54 test frontend, clippy sạch.
-- macOS: build được `Plover.app` (16.3 MB) và `.dmg` (6.3 MB), smoke test pass, keychain thật lưu/đọc/xoá được qua lần khởi động lại.
-- `plv` nhỏ lại từ 21.3 MB → 12.7 MB (chậm hơn ~6%); bản CLI-only 7.6 MB. App tự chạy như CLI khi gọi là `plv`.
-- Chưa kiểm chứng: hộp thoại chọn thư mục, các menu, single-instance và ảnh chụp cửa sổ (sandbox không cho điều khiển UI native/chụp màn hình).
-- Windows/Linux chỉ kiểm chứng được qua CI (`.github/workflows/ci.yml`) sau khi bạn push.
+- Phase 4 và cả 13 mục review vòng 2 (11 lỗi + 2 nit) đã xong trên `main`, chưa push. Gate pass: 283 test Rust, 65 test frontend, clippy sạch, kiểm tra console sạch.
+- Đã sửa 12/13 mục. Mục 11 (socket single-instance ở `/tmp` trên macOS) ghi thành gap: plugin không cho đổi đường dẫn.
+- Secret giờ ghi nhận nơi lưu theo từng secret: keychain từ chối thì chỉ secret đó vào RAM, kèm cảnh báo và badge trên UI. Giá trị dài được chia nhỏ để lưu trên Windows.
+- URL app tự mở không còn chứa token (dùng mã một lần). Mở collection bằng menu không còn reload trang. Quit huỷ thật các run đang chạy.
+- Windows/Linux chỉ kiểm chứng qua CI sau khi bạn push. Bản checkout `autocrlf=true` đã được chứng minh pass trên macOS.
 
 Plan: `docs/superpowers/plans/2026-10-23-phase-4-desktop.md`. Not pushed.
 
@@ -15,66 +15,84 @@ Plan: `docs/superpowers/plans/2026-10-23-phase-4-desktop.md`. Not pushed.
 | Task | Commit | Tests added |
 |---|---|---|
 | plan doc | 33ae986 | – |
-| 1 secret store: OS keychain + memory fallback, `plv run --use-keychain` | 060b1b3 | 7 (core `tests/secrets.rs`) |
-| 2 server `NativeHost` + `/api/capabilities`, native routes | 914846d | 6 (server `tests/native.rs`) |
-| 3 frontend: Browse…, keychain status, Open in browser | c9f0a5d | 6 (1 client + 5 component) |
-| 4 release profile, `embed-ui` feature, CLI-only build | 5c1041a | 1 (runs only in the CLI-only build; in the gate) |
-| 5 Tauri 2 shell (`plover-desktop`) | 8a32cad | 3 (lifecycle) |
-| 6 one binary: `plv` dispatch + Install Command Line Tool | 6ff86b2 | 3 (dispatch, link rules, candidates) |
-| 7 CI workflow (written, not run) | 83449c5 | YAML parse check only |
-| 8 acceptance + this report | (this commit) | – |
+| 1 secret store, `plv run --use-keychain` | 060b1b3 (reworked in 914a2e9) | 7 → 12 |
+| 2 server `NativeHost` + `/api/capabilities` | 914846d | 6 |
+| 3 frontend: Browse…, keychain status, Open in browser | c9f0a5d | 6 |
+| 4 release profile, `embed-ui`, CLI-only build | 5c1041a | 1 |
+| 5 Tauri 2 shell | 8a32cad | 3 |
+| 6 one binary: `plv` dispatch + CLI installer | 6ff86b2 | 3 |
+| 7 CI workflow (written, not run) | 83449c5 | YAML parse only |
+| 8 acceptance + report | 7b74ffd | – |
+| review round 2 (below) | 77dea74, 914a2e9, 3125abe, this commit | see below |
 
-**Gate** (final, every commit after the Task 2 amend went through it):
-`rust passed 268 failed 0` · CLI-only `cargo test -p plover-cli --no-default-features --test cli` ok · `clippy -D warnings` clean · frontend typecheck/lint ok, `Tests 54 passed (54)`, build ok · `no CDN references in 10 files` · `check:console`: `no page errors` (Task 3) · `dist/ is up to date (9 libraries)`.
+**Gate (final):** `rust passed 283 failed 0` · CLI-only tests ok · `clippy -D warnings` clean · typecheck/lint ok · `Tests 65 passed (65)` · `no CDN references in 10 files` · `check:console`: 2 editors, JSON diagnostics shown, `no page errors` · `dist/ is up to date (9 libraries)`.
+
+## Review round 2 — findings
+
+| # | Finding | Status | Commit |
+|---|---|---|---|
+| 1 | Windows `autocrlf=true` breaks bundle check + 6 byte-comparing tests; path test assumes `/` | Fixed: `.gitattributes` (`* text=auto eol=lf`, images binary); renormalize was a no-op (no CR in the repo; the CRLF tests use inline strings); the path test compares `/`-joined components. Proof: fresh `git -c core.autocrlf=true clone --local` → 0 CR files, `node check.mjs` up to date, `cargo test --workspace` 268/268 (at that commit). The separator fix itself is only provable on Windows (CI). | 77dea74 |
+| 2 | UI said "keychain" while secrets went to memory | Fixed: per-secret backend; `secretsSet` is `[{name, backend}]`; the editor badges each secret, warns when any is memory-only, and refreshes capabilities after every save | 914a2e9 |
+| 3 | One keychain error moved the whole process to memory; Clear left the keychain value | Fixed: `SecretVault` probes once at startup (unavailable → memory only, reported up front); a refused value stays in memory for that secret only, with a warning; reads check memory first; Clear deletes from both and reports a keychain failure. Tests cover -128 / -25293 / -25308, existing entries and clear semantics. | 914a2e9 |
+| 4 | Windows 1280-unit limit → 500 | Fixed: values over the limit are split into `<account>#n` chunks behind a header entry (4 KB PEM test with a 1280-unit fake); if chunking fails, that value stays in memory with a warning, leaving no partial chunks | 914a2e9 |
+| 5 | Open Collection / second launch reloaded the window (drafts lost) | Fixed: `GET /api/events` WebSocket; `collection_opened` adds and selects the collection without a reload; Reload Window sends `reload_requested` and the page asks before discarding unsaved edits (plus `beforeunload` in browser tabs) | 3125abe |
+| 6 | CLI link pointed at the AppImage mount / translocated app | Fixed: links `$APPIMAGE`; refuses `/AppTranslocation/` and `/Volumes/…` with "Move Plover to Applications first" | 3125abe |
+| 7 | Non-UTF-8 argument aborted | Fixed: `args_os` everywhere (the plugin already used it) | 3125abe |
+| 8 | `--version`/`-h` opened the GUI | Fixed: `--version`, `-V`, `--help`, `-h` dispatch to the CLI before single-instance | 3125abe |
+| 9 | Smoke/lifecycle tests could pass vacuously | Fixed: smoke waits for `POST /api/client-ready` from the mounted page (which first exchanged its launch code) and skips single-instance. The server runs on its own runtime and Quit shuts it down: `quit_cancels_runs` drives a real WebSocket run against a localhost mock and asserts nothing is sent after Quit (fails when the shutdown is removed — mutation-checked). The start-failure test binds a taken port. Finding: axum's graceful shutdown never covered upgraded WebSockets, so the old design let runs continue until exit. | 3125abe |
+| 10 | Open in Browser put the token in the URL/history | Fixed: single-use launch codes (`#code=`, 60 s, constant-time compare, 20 failures/min → 429) exchanged via `POST /api/session/exchange`; used by the window, Open in Browser and `plv serve`'s auto-open. The URL `plv serve` prints keeps `#token=` (documented). | 3125abe |
+| 11 | macOS single-instance socket is a fixed shared `/tmp` path | **Gap**: `tauri-plugin-single-instance` 2.5.4 derives `/tmp/<identifier>_si.sock` in `socket_path()` with no option; a per-user path would mean replacing the plugin with our own IPC. Smoke mode no longer uses single-instance. | – |
+| nit | `Cargo.toml` said "within 3%" | Fixed: states +5.6% wall / +7% CPU | 3125abe |
+| nit | `--use-keychain` without `--env` ignored | Fixed: clap `requires = "env"` → usage error, exit 2 | 3125abe |
 
 ## Sizes (macOS arm64, release)
 
-| Artifact | Before | After |
+| Artifact | Before Phase 4 | Now |
 |---|---|---|
-| `plv` with web UI | 21.3 MB (18.0 MB stripped) | **12.7 MB** |
-| `plv` CLI-only (`--no-default-features`) | – | **7.6 MB** |
-| `Plover.app` (du) | – | **16.3 MB** (binary 16.2 MB) |
-| `Plover_0.1.0_aarch64.dmg` | – | **6.3 MB** |
+| `plv` with web UI | 21.3 MB | 12.8 MB |
+| `plv` CLI-only | – | 7.6 MB |
+| `Plover.app` (du) | – | 16.4 MB |
+| `.dmg` | – | 6.3 MB |
 
-Profile: `strip`, fat LTO, `codegen-units = 1`, `opt-level = "s"`, `panic = "unwind"`. Full candidate table in `docs/development.md`.
-
-**Benchmark** (1000 requests, each with a post-response script and a chai test; 4 interleaved runs): default profile 2.16 s wall / 1.97 s CPU → chosen 2.28 s / 2.11 s (+5.6% / +7%). `opt-level = "z"` (11.3 MB) was +39% and rejected. Wall times on this machine vary ±20% between rounds.
+Benchmark (1000 scripted requests, 4 interleaved runs): default profile 2.16 s / 1.97 s CPU → chosen profile 2.28 s / 2.11 s. Not re-measured after round 2; the changes are outside the request path.
 
 ## macOS verification (this machine)
 
 Verified:
-- `tauri build --bundles app,dmg` succeeds; the bundled binary passes `PLOVER_DESKTOP_SMOKE=1` in about 3 s (window created, server answers an authorised request with the window's Host).
-- The app binary is the CLI: `plover run …` dispatches to `plv`, as does `PLOVER_AS_CLI=1 plover --version` → `plv 0.1.0`, and a `plv` symlink in a temp `~/.local/bin` → `plv 0.1.0`. The phase-3 chain through the app's CLI against the local mock: `Requests: 3 passed · Tests: 5/5 · Asserts: 2/2`.
-- Real macOS Keychain round-trip through `plv serve` (same server and secret store the app uses), under the test service `dev.plover.p4test`: `/api/capabilities` reports `secretBackend: keychain`; a secret set via the API survives a restart (`secretsSet: ['token']`); `security find-generic-password` (without `-g`) finds account `<collection-id>/kc/token`; the value does not appear in any collection file; clearing it removes the entry. No keychain prompts appeared. No test entries are left.
-- SIGTERM ends the app promptly.
+- `tauri build --bundles app,dmg`; the bundled binary passes `PLOVER_DESKTOP_SMOKE=1`, which proves the page loaded, exchanged its launch code, reported ready, and the server answered an authorised request.
+- The app binary acts as `plv` (`run`, `--version`, `-h`, a `plv` link, `PLOVER_AS_CLI=1`). The phase-3 chain passes through it (3/3, 5/5, 2/2).
+- Real Keychain round-trip through `plv serve` with test service `dev.plover.p4test`: no warnings, backend `keychain`, survives a restart, not in collection files, removed on clear, no leftover entries.
+- The CRLF-clone proof described in finding 1.
 
-Not verified (no way to drive native UI in this sandbox):
-- Native folder picker, every menu action (Open Collection…, Open in Browser, Reload, Install Command Line Tool… dialogs, Quit and its 3 s deadline), single-instance forwarding, the Browse…/Open in browser buttons inside the window. These paths are covered only by unit/API tests with a fake host.
-- What the window looks like: `screencapture` fails with "could not create image from display" (no screen-recording permission).
-- Gatekeeper behaviour when opening the unsigned `.dmg` on another Mac.
+Not verified (no native UI automation or screen capture here): the folder picker, menu actions, the reload confirmation inside the window, single-instance forwarding, the window's look, and Gatekeeper on another Mac.
 
 ## Awaiting CI (Windows, Linux)
 
-`.github/workflows/ci.yml` (macos-14, windows-latest, ubuntu-22.04) runs every check, builds the bundles (dmg / NSIS / deb + AppImage), runs the smoke test (Linux under `xvfb-run`) and uploads artifacts. Nothing has run yet; it starts on your next push. `actionlint` is not installed here, so the workflow was only parse-checked. Likely first-run risks: Windows path assumptions in existing tests, AppImage tooling on the runner, Linux Secret Service absence (handled by the memory fallback).
+`.github/workflows/ci.yml` runs every check, builds the bundles, runs the smoke test (Linux under `xvfb-run`) and uploads artifacts on your next push. `actionlint` is not installed here.
 
 ## Deviations from the plan
 
-1. `ServerConfig.secrets` / `.native` are `Option` (None = memory / web mode) and `ServerConfig` derives `Default`; `AppState` gains `with_secrets`, `with_native`, `with_session_url`. `Workspace::new` keeps a memory store; `Workspace::with_secrets` takes any `SecretStore`.
-2. `NativeHost` uses boxed futures (`HostFuture`) instead of `#[async_trait]`: no new dependency.
-3. keyring's mock store does not persist across entries, so tests use a persistent in-test `CredentialBuilder` through `KeyringStore::with_builder`.
-4. Only `PlatformFailure` / `NoStorageAccess` switch to memory; other keychain errors surface as API 500 `secret_store_error`. Secret names come from `vars:secret` plus names set in the session. `PLOVER_KEYCHAIN_SERVICE` overrides the service name (testing aid; CI sets it).
-5. `quit_cancels_runs` proves the 3 s deadline with a server that never finishes; in-flight runs end because the process exits. There is no explicit run-cancellation registry.
-6. The window is created in code (no `frontendDist`, no config windows); `capabilities/default.json` grants nothing. An Edit menu was added (macOS needs it for copy/paste in the webview).
-7. The start-failure dialog is shown non-blocking and exits 1 when dismissed (a blocking dialog on the main thread would deadlock).
-8. CLI dispatch also honours `PLOVER_AS_CLI=1`, used by the `.deb` wrapper `/usr/bin/plv` (a copied file can't be a symlink). Windows release builds attach the parent console in CLI mode (compiled only in CI).
-9. "Install Command Line Tool…" is on macOS and Linux only; Windows has no CLI-install path yet.
-10. Process slips: the Task 2 commit first landed with a failing gate (piping into `tail` hid the exit code); it was fixed and amended before any later commit, and every later commit went through a wrapper that commits only on a passing gate. The Task 5 lifecycle tests were written together with their code, so I never saw them fail first.
+1. `ServerConfig.secrets` / `.native` are `Option`; `AppState` has builder methods; the secret API is the concrete `SecretVault` over a `Keychain` trait (round 2 replaced `SecretStore`, `MemoryStore` and `FallbackStore`).
+2. `NativeHost` uses boxed futures instead of `#[async_trait]`.
+3. keyring's mock store doesn't persist across entries, so tests use a persistent in-test `CredentialBuilder` with programmable faults.
+4. The server runs on its own Tokio runtime so Quit can cancel in-flight runs.
+5. The window is created in code; capabilities grant nothing; an Edit menu was added for macOS copy/paste.
+6. CLI dispatch also honours `PLOVER_AS_CLI=1` (used by the `.deb` wrapper); Windows attaches the parent console.
+7. The CLI installer is on macOS and Linux only.
+8. Process slips:
+   - The first Task 2 commit landed with a failing gate, because a pipe hid the exit code. I amended it before any later commit, and every later commit went through the gate wrapper.
+   - The first version of the Task 5 lifecycle tests was written together with its code.
+   - Round 2, item by item:
+     - Item 1 relied on the reviewer's failing log plus the clone proof after the fix.
+     - The tests for items 2–5, 9 and 10 first failed to compile against the new API; the frontend tests for items 2, 5 and 10 failed at run time.
+     - The tests for items 6–8 and the nit failed at run time against stubs.
 
 ## Gaps
 
-1. **Collections aren't remembered** between app launches: you reopen them each time (or pass a path).
-2. **Unsigned bundles**: Gatekeeper/SmartScreen warnings; no notarization. Unsigned binaries may also trigger keychain access prompts after an app update (unverified).
-3. **Windows**: no `plv` install / `PATH` integration; Windows behaviour overall is unverified until CI runs.
-4. **Native UI paths unverified** on any OS (picker, menus, single instance, Quit deadline).
-5. Opening a folder via Finder "Open With" or by dropping it on the Dock icon is not handled; there is no auto-update, no real brand icon (placeholder from `crates/desktop/icon.svg`), and no menu localisation.
-6. Secrets are keyed by the collection's absolute path, so moving a collection orphans them. Bruno's stored secrets are not read (accepted, P4-3).
+1. Collections aren't remembered between app launches.
+2. Unsigned bundles (Gatekeeper/SmartScreen warnings). Unsigned binaries may also trigger keychain prompts after an update (unverified).
+3. Windows: no `plv` install or PATH integration, and Windows overall is unverified until CI runs.
+4. The macOS single-instance socket is shared in `/tmp` (finding 11).
+5. Native UI paths are unverified on any OS.
+6. No Finder "Open With" or Dock-drop handling, no auto-update, the icon is a placeholder, and the menu isn't localised.
+7. Secrets are keyed by the collection's absolute path, so moving a collection orphans them; Bruno's stored secrets are not read.

@@ -13,8 +13,8 @@ All HTTP requests are sent by the Rust backend, never by the browser.
 ```bash
 plv run path/to/collection --env local
 plv run path/to/collection/folder/request.bru --env local --env-var token=abc
-plv serve path/to/collection          # opens the browser
-plv serve --no-open --port 4000       # prints the URL instead
+plv serve path/to/collection          # opens the browser (single-use launch code in the URL)
+plv serve --no-open --port 4000       # prints a URL with the session token, for copying
 ```
 
 `run` exits 0 when every request passed (HTTP 4xx/5xx is not a failure, as in

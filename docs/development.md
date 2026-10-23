@@ -89,7 +89,17 @@ uncaught page error. Run it after changing `frontend/src/editor/` or upgrading
   WebSocket subprotocol `plover.token.<token>`).
 - `Host` and `Origin` must be `127.0.0.1:<port>` / `localhost:<port>` (or a
   `--dev-origin`), which blocks cross-site requests and DNS rebinding.
-- Secret environment values entered in the UI stay in server memory.
+- URLs the app opens itself (desktop window, Open in Browser, `plv serve`'s
+  auto-open) carry a single-use launch code (`#code=`, valid 60 s), which the page
+  exchanges once via `POST /api/session/exchange` (no token needed; Host/Origin still
+  checked; constant-time compare; 20 failures per minute lock exchanges). The URL
+  `plv serve` prints keeps `#token=` so it can be copied into a browser.
+- `GET /api/events` (WebSocket, token subprotocol) tells the page about native
+  actions (collection opened, reload requested).
+- Secret environment values go to the OS keychain (service `dev.plover`, account
+  `<collection-id>/<env>/<name>`; values over one entry's limit are chunked). A value
+  the keychain refuses stays in memory for that secret only, with a warning; with no
+  keychain at startup, every secret is memory-only and the UI says so. Never on disk.
 
 ## Script sandbox libraries
 
