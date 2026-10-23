@@ -8,10 +8,12 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crate::session_host::{ScriptedRequest, SessionHost};
+use std::collections::BTreeSet;
+
 use crate::bru::model::{RequestFile, ScopeFile};
 use crate::collection::{Collection, Environment, Item, RequestRef};
 use crate::executor::{ExecError, ExecOptions, ResponseSummary, Session};
+use crate::persist::{self, VarChanges};
 use crate::request::{HttpRequest, KeyValue, Method, MultipartField};
 use crate::resolve::{
     PreparedBody, PreparedRequest, ResolveContext, ResolveError, ResolvedRequest,
@@ -22,6 +24,7 @@ use crate::script::{
     ScriptError, ScriptInfo, ScriptLimits, ScriptRequest, ScriptResponse, ScriptVars, Segment,
     TestResult, run_asserts, run_post_response_vars, run_script_with_host,
 };
+use crate::session_host::{ScriptedRequest, SessionHost};
 use crate::store::{self, StoreError};
 use crate::vars::{
     InterpolateLimits, MAX_INTERPOLATED_BYTES, ValueMap, VarMap, enabled_map, string_values,
@@ -36,6 +39,82 @@ pub struct RunOptions {
     pub env_overrides: ValueMap,
     pub exec: ExecOptions,
     pub scripts: ScriptLimits,
+    pub persist: Persist,
+}
+
+/// Which script changes to variables are written back to disk after each request
+/// (Bruno 4.3: bruno-cli/src/utils/persist-variables.js).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Persist {
+    /// Keep them in memory only.
+    #[default]
+    Nothing,
+    /// The selected environment file, like the Bruno app.
+    Environment,
+    /// The environment file and `collection.bru` variables, like Bruno CLI.
+    All,
+}
+
+/// Writes what one request's scripts changed, under the store's file lock and with minimal
+/// diffs. Like Bruno, a failure only warns. `true` when a file changed.
+pub fn persist_changes(
+    collection: &Collection,
+    environment: Option<&Environment>,
+    overrides: &ValueMap,
+    persist: Persist,
+    before: &RunVars,
+    after: &RunVars,
+) -> bool {
+    let mut wrote = false;
+    if persist == Persist::Nothing {
+        return false;
+    }
+    // No environment selected means nothing to persist it to; a removed file is not recreated.
+    if let Some(env) = environment.filter(|e| e.path.is_file()) {
+        let changes = VarChanges::between(&before.environment, &after.environment);
+        if !changes.is_empty() {
+            let keep: BTreeSet<String> = overrides.keys().cloned().collect();
+            wrote |= write_changes(&env.path, |src| {
+                persist::apply_env_changes(src.unwrap_or_default(), &changes, &keep)
+            });
+        }
+    }
+    if persist == Persist::All {
+        let changes = VarChanges::between(&before.collection, &after.collection);
+        if !changes.is_empty() {
+            wrote |= write_changes(&collection.root.join("collection.bru"), |src| {
+                persist::apply_collection_var_changes(src.unwrap_or_default(), &changes)
+            });
+        }
+    }
+    wrote
+}
+
+/// The entries of `vars` that are secrets of `environment` (their values stay in memory).
+pub fn secret_values(environment: Option<&Environment>, vars: &ValueMap) -> ValueMap {
+    let Some(env) = environment else {
+        return ValueMap::new();
+    };
+    vars.iter()
+        .filter(|(k, _)| env.file.secrets.iter().any(|s| &s.name == *k))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
+}
+
+fn write_changes(
+    path: &Path,
+    apply: impl FnOnce(Option<&str>) -> Result<String, crate::bru::syntax::SyntaxError>,
+) -> bool {
+    match store::update_file(path, |src| apply(src).map_err(|e| e.to_string())) {
+        Ok(wrote) => wrote,
+        Err(e) => {
+            tracing::warn!(
+                "failed to persist variable updates to {}: {e}",
+                path.display()
+            );
+            false
+        }
+    }
 }
 
 impl RunOptions {
@@ -262,7 +341,7 @@ pub async fn run_with_state(
     state: &mut RunVars,
     on_event: &mut (dyn FnMut(&RunEvent) + Send),
 ) -> Result<RunReport, RunError> {
-    find_environment(collection, opts.env.as_deref())?;
+    let environment = find_environment(collection, opts.env.as_deref())?;
     let absolute = std::path::absolute(target).unwrap_or_else(|_| target.to_path_buf());
     if !absolute.starts_with(&collection.root) || !absolute.exists() {
         return Err(RunError::TargetNotFound(target.to_path_buf()));
@@ -306,6 +385,7 @@ pub async fn run_with_state(
             index += 1;
             continue;
         }
+        let before = state.clone();
         let executed = exec
             .execute(r, None, state, &mut |name, resolved| {
                 on_event(&RunEvent::Started {
@@ -316,6 +396,14 @@ pub async fn run_with_state(
                 })
             })
             .await;
+        persist_changes(
+            collection,
+            environment,
+            &opts.env_overrides,
+            opts.persist,
+            &before,
+            state,
+        );
         let outcome = &executed.outcome;
         report.tests_passed += outcome.tests.iter().filter(|t| t.passed).count();
         report.tests_failed += outcome.tests.iter().filter(|t| !t.passed).count();
@@ -590,7 +678,10 @@ impl Exec<'_> {
                 &host,
             )
             .await;
-            executed.outcome.scripted_requests.extend(host.take_recorded());
+            executed
+                .outcome
+                .scripted_requests
+                .extend(host.take_recorded());
             vars = out.vars;
             apply_script_request(&mut prepared, &out.req);
             merge_flow(&mut executed.flow, &out.flow);
@@ -621,8 +712,7 @@ impl Exec<'_> {
             &vars.var_stack().with_process_env(&self.process_env),
             &self.collection.root,
             &limits,
-        )
-        {
+        ) {
             Ok(resolved) => resolved,
             Err(e) => {
                 executed.stopped = Some(Stopped::Resolve(e));
@@ -661,7 +751,10 @@ impl Exec<'_> {
         let post = self.segments(&r, &request.script_post, |s| &s.script_post, true);
         if !post.is_empty() {
             let out = run_script_with_host(self.engine, &script_ctx, post, &host).await;
-            executed.outcome.scripted_requests.extend(host.take_recorded());
+            executed
+                .outcome
+                .scripted_requests
+                .extend(host.take_recorded());
             script_ctx.vars = out.vars;
             merge_flow(&mut executed.flow, &out.flow);
             executed.outcome.console.extend(out.console);
@@ -688,7 +781,10 @@ impl Exec<'_> {
         let tests = self.segments(&r, &request.tests, |s| &s.tests, true);
         if !tests.is_empty() {
             let out = run_script_with_host(self.engine, &script_ctx, tests, &host).await;
-            executed.outcome.scripted_requests.extend(host.take_recorded());
+            executed
+                .outcome
+                .scripted_requests
+                .extend(host.take_recorded());
             script_ctx.vars = out.vars;
             merge_flow(&mut executed.flow, &out.flow);
             executed.outcome.console.extend(out.console);
@@ -881,7 +977,7 @@ pub async fn send_one_with(
     let overrides = input.env.map(|e| open.env_overrides(e)).unwrap_or_default();
     let runtime_before = open.runtime();
     let mut state = RunVars::start(&collection, environment, &overrides, runtime_before.clone());
-    let environment_before = state.environment.clone();
+    let before = state.clone();
     let engine = ScriptEngine::shared(limits);
     let exec = Exec {
         collection: &collection,
@@ -893,9 +989,30 @@ pub async fn send_one_with(
     let executed = exec
         .execute(&found, input.draft, &mut state, &mut |_, _| {})
         .await;
+    // Like the Bruno app, script changes to the environment go to its file; secrets stay
+    // in memory.
+    let persisted = persist_changes(
+        &collection,
+        environment,
+        &overrides,
+        Persist::Environment,
+        &before,
+        &state,
+    );
     open.record_runtime_changes(&runtime_before, &state.runtime);
     if let Some(env) = input.env {
-        open.record_env_changes(env, &environment_before, &state.environment);
+        if persisted {
+            open.record_env_changes(
+                env,
+                &secret_values(environment, &before.environment),
+                &secret_values(environment, &state.environment),
+            );
+        } else {
+            open.record_env_changes(env, &before.environment, &state.environment);
+        }
+    }
+    if persisted && let Err(e) = open.reload() {
+        tracing::warn!("cannot reload the collection after saving variables: {e}");
     }
     match executed.stopped {
         Some(Stopped::Resolve(ResolveError::Unsupported(what))) => {

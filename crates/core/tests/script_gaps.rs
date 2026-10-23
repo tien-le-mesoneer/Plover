@@ -6,7 +6,7 @@ use std::path::Path;
 
 use brs_core::collection::Collection;
 use brs_core::executor::{ExecOptions, Session};
-use brs_core::runner::{RunEvent, RunOptions, RunReport, run, run_with};
+use brs_core::runner::{Persist, RunEvent, RunOptions, RunReport, run, run_with};
 use brs_core::script::ScriptLimits;
 use brs_core::vars::ValueMap;
 use serde_json::json;
@@ -94,11 +94,18 @@ async fn process_env_and_dotenv() {
         .mount(&server)
         .await;
     let dir = setup(&server, None);
-    write(dir.path(), ".env", "# comment\nAPI_PATH=/from-dotenv\nTOKEN=\"dot\"\n");
+    write(
+        dir.path(),
+        ".env",
+        "# comment\nAPI_PATH=/from-dotenv\nTOKEN=\"dot\"\n",
+    );
     write(
         dir.path(),
         "environments/local.bru",
-        &format!("vars {{\n  host: {}\n  auth: Bearer {{{{process.env.TOKEN}}}}\n}}\n", server.uri()),
+        &format!(
+            "vars {{\n  host: {}\n  auth: Bearer {{{{process.env.TOKEN}}}}\n}}\n",
+            server.uri()
+        ),
     );
     let tests = text_block(
         "tests",
@@ -108,7 +115,12 @@ async fn process_env_and_dotenv() {
     write(
         dir.path(),
         "r.bru",
-        &request("r", 1, "{{process.env.API_PATH}}", &format!("{headers}{tests}")),
+        &request(
+            "r",
+            1,
+            "{{process.env.API_PATH}}",
+            &format!("{headers}{tests}"),
+        ),
     );
     let (report, events) = run_dir(dir.path()).await;
     assert_eq!(failures(&events), Vec::<String>::new());
@@ -120,7 +132,12 @@ const RSA_PUB: &str = include_str!("fixtures/jwt/test-only-rsa.pub");
 const OTHER_PUB: &str = include_str!("fixtures/jwt/test-only-other.pub");
 
 /// One request whose post-response script is `script`; every `test()` in it must pass.
-async fn run_script_ok(server: &MockServer, url_path: &str, script: &str, vars: &str) -> Vec<RunEvent> {
+async fn run_script_ok(
+    server: &MockServer,
+    url_path: &str,
+    script: &str,
+    vars: &str,
+) -> Vec<RunEvent> {
     let dir = setup(server, None);
     write(
         dir.path(),
@@ -130,7 +147,12 @@ async fn run_script_ok(server: &MockServer, url_path: &str, script: &str, vars: 
     write(
         dir.path(),
         "r.bru",
-        &request("r", 1, url_path, &text_block("script:post-response", script)),
+        &request(
+            "r",
+            1,
+            url_path,
+            &text_block("script:post-response", script),
+        ),
     );
     let (report, events) = run_dir(dir.path()).await;
     assert_eq!(failures(&events), Vec::<String>::new());
@@ -146,7 +168,10 @@ fn js_string(s: &str) -> String {
 #[tokio::test]
 async fn safe_mode_uuid_nanoid_path() {
     let server = MockServer::start().await;
-    Mock::given(path("/x")).respond_with(ResponseTemplate::new(200)).mount(&server).await;
+    Mock::given(path("/x"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
     // Expected values from Bruno CLI 4.3.0 --sandbox safe (uuid 10.0.0).
     let script = r#"
 const uuid = require('uuid');
@@ -182,7 +207,10 @@ test('other modules still forbidden', () => {
 #[tokio::test]
 async fn safe_mode_jsonwebtoken_matches_node() {
     let server = MockServer::start().await;
-    Mock::given(path("/x")).respond_with(ResponseTemplate::new(200)).mount(&server).await;
+    Mock::given(path("/x"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
     // Tokens produced by Bruno CLI 4.3.0 --sandbox safe and node jsonwebtoken 9.0.3.
     let script = format!(
         r#"
@@ -234,7 +262,9 @@ fn outcome(events: &[RunEvent]) -> brs_core::runner::RequestOutcome {
     events
         .iter()
         .find_map(|e| match e {
-            RunEvent::Passed { outcome, .. } | RunEvent::Failed { outcome, .. } => Some(outcome.clone()),
+            RunEvent::Passed { outcome, .. } | RunEvent::Failed { outcome, .. } => {
+                Some(outcome.clone())
+            }
             _ => None,
         })
         .expect("a finished request")
@@ -243,7 +273,10 @@ fn outcome(events: &[RunEvent]) -> brs_core::runner::RequestOutcome {
 #[tokio::test]
 async fn send_request_and_axios_shapes() {
     let server = MockServer::start().await;
-    Mock::given(path("/x")).respond_with(ResponseTemplate::new(200)).mount(&server).await;
+    Mock::given(path("/x"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
     Mock::given(method("POST"))
         .and(path("/items"))
         .and(query_param("q", "a b"))
@@ -309,19 +342,23 @@ test('axios', async () => {
         .collect();
     summary.sort();
     let mut expected: Vec<(String, String, Option<u16>)> = vec![
-            ("sendRequest".into(), "POST".into(), Some(201)),
-            ("sendRequest".into(), "GET".into(), Some(200)),
-            ("sendRequest".into(), "GET".into(), Some(404)),
-            ("sendRequest".into(), "GET".into(), Some(404)),
-            ("sendRequest".into(), "GET".into(), Some(200)),
-            ("axios".into(), "POST".into(), Some(201)),
-            ("axios".into(), "GET".into(), Some(404)),
-            ("axios".into(), "GET".into(), Some(404)),
-            ("axios".into(), "GET".into(), None),
-        ];
+        ("sendRequest".into(), "POST".into(), Some(201)),
+        ("sendRequest".into(), "GET".into(), Some(200)),
+        ("sendRequest".into(), "GET".into(), Some(404)),
+        ("sendRequest".into(), "GET".into(), Some(404)),
+        ("sendRequest".into(), "GET".into(), Some(200)),
+        ("axios".into(), "POST".into(), Some(201)),
+        ("axios".into(), "GET".into(), Some(404)),
+        ("axios".into(), "GET".into(), Some(404)),
+        ("axios".into(), "GET".into(), None),
+    ];
     expected.sort();
     assert_eq!(summary, expected);
-    assert!(scripted.iter().any(|r| r.status.is_none() && r.error.is_some()));
+    assert!(
+        scripted
+            .iter()
+            .any(|r| r.status.is_none() && r.error.is_some())
+    );
 }
 
 /// Bruno's sendRequest has its own axios instance: the run's cookies are not sent
@@ -333,8 +370,12 @@ async fn send_request_does_not_share_the_cookie_jar() {
         .respond_with(ResponseTemplate::new(200).insert_header("set-cookie", "sid=abc; Path=/"))
         .mount(&server)
         .await;
-    Mock::given(path("/echo")).respond_with(ResponseTemplate::new(200)).mount(&server).await;
-    let script = "test('sent', async () => { await bru.sendRequest(bru.getEnvVar('host') + '/echo'); });";
+    Mock::given(path("/echo"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let script =
+        "test('sent', async () => { await bru.sendRequest(bru.getEnvVar('host') + '/echo'); });";
     run_script_ok(&server, "/login", script, "").await;
     let received = server.received_requests().await.unwrap();
     let echo = received.iter().find(|r| r.url.path() == "/echo").unwrap();
@@ -352,7 +393,10 @@ async fn cookies_api_uses_the_session_jar() {
         )
         .mount(&server)
         .await;
-    Mock::given(path("/next")).respond_with(ResponseTemplate::new(200)).mount(&server).await;
+    Mock::given(path("/next"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
     let dir = setup(&server, None);
     // Shapes from Bruno CLI 4.3.0 --sandbox safe.
     let script = r#"
@@ -381,7 +425,16 @@ test('jar methods', async () => {
   expect(viaCallback).to.equal(3);
 });
 "#;
-    write(dir.path(), "a.bru", &request("a", 1, "/login", &text_block("script:post-response", script)));
+    write(
+        dir.path(),
+        "a.bru",
+        &request(
+            "a",
+            1,
+            "/login",
+            &text_block("script:post-response", script),
+        ),
+    );
     write(dir.path(), "b.bru", &request("b", 2, "/next", ""));
     let (report, events) = run_dir(dir.path()).await;
     assert_eq!(failures(&events), Vec::<String>::new());
@@ -393,7 +446,13 @@ test('jar methods', async () => {
         .headers
         .get_all("cookie")
         .iter()
-        .flat_map(|v| v.to_str().unwrap().split("; ").map(str::to_owned).collect::<Vec<_>>())
+        .flat_map(|v| {
+            v.to_str()
+                .unwrap()
+                .split("; ")
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
         .collect();
     sent.sort();
     assert_eq!(sent, vec!["k2=v2", "k3=v3", "sid=abc"]);
@@ -402,7 +461,10 @@ test('jar methods', async () => {
 #[tokio::test]
 async fn send_request_respects_script_timeout_and_body_cap() {
     let server = MockServer::start().await;
-    Mock::given(path("/x")).respond_with(ResponseTemplate::new(200)).mount(&server).await;
+    Mock::given(path("/x"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
     Mock::given(path("/slow"))
         .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(5)))
         .mount(&server)
@@ -432,7 +494,10 @@ async fn send_request_respects_script_timeout_and_body_cap() {
             "b",
             2,
             "/x",
-            &text_block("script:post-response", "await bru.sendRequest(bru.getEnvVar('host') + '/slow');"),
+            &text_block(
+                "script:post-response",
+                "await bru.sendRequest(bru.getEnvVar('host') + '/slow');",
+            ),
         ),
     );
     let c = Collection::load(dir.path()).unwrap();
@@ -453,12 +518,104 @@ async fn send_request_respects_script_timeout_and_body_cap() {
     let mut runtime = ValueMap::new();
     let mut events = Vec::new();
     let started = Instant::now();
-    run_with(&c, dir.path(), &opts, &session, &mut runtime, &mut |e| events.push(e.clone()))
-        .await
-        .unwrap();
-    assert!(started.elapsed() < Duration::from_secs(3), "{:?}", started.elapsed());
+    run_with(&c, dir.path(), &opts, &session, &mut runtime, &mut |e| {
+        events.push(e.clone())
+    })
+    .await
+    .unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        started.elapsed()
+    );
     assert_eq!(runtime.get("bigLen"), Some(&json!(10)));
     let errors = failures(&events);
     assert_eq!(errors.len(), 2, "{errors:?}");
-    assert!(errors.iter().any(|e| e.contains("timed out after 500 ms")), "{errors:?}");
+    assert!(
+        errors.iter().any(|e| e.contains("timed out after 500 ms")),
+        "{errors:?}"
+    );
+}
+
+/// Bruno 4.3 writes script changes back after each request (persist-variables.js); the
+/// expected files are what Bruno CLI 4.3.0 wrote for the same collection.
+#[tokio::test]
+async fn persists_env_and_collection_changes_like_bruno() {
+    let server = MockServer::start().await;
+    Mock::given(path("/x"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let dir = setup(&server, None);
+    let env = format!(
+        "vars {{\n  host: {}\n  keep: 1\n  gone: x\n  ~off: y\n}}\nvars:secret [\n  secret_tok\n]\n",
+        server.uri()
+    );
+    write(dir.path(), "environments/local.bru", &env);
+    write(
+        dir.path(),
+        "collection.bru",
+        "vars:pre-request {\n  cv: one\n}\n",
+    );
+    let script = "bru.setEnvVar('keep', '2');\nbru.setEnvVar('added', 5);\nbru.setEnvVar('obj', { a: 1 });\nbru.deleteEnvVar('gone');\nbru.setEnvVar('secret_tok', 'leak?');\nbru.setEnvVar('ov2', 'changed');\nbru.setCollectionVar('cv', 'two');\nbru.setVar('rt', 'r');";
+    write(
+        dir.path(),
+        "r.bru",
+        &request("r", 1, "/x", &text_block("script:post-response", script)),
+    );
+    write(dir.path(), "s.bru", &request("s", 2, "/x", ""));
+    let c = Collection::load(dir.path()).unwrap();
+    let mut overrides = ValueMap::new();
+    overrides.insert("ov".into(), json!("cli"));
+    overrides.insert("ov2".into(), json!("cli2"));
+    let opts = RunOptions {
+        env: Some("local".into()),
+        env_overrides: overrides,
+        persist: Persist::All,
+        ..RunOptions::default()
+    };
+    let mut events = Vec::new();
+    let report = run(&c, dir.path(), &opts, &mut |e| events.push(e.clone()))
+        .await
+        .unwrap();
+    assert_eq!(failures(&events), Vec::<String>::new());
+    assert_eq!(report.passed, 2);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("environments/local.bru")).unwrap(),
+        format!(
+            "vars {{\n  host: {}\n  keep: 2\n  ~off: y\n  @number\n  added: 5\n  @object\n  obj: '''\n    {{\n      \"a\": 1\n    }}\n  '''\n  ov2: changed\n}}\nvars:secret [\n  secret_tok\n]\n",
+            server.uri()
+        )
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("collection.bru")).unwrap(),
+        "vars:pre-request {\n  cv: two\n}\n"
+    );
+}
+
+#[tokio::test]
+async fn persistence_is_opt_in_for_library_callers() {
+    let server = MockServer::start().await;
+    Mock::given(path("/x"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let dir = setup(&server, None);
+    write(
+        dir.path(),
+        "r.bru",
+        &request(
+            "r",
+            1,
+            "/x",
+            &text_block("script:post-response", "bru.setEnvVar('a', 'b');"),
+        ),
+    );
+    let before = fs::read_to_string(dir.path().join("environments/local.bru")).unwrap();
+    let (report, _) = run_dir(dir.path()).await;
+    assert_eq!(report.passed, 1);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("environments/local.bru")).unwrap(),
+        before
+    );
 }

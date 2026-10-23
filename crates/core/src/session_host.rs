@@ -116,7 +116,9 @@ impl SessionHost<'_> {
                     .decode(b64)
                     .map_err(|e| e.to_string())?,
             ),
-            Some(HttpBody { text, .. }) => ResolvedBody::Bytes(text.unwrap_or_default().into_bytes()),
+            Some(HttpBody { text, .. }) => {
+                ResolvedBody::Bytes(text.unwrap_or_default().into_bytes())
+            }
         };
         let method = Method::from_block_name(&args.method.to_ascii_lowercase())
             .unwrap_or_else(|| Method::Custom(args.method.clone()));

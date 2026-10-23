@@ -116,6 +116,38 @@ async fn env_var_flag_overrides() {
         .code(0);
 }
 
+/// Bruno CLI 4.3 writes script changes to the selected environment and collection.bru.
+#[tokio::test(flavor = "multi_thread")]
+async fn run_persists_script_variable_changes() {
+    let server = MockServer::start().await;
+    Mock::given(path("/ok"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let dir = collection(&server.uri());
+    write(
+        dir.path(),
+        "ok.bru",
+        &format!(
+            "{}\nscript:post-response {{\n  bru.setEnvVar('token', 'rotated');\n  bru.setCollectionVar('cv', 1);\n}}\n",
+            request("ok", "/ok")
+        ),
+    );
+    bru_rs()
+        .args(["run", "--env", "local"])
+        .arg(dir.path().join("ok.bru"))
+        .assert()
+        .code(0);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("environments/local.bru")).unwrap(),
+        format!("vars {{\n  host: {}\n  token: rotated\n}}\n", server.uri())
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("collection.bru")).unwrap(),
+        "vars:pre-request {\n  @number\n  cv: 1\n}\n"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn broken_file_exit_zero() {
     let server = server().await;

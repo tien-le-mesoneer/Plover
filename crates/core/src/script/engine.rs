@@ -491,7 +491,8 @@ impl Worker {
                                     // A host call gave up at the deadline and the script let
                                     // the error through.
                                     ScriptError::Thrown { message, .. }
-                                        if message == "interrupted" && Instant::now() >= deadline =>
+                                        if message == "interrupted"
+                                            && Instant::now() >= deadline =>
                                     {
                                         ScriptError::Timeout(self.limits.timeout)
                                     }
@@ -674,7 +675,9 @@ fn call_host(
                 }
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err(HostFailure::Message("the script host has stopped".to_owned()));
+                return Err(HostFailure::Message(
+                    "the script host has stopped".to_owned(),
+                ));
             }
         }
     }

@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use brs_core::collection::Collection;
 use brs_core::executor::ExecOptions;
-use brs_core::runner::{self, RunOptions};
+use brs_core::runner::{self, Persist, RunOptions};
 use brs_core::script::ScriptLimits;
 use brs_core::vars::VarMap;
 use clap::{Parser, Subcommand};
@@ -146,6 +146,8 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
             memory_bytes: args.script_memory_mb.saturating_mul(1024 * 1024),
             ..ScriptLimits::default()
         },
+        // Bruno CLI writes script changes to the environment file and collection.bru.
+        persist: Persist::All,
         ..RunOptions::default()
     }
     .with_env_vars(&args.env_vars.into_iter().collect::<VarMap>());

@@ -246,6 +246,51 @@ async fn send_reports_scripted_requests() {
     assert!(scripted[0]["url"].as_str().unwrap().ends_with("/side"));
 }
 
+/// The Bruno app saves script changes to the active environment; secrets stay in memory.
+#[tokio::test]
+async fn send_persists_environment_changes_but_not_secrets() {
+    let server = MockServer::start().await;
+    Mock::given(path("/p"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let dir = small_collection(&server.uri());
+    write(
+        dir.path(),
+        "p.bru",
+        "meta {\n  name: p\n  type: http\n  seq: 9\n}\n\nget {\n  url: {{host}}/p\n}\n\nscript:post-response {\n  bru.setEnvVar('saved', 'yes');\n  bru.setEnvVar('token', 'secret-value');\n}\n",
+    );
+    let app = app();
+    let id = open(&app, dir.path()).await;
+    let (status, res) = call(
+        &app,
+        "POST",
+        &format!("/api/collections/{id}/send"),
+        Some(json!({ "item": "p.bru", "env": "local" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{res}");
+    let env = std::fs::read_to_string(dir.path().join("environments/local.bru")).unwrap();
+    assert_eq!(
+        env,
+        format!(
+            "vars {{\n  host: {}\n  saved: yes\n}}\nvars:secret [\n  token\n]\n",
+            server.uri()
+        )
+    );
+    // The environment list shows the saved value and the secret as set, never its value.
+    let (_, envs) = call(
+        &app,
+        "GET",
+        &format!("/api/collections/{id}/environments"),
+        None,
+    )
+    .await;
+    let local = &envs[0];
+    assert!(local["vars"].to_string().contains("\"saved\""), "{envs}");
+    assert!(!envs.to_string().contains("secret-value"), "{envs}");
+}
+
 #[tokio::test]
 async fn send_pre_request_script_error_is_reported() {
     let dir = small_collection("http://127.0.0.1:9");

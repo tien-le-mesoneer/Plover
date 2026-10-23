@@ -8,7 +8,9 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
-use brs_core::runner::{RunEvent, RunOptions, RunReport, RunVars, run_with_state};
+use brs_core::runner::{
+    Persist, RunEvent, RunOptions, RunReport, RunVars, run_with_state, secret_values,
+};
 use brs_core::store;
 use brs_core::workspace::{CollectionId, OpenCollection};
 use serde::{Deserialize, Serialize};
@@ -212,6 +214,8 @@ async fn run_task(
             .map(|e| open.env_overrides(e))
             .unwrap_or_default(),
         env,
+        // The Bruno app writes script changes to the environment file.
+        persist: Persist::Environment,
         ..RunOptions::default()
     };
     let environment = opts.env.as_deref().and_then(|e| collection.environment(e));
@@ -241,7 +245,17 @@ async fn run_task(
         Ok(_) => {
             open.record_runtime_changes(&runtime_before, &state.runtime);
             if let Some(env) = &opts.env {
-                open.record_env_changes(env, &environment_before, &state.environment);
+                // Other changes are in the environment file now; secrets stay in memory.
+                open.record_env_changes(
+                    env,
+                    &secret_values(environment, &environment_before),
+                    &secret_values(environment, &state.environment),
+                );
+                if environment_before != state.environment
+                    && let Err(e) = open.reload()
+                {
+                    tracing::warn!("cannot reload the collection after a run: {e}");
+                }
             }
         }
         Err(e) => {

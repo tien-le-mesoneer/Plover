@@ -59,7 +59,9 @@ fn is_hmac(alg: Algorithm) -> bool {
 
 fn encoding_key(alg: Algorithm, key: &[u8]) -> Result<EncodingKey, String> {
     let pem = |r: jsonwebtoken::errors::Result<EncodingKey>| {
-        r.map_err(|e| format!("secretOrPrivateKey must be an asymmetric key when using {alg:?}: {e}"))
+        r.map_err(|e| {
+            format!("secretOrPrivateKey must be an asymmetric key when using {alg:?}: {e}")
+        })
     };
     match alg {
         a if is_hmac(a) => Ok(EncodingKey::from_secret(key)),
@@ -71,7 +73,9 @@ fn encoding_key(alg: Algorithm, key: &[u8]) -> Result<EncodingKey, String> {
 
 fn decoding_key(alg: Algorithm, key: &[u8]) -> Result<DecodingKey, String> {
     let pem = |r: jsonwebtoken::errors::Result<DecodingKey>| {
-        r.map_err(|e| format!("secretOrPublicKey must be an asymmetric key when using {alg:?}: {e}"))
+        r.map_err(|e| {
+            format!("secretOrPublicKey must be an asymmetric key when using {alg:?}: {e}")
+        })
     };
     match alg {
         a if is_hmac(a) => Ok(DecodingKey::from_secret(key)),

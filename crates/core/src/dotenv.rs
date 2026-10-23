@@ -74,7 +74,10 @@ mod tests {
     }
 
     fn pairs(items: &[(&str, &str)]) -> Vec<(String, String)> {
-        items.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        items
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     #[test]
@@ -118,10 +121,20 @@ mod tests {
     #[test]
     fn dotenv_overrides_process_env() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join(".env"), "PATH=from-dotenv\nBRS_ONLY_IN_DOTENV=x\n").unwrap();
+        std::fs::write(
+            dir.path().join(".env"),
+            "PATH=from-dotenv\nBRS_ONLY_IN_DOTENV=x\n",
+        )
+        .unwrap();
         let env = process_env(dir.path());
-        assert_eq!(env.get("PATH").and_then(|v| v.as_str()), Some("from-dotenv"));
-        assert_eq!(env.get("BRS_ONLY_IN_DOTENV").and_then(|v| v.as_str()), Some("x"));
+        assert_eq!(
+            env.get("PATH").and_then(|v| v.as_str()),
+            Some("from-dotenv")
+        );
+        assert_eq!(
+            env.get("BRS_ONLY_IN_DOTENV").and_then(|v| v.as_str()),
+            Some("x")
+        );
         let none = tempfile::tempdir().unwrap();
         assert!(process_env(none.path()).contains_key("PATH"));
     }

@@ -169,7 +169,8 @@ struct Input<'a> {
     post_vars: &'a [(String, String)],
 }
 
-pub type HostFuture<'a> = Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send + 'a>>;
+pub type HostFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send + 'a>>;
 
 /// Answers what scripts ask of the session (HTTP, cookies). Runs in the caller's async
 /// context while the script waits, bounded by the script phase's deadline.

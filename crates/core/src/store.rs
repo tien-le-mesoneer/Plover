@@ -146,13 +146,49 @@ pub fn save_environment(
     write_atomic(&path, file.to_bru().as_bytes())
 }
 
+/// Rewrites `path` (inside the collection) under its lock: `update` gets the current text
+/// (`None` when the file does not exist) and returns the new text. Writes only when the text
+/// changed; `Ok(true)` when it did.
+pub fn update_file(
+    path: &Path,
+    update: impl FnOnce(Option<&str>) -> Result<String, String>,
+) -> Result<bool, StoreError> {
+    let lock = lock_file(path).or_else(|_| lock_missing(path))?;
+    let _guard = lock.lock().unwrap_or_else(PoisonError::into_inner);
+    let current = match std::fs::read_to_string(path) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e.into()),
+    };
+    let next = update(current.as_deref()).map_err(StoreError::Parse)?;
+    if current.as_deref() == Some(next.as_str()) {
+        return Ok(false);
+    }
+    write_atomic(path, next.as_bytes())?;
+    Ok(true)
+}
+
+/// The lock for a file that does not exist yet, keyed by its canonical directory.
+fn lock_missing(path: &Path) -> Result<Arc<Mutex<()>>, StoreError> {
+    let dir = path
+        .parent()
+        .ok_or_else(|| StoreError::NotFound(path.display().to_string()))?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| StoreError::NotFound(path.display().to_string()))?;
+    lock_key(dir.canonicalize()?.join(name))
+}
+
 /// One lock per file (by canonical path), held from the hash check to the
 /// rename so two saves with the same base hash cannot both succeed.
 /// Guards writers in this process; other programs editing the file are
 /// caught by the hash check on the next save.
 fn lock_file(path: &Path) -> Result<Arc<Mutex<()>>, StoreError> {
+    lock_key(path.canonicalize()?)
+}
+
+fn lock_key(key: PathBuf) -> Result<Arc<Mutex<()>>, StoreError> {
     static LOCKS: LazyLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> = LazyLock::new(Mutex::default);
-    let key = path.canonicalize()?;
     let mut locks = LOCKS.lock().unwrap_or_else(PoisonError::into_inner);
     Ok(locks.entry(key).or_default().clone())
 }

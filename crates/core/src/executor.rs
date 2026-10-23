@@ -88,7 +88,11 @@ impl Session {
             jar: Arc::default(),
             clients: Mutex::default(),
         };
-        session.client(session.opts.follow_redirects, session.opts.max_redirects, true)?;
+        session.client(
+            session.opts.follow_redirects,
+            session.opts.max_redirects,
+            true,
+        )?;
         Ok(session)
     }
 

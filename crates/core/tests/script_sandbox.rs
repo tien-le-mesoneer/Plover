@@ -74,7 +74,10 @@ async fn require_outside_safe_set_fails() {
                     "{message}"
                 );
                 assert!(message.contains("chai, buffer, moment"), "{message}");
-                assert!(message.contains("axios, uuid, nanoid, path, jsonwebtoken"), "{message}");
+                assert!(
+                    message.contains("axios, uuid, nanoid, path, jsonwebtoken"),
+                    "{message}"
+                );
             }
             other => panic!("{module}: expected ForbiddenModule, got {other:?}"),
         }
