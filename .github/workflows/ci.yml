@@ -77,7 +77,8 @@ jobs:
           npm run check
 
       - name: cargo test
-        run: cargo test --workspace
+        # --no-fail-fast: report every failing test binary, not just the first.
+        run: cargo test --workspace --no-fail-fast
 
       - name: CLI-only build
         run: cargo test -p plover-cli --no-default-features --test cli

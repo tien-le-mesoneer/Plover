@@ -42,20 +42,22 @@ pub fn parse(src: &str) -> Vec<(String, String)> {
 /// Bruno CLI `commands/run.js:661-674`: the process environment, overridden by the
 /// collection's `.env` file when there is one.
 pub fn process_env(collection_root: &Path) -> ValueMap {
-    let mut env: ValueMap = std::env::vars_os()
-        .map(|(k, v)| {
-            (
-                k.to_string_lossy().into_owned(),
-                serde_json::Value::String(v.to_string_lossy().into_owned()),
-            )
-        })
-        .collect();
+    let case_insensitive = cfg!(windows);
+    let mut env = ValueMap::new();
+    for (k, v) in std::env::vars_os() {
+        set_var(
+            &mut env,
+            k.to_string_lossy().into_owned(),
+            v.to_string_lossy().into_owned(),
+            case_insensitive,
+        );
+    }
     let path = collection_root.join(".env");
     if path.is_file() {
         match std::fs::read_to_string(&path) {
             Ok(text) => {
                 for (k, v) in parse(&text) {
-                    env.insert(k, serde_json::Value::String(v));
+                    set_var(&mut env, k, v, case_insensitive);
                 }
             }
             // Never log values; the path is enough.
@@ -65,9 +67,49 @@ pub fn process_env(collection_root: &Path) -> ValueMap {
     env
 }
 
+/// Windows variable names are case-insensitive, and Node's `process.env` (which Bruno reads)
+/// matches any case: `process.env.PATH` finds `Path`. Lookups here are plain map/path walks,
+/// so on Windows a variable is stored under its own name and its upper-case name, and a later
+/// value replaces every case variant. Mixed-case lookups such as `process.env.path` are not
+/// covered.
+fn set_var(env: &mut ValueMap, key: String, value: String, case_insensitive: bool) {
+    let value = serde_json::Value::String(value);
+    if case_insensitive {
+        env.retain(|k, _| !k.eq_ignore_ascii_case(&key));
+        env.insert(key.to_ascii_uppercase(), value.clone());
+    }
+    env.insert(key, value);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_names_are_case_insensitive() {
+        let mut env = ValueMap::new();
+        set_var(&mut env, "Path".into(), r"C:\Windows".into(), true);
+        assert_eq!(
+            env.get("PATH").and_then(|v| v.as_str()),
+            Some(r"C:\Windows")
+        );
+        assert_eq!(
+            env.get("Path").and_then(|v| v.as_str()),
+            Some(r"C:\Windows")
+        );
+        // `.env` `PATH=` replaces the process `Path` instead of adding a second variable.
+        set_var(&mut env, "PATH".into(), "from-dotenv".into(), true);
+        assert_eq!(env.len(), 1);
+        assert_eq!(
+            env.get("PATH").and_then(|v| v.as_str()),
+            Some("from-dotenv")
+        );
+
+        let mut unix = ValueMap::new();
+        set_var(&mut unix, "Path".into(), "a".into(), false);
+        set_var(&mut unix, "PATH".into(), "b".into(), false);
+        assert_eq!(unix.len(), 2);
+    }
 
     fn kv(src: &str) -> Vec<(String, String)> {
         parse(src)
