@@ -305,6 +305,7 @@ dependencies = [
  "flate2",
  "pest",
  "pest_derive",
+ "regex",
  "reqwest",
  "reqwest_cookie_store",
  "rquickjs",

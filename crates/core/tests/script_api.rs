@@ -18,6 +18,7 @@ fn context() -> ScriptContext {
             collection_name: "demo".into(),
             collection_path: "/tmp/demo".into(),
             request_name: "get user".into(),
+            ..ScriptInfo::default()
         },
         req: ScriptRequest {
             url: "{{host}}/users/1".into(),
@@ -249,7 +250,6 @@ async fn unsupported_apis_say_so() {
     for (src, api) in [
         ("await bru.sendRequest({})", "bru.sendRequest"),
         ("await bru.runRequest('x')", "bru.runRequest"),
-        ("bru.getProcessEnv('HOME')", "bru.getProcessEnv"),
         ("bru.getGlobalEnvVar('x')", "bru.getGlobalEnvVar"),
         ("bru.cookies.jar()", "bru.cookies"),
     ] {

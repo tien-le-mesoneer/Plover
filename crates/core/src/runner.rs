@@ -271,6 +271,7 @@ pub async fn run_with_state(
         session,
         engine: &engine,
         env_name: opts.env.as_deref(),
+        process_env: crate::dotenv::process_env(&collection.root),
     };
 
     let start = Instant::now();
@@ -433,6 +434,8 @@ struct Exec<'a> {
     session: &'a Session,
     engine: &'a ScriptEngine,
     env_name: Option<&'a str>,
+    /// The process environment and `.env` (`{{process.env.NAME}}`, `bru.getProcessEnv`).
+    process_env: ValueMap,
 }
 
 struct Executed {
@@ -565,6 +568,7 @@ impl Exec<'_> {
             collection_name: self.collection.config.name.clone(),
             collection_path: self.collection.root.to_string_lossy().into_owned(),
             request_name: request.name.clone(),
+            process_env: self.process_env.clone(),
         };
 
         // Pre-request scripts see the prepared, not yet interpolated request.
@@ -606,7 +610,12 @@ impl Exec<'_> {
             max_bytes: MAX_INTERPOLATED_BYTES,
             deadline: Some(Instant::now() + self.engine.limits().timeout),
         };
-        let resolved = match finalize(&prepared, &vars.var_stack(), &self.collection.root, &limits)
+        let resolved = match finalize(
+            &prepared,
+            &vars.var_stack().with_process_env(&self.process_env),
+            &self.collection.root,
+            &limits,
+        )
         {
             Ok(resolved) => resolved,
             Err(e) => {
@@ -871,6 +880,7 @@ pub async fn send_one_with(
         session: &open.session,
         engine: &engine,
         env_name: input.env,
+        process_env: crate::dotenv::process_env(&collection.root),
     };
     let executed = exec
         .execute(&found, input.draft, &mut state, &mut |_, _| {})

@@ -112,6 +112,20 @@ impl VarStack {
         VarStack { layers }
     }
 
+    /// Adds Bruno's `process: { env }` as the highest layer (interpolate-vars.js:64-70), so
+    /// `{{process.env.NAME}}` reads the process environment and `.env`.
+    pub fn with_process_env(mut self, env: &ValueMap) -> VarStack {
+        if !env.is_empty() {
+            let mut process = ValueMap::new();
+            process.insert(
+                "process".to_owned(),
+                serde_json::json!({ "env": serde_json::Value::Object(env.clone().into_iter().collect()) }),
+            );
+            self.layers.insert(0, process);
+        }
+        self
+    }
+
     /// The text a top-level variable interpolates to.
     pub fn get(&self, name: &str) -> Option<String> {
         self.top(name).map(value_text)

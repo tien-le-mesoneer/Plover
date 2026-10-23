@@ -22,6 +22,7 @@
   const layersJson = () => {
     const layers = {};
     for (const scope of SCOPES) layers[scope] = vars[scope];
+    layers.process_env = info.processEnv || {};
     return JSON.stringify(layers);
   };
   // bru.js `interpolate`: strings are interpolated, objects via their JSON, anything else as is.
@@ -63,6 +64,8 @@
     cwd: () => info.collectionPath,
     getEnvName: () => (info.envName === null ? undefined : info.envName),
     getCollectionName: () => info.collectionName,
+    // bru.js:209-214: the raw value, undefined when unset.
+    getProcessEnv: (key) => (info.processEnv && hasOwn(info.processEnv, key) ? info.processEnv[key] : undefined),
     isSafeMode: () => true,
 
     hasEnvVar: (key) => hasOwn(vars.environment, key),
@@ -111,7 +114,6 @@
 
     sendRequest: unsupported('bru.sendRequest'),
     runRequest: unsupported('bru.runRequest'),
-    getProcessEnv: unsupported('bru.getProcessEnv'),
     hasGlobalEnvVar: unsupported('bru.hasGlobalEnvVar'),
     getGlobalEnvVar: unsupported('bru.getGlobalEnvVar'),
     setGlobalEnvVar: unsupported('bru.setGlobalEnvVar'),

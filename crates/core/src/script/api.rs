@@ -39,6 +39,8 @@ pub struct ScriptInfo {
     /// `bru.cwd()`.
     pub collection_path: String,
     pub request_name: String,
+    /// `bru.getProcessEnv` and `{{process.env.NAME}}`: the process environment and `.env`.
+    pub process_env: ValueMap,
 }
 
 /// The request as scripts see it. Before the request is sent this is the prepared,
@@ -265,6 +267,7 @@ struct Layers {
     folder: ValueMap,
     environment: ValueMap,
     collection: ValueMap,
+    process_env: ValueMap,
 }
 
 /// `bru.interpolate` and friends: Phase 1 interpolation over the script's current
@@ -282,5 +285,6 @@ pub(crate) fn interpolate_with_layers(
         layers.environment,
         layers.collection,
     )
+    .with_process_env(&layers.process_env)
     .try_interpolate(text, limits)
 }
