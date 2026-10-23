@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 
+[lib]
+name = "plover_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "plv"
 path = "src/main.rs"

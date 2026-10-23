@@ -1,14 +1,17 @@
 //! Plover desktop: starts the same local server as `plv serve` on 127.0.0.1 with a
 //! random port and token, and shows it in a native window. Native features (folder
 //! picker, open in browser) reach the UI through the server API (decision P4-1).
+//! Invoked as `plv` (or with `run`/`serve`) the same binary is the CLI (decision P4-5).
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod cli_link;
 mod host;
 mod lifecycle;
 mod menu;
 
 use std::path::Path;
+use std::process::ExitCode;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use plover_core::workspace::Workspace;
@@ -33,7 +36,14 @@ struct Desktop {
     server: Mutex<Option<JoinHandle<std::io::Result<()>>>>,
 }
 
-fn main() {
+fn main() -> ExitCode {
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    if cli_link::is_cli(&args, std::env::var_os("PLOVER_AS_CLI").is_some()) {
+        attach_parent_console();
+        // Report the program as `plv` in help and errors, whatever the file is called.
+        let cli_args = std::iter::once("plv".into()).chain(args.into_iter().skip(1));
+        return plover_cli::main_with_args(cli_args);
+    }
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
@@ -58,7 +68,7 @@ fn main() {
         Ok(app) => app,
         Err(e) => {
             eprintln!("Plover could not start: {e}");
-            std::process::exit(1);
+            return ExitCode::FAILURE;
         }
     };
     app.run(|app, event| {
@@ -66,6 +76,61 @@ fn main() {
             stop_server(app);
         }
     });
+    ExitCode::SUCCESS
+}
+
+/// Release builds on Windows use the GUI subsystem, which has no console: attach to
+/// the parent's (the terminal that ran `plv`) so CLI output is visible.
+#[cfg(windows)]
+fn attach_parent_console() {
+    const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+    unsafe extern "system" {
+        fn AttachConsole(process_id: u32) -> i32;
+    }
+    // SAFETY: AttachConsole has no preconditions; failure (no parent console) is harmless.
+    unsafe {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
+#[cfg(not(windows))]
+fn attach_parent_console() {}
+
+/// "Install Command Line Tool…": links `plv` to this executable (macOS/Linux).
+fn install_cli(app: &AppHandle<Wry>) {
+    let result = std::env::current_exe()
+        .map_err(|e| cli_link::LinkError::Io(e.to_string()))
+        .and_then(|exe| {
+            let home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default();
+            cli_link::install_link(
+                &exe,
+                &cli_link::default_candidates(&home),
+                std::env::var_os("PATH").as_deref(),
+            )
+        });
+    let (kind, message) = match result {
+        Ok(installed) if installed.on_path => (
+            MessageDialogKind::Info,
+            format!("Installed {}. Run `plv --help` in a new terminal.", installed.path.display()),
+        ),
+        Ok(installed) => (
+            MessageDialogKind::Warning,
+            format!(
+                "Installed {}, but {} is not on your PATH. Add it to your shell profile to run `plv`.",
+                installed.path.display(),
+                installed.path.parent().map(|p| p.display().to_string()).unwrap_or_default()
+            ),
+        ),
+        Err(cli_link::LinkError::ForeignFile(path)) => (
+            MessageDialogKind::Error,
+            format!("{} already exists and is not Plover's; it was left unchanged.", path.display()),
+        ),
+        Err(cli_link::LinkError::Io(e)) => (
+            MessageDialogKind::Error,
+            format!("Could not install the command line tool: {e}"),
+        ),
+    };
+    app.dialog().message(message).title("Plover").kind(kind).show(|_| {});
 }
 
 fn setup(app: &AppHandle<Wry>) {
@@ -175,6 +240,7 @@ fn on_menu(app: &AppHandle<Wry>, id: &str) {
             }
         }
         menu::RELOAD => reload_window(app),
+        menu::INSTALL_CLI => install_cli(app),
         menu::QUIT => app.exit(0),
         _ => {}
     }

@@ -7,6 +7,7 @@ use tauri::{AppHandle, Wry};
 pub const OPEN_COLLECTION: &str = "open-collection";
 pub const OPEN_IN_BROWSER: &str = "open-in-browser";
 pub const RELOAD: &str = "reload";
+pub const INSTALL_CLI: &str = "install-cli";
 pub const QUIT: &str = "quit";
 
 pub fn build(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
@@ -17,6 +18,7 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
     let reload = MenuItemBuilder::with_id(RELOAD, "Reload Window")
         .accelerator("CmdOrCtrl+R")
         .build(app)?;
+    let install = MenuItemBuilder::with_id(INSTALL_CLI, "Install Command Line Tool…").build(app)?;
     let quit = MenuItemBuilder::with_id(QUIT, "Quit Plover")
         .accelerator("CmdOrCtrl+Q")
         .build(app)?;
@@ -26,6 +28,9 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
         .item(&browser)
         .separator()
         .item(&reload);
+    if cfg!(target_os = "linux") {
+        file = file.separator().item(&install);
+    }
     if !cfg!(target_os = "macos") {
         file = file.separator().item(&quit);
     }
@@ -43,6 +48,8 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
     if cfg!(target_os = "macos") {
         let app_menu = SubmenuBuilder::new(app, "Plover")
             .item(&PredefinedMenuItem::about(app, Some("About Plover"), None)?)
+            .separator()
+            .item(&install)
             .separator()
             .item(&PredefinedMenuItem::hide(app, None)?)
             .item(&PredefinedMenuItem::hide_others(app, None)?)
