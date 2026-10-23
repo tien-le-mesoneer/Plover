@@ -61,6 +61,10 @@ See [docs/development.md](docs/development.md). Release build:
 Test fixtures under `fixtures/bruno-tests` come from Bruno (MIT, see the
 license in that folder).
 
+## Building
+
+`scripts/build-release.sh` builds `target/release/plv` with the web UI embedded (about 13 MB). For CI-only use, `cargo build --release -p plover-cli --no-default-features` builds a CLI-only `plv` (about 8 MB). Size and speed measurements: [docs/development.md](docs/development.md).
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Test fixtures under `fixtures/bruno-tests/` come from [Bruno](https://github.com/usebruno/bruno) (MIT, see `fixtures/bruno-tests/LICENSE`). Plover is not affiliated with Bruno.

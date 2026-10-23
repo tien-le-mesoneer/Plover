@@ -41,8 +41,29 @@ Debug builds read `frontend/dist` from disk at runtime; release builds embed it.
 ## Release build
 
 ```bash
-scripts/build-release.sh   # → target/release/plv
+scripts/build-release.sh                                   # → target/release/plv (with web UI)
+cargo build --release -p plover-cli --no-default-features  # CLI-only plv, no embedded UI
 ```
+
+### Release profile (measured 2026-10-23, macOS arm64)
+
+Benchmark: 1000 requests, each with one post-response script and one chai test, against
+the local Python mock (`scratchpad/bench/scoll1000`). Wall/CPU are averages of 4
+interleaved runs after a warm-up; this machine's wall times vary by about ±20% between
+rounds, so compare within one table only.
+
+| Profile | Size | gzip -9 | Wall | CPU |
+|---|---|---|---|---|
+| default (before) | 21.3 MB (18.0 MB stripped) | 6.9 MB | 2.16 s | 1.97 s |
+| `strip` | 18.0 MB | 6.9 MB | – | – |
+| `strip` + thin LTO + 1 CGU | 16.4 MB | 6.4 MB | – | – |
+| `strip` + fat LTO + 1 CGU | 15.6 MB | 6.2 MB | – | – |
+| **`strip` + fat LTO + 1 CGU + `opt-level = "s"` (chosen)** | **12.7 MB** | **4.9 MB** | **2.28 s (+5.6%)** | **2.11 s (+7%)** |
+| same + `opt-level = "z"` | 11.3 MB | 4.6 MB | 3.00 s (+39%) | 2.87 s (+46%) |
+| chosen profile, CLI-only (`--no-default-features`) | 7.6 MB | 3.5 MB | 2.27 s | 2.10 s |
+
+"–": measured only in a non-interleaved round (thin 1.86 s, fat 1.85 s vs baseline 1.95 s
+in that round). `opt-level = "z"` exceeds the 10% budget. `panic` stays `unwind`.
 
 ## Browser check (Monaco and page errors)
 

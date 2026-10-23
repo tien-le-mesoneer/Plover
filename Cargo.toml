@@ -1,3 +1,12 @@
 [workspace]
 resolver = "2"
 members = ["crates/core", "crates/server", "crates/cli"]
+
+# Size-tuned (docs/development.md): fat LTO + opt-level "s" is ~40% smaller than the
+# default profile and within 3% on the scripted benchmark. Keep panic = "unwind":
+# script workers rely on unwinding.
+[profile.release]
+strip = true
+lto = "fat"
+codegen-units = 1
+opt-level = "s"

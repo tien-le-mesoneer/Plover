@@ -10,3 +10,4 @@ cd "$(dirname "$0")/.."
 )
 cargo build --release -p plover-cli
 ls -lh target/release/plv
+# CLI-only (no web UI): cargo build --release -p plover-cli --no-default-features

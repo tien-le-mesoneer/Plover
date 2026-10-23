@@ -8,9 +8,14 @@ license = "MIT"
 name = "plv"
 path = "src/main.rs"
 
+[features]
+default = ["embed-ui"]
+# `--no-default-features` builds a CLI-only binary without the web UI.
+embed-ui = ["plover-server/embed-ui"]
+
 [dependencies]
 plover-core = { path = "../core" }
-plover-server = { version = "0.1.0", path = "../server" }
+plover-server = { version = "0.1.0", path = "../server", default-features = false }
 clap = { version = "4.6.7", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

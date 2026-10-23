@@ -224,3 +224,41 @@ fn serve_bad_collection_path_exits_2() {
         .assert()
         .code(2);
 }
+
+/// A `--no-default-features` build has no web UI but keeps the API.
+#[cfg(not(feature = "embed-ui"))]
+#[test]
+fn cli_only_build_serves_api_without_ui() {
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::process::{Command as StdCommand, Stdio};
+
+    let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("plv"))
+        .args(["serve", "--no-open", "--port", "0"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let url = line.trim().strip_prefix("plv listening on ").unwrap().to_owned();
+    let (base, token) = url.split_once("/#token=").unwrap();
+    let addr = base.strip_prefix("http://").unwrap().to_owned();
+    let get = |path: &str| {
+        let mut stream = std::net::TcpStream::connect(&addr).unwrap();
+        write!(
+            stream,
+            "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        response
+    };
+    let index = get("/");
+    assert!(index.contains("CLI-only build"), "{index}");
+    assert!(get("/api/health").starts_with("HTTP/1.1 200"));
+    child.kill().unwrap();
+    child.wait().unwrap();
+}
