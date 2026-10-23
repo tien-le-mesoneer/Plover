@@ -22,8 +22,30 @@ pub struct AppState {
     pub base_url: Arc<str>,
     pub codes: Arc<SessionCodes>,
     pub events: Events,
-    /// Becomes `true` once the page has mounted (`POST /api/client-ready`).
-    pub client_ready: Arc<watch::Sender<bool>>,
+    /// How far the page got: loaded, launch code traded, ready report (the desktop smoke
+    /// test reads it to say where startup stopped).
+    pub client: Arc<watch::Sender<ClientProgress>>,
+}
+
+/// Startup milestones of the UI page. Counts, so a page that loads twice (and then holds
+/// an already-used launch code) is visible.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ClientProgress {
+    pub page_loads: u32,
+    pub codes_exchanged: u32,
+    pub codes_rejected: u32,
+    /// `POST /api/client-ready`: `Ok` or the error the page reported.
+    pub ready: Option<Result<(), String>>,
+}
+
+impl ClientProgress {
+    /// What the page got through, for a failure message.
+    pub fn summary(&self) -> String {
+        format!(
+            "page loads: {}, launch codes exchanged: {}, rejected: {}",
+            self.page_loads, self.codes_exchanged, self.codes_rejected
+        )
+    }
 }
 
 impl AppState {
@@ -49,7 +71,7 @@ impl AppState {
             base_url: Arc::from(""),
             codes: Arc::new(SessionCodes::default()),
             events: Events::default(),
-            client_ready: Arc::new(watch::channel(false).0),
+            client: Arc::new(watch::channel(ClientProgress::default()).0),
         }
     }
 

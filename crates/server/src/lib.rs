@@ -28,6 +28,7 @@ pub use events::{Events, ServerEvent};
 pub use security::AllowList;
 pub use session::SessionCodes;
 pub use state::AppState;
+pub use state::ClientProgress;
 
 #[derive(Default)]
 pub struct ServerConfig {
@@ -55,8 +56,8 @@ pub struct RunningServer {
     pub url: String,
     /// Notifies connected pages (collection opened, reload requested).
     pub events: Events,
-    /// Becomes `true` once a page has mounted.
-    pub client_ready: tokio::sync::watch::Receiver<bool>,
+    /// The page's startup milestones (loaded, launch code traded, ready report).
+    pub client: tokio::sync::watch::Receiver<ClientProgress>,
     state: AppState,
 }
 
@@ -123,7 +124,7 @@ pub async fn start(
             .map_err(std::io::Error::other)?;
     }
     let events = state.events.clone();
-    let client_ready = state.client_ready.subscribe();
+    let client = state.client.subscribe();
     let router_state = state.clone();
     let server = axum::serve(listener, router(router_state))
         .with_graceful_shutdown(shutdown)
@@ -134,7 +135,7 @@ pub async fn start(
         addr,
         token,
         events,
-        client_ready,
+        client,
         state,
     };
     Ok((running, server))

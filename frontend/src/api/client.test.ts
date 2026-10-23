@@ -71,6 +71,9 @@ describe("ApiClient", () => {
     await api.clientReady();
     const [url, init] = (fetch.mock.calls as unknown as [string, RequestInit][])[0]!;
     expect(`${init.method} ${url}`).toBe("POST http://127.0.0.1:4000/api/client-ready");
+    expect(init.body).toBe("{}");
+    await api.clientReady("boom");
+    expect((fetch.mock.calls as unknown as [string, RequestInit][])[1]![1].body).toBe('{"error":"boom"}');
     const events: unknown[] = [];
     const sub = api.subscribeEvents((e) => events.push(e));
     const socket = FakeSocket.last!;

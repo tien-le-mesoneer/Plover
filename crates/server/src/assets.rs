@@ -4,8 +4,11 @@
 
 use std::borrow::Cow;
 
+use axum::extract::State;
 use axum::http::{HeaderValue, StatusCode, Uri, header};
 use axum::response::{Html, IntoResponse, Response};
+
+use crate::state::AppState;
 
 #[cfg(feature = "embed-ui")]
 #[derive(rust_embed::RustEmbed)]
@@ -43,7 +46,7 @@ const NOT_BUILT: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><tit
 const CSP: &str = "default-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; \
 style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data:; font-src 'self' data:";
 
-pub async fn serve(uri: Uri) -> Response {
+pub async fn serve(State(state): State<AppState>, uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let mut response = match asset(path).filter(|_| !path.is_empty()) {
         Some(file) => {
@@ -57,7 +60,10 @@ pub async fn serve(uri: Uri) -> Response {
         }
         // Hashed bundle files that are missing are real 404s, not app routes.
         None if path.starts_with("assets/") => StatusCode::NOT_FOUND.into_response(),
-        None => index(),
+        None => {
+            state.client.send_modify(|p| p.page_loads += 1);
+            index()
+        }
     };
     let headers = response.headers_mut();
     headers.insert(

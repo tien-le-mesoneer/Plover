@@ -96,6 +96,8 @@ jobs:
         shell: bash
         env:
           PLOVER_DESKTOP_SMOKE: "1"
+          # A fresh runner's first webview start can be slow (WebView2 on Windows).
+          PLOVER_DESKTOP_SMOKE_TIMEOUT_SECS: "90"
           # Keep the smoke run's remembered collections out of the runner's config dir.
           PLOVER_STATE_DIR: ${{ runner.temp }}/plover-state
         run: ${{ matrix.smoke }}

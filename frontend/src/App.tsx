@@ -14,12 +14,12 @@ import { Sidebar } from "./components/Sidebar";
 import { SidebarHeader } from "./components/SidebarHeader";
 import { useRuns } from "./store/runs";
 import { useTabs } from "./store/tabs";
-import { restoreUiState, startUiPersistence } from "./store/uiState";
+import { startUp } from "./store/startup";
 import { useWorkspace } from "./store/workspace";
 
 export default function App({ hasToken }: { hasToken: boolean }) {
   const { tabs, active, save, send } = useTabs();
-  const { collections, activeEnv, error, clearError, init, capabilities, openInBrowser, activeCollection } =
+  const { collections, activeEnv, error, clearError, capabilities, openInBrowser, activeCollection } =
     useWorkspace();
   const anyDirty = useTabs((s) => s.tabs.some((t) => s.isDirty(t.key)));
   const [confirmReload, setConfirmReload] = useState(false);
@@ -32,14 +32,10 @@ export default function App({ hasToken }: { hasToken: boolean }) {
     if (!hasToken) return;
     let stopPersisting: (() => void) | undefined;
     let cancelled = false;
-    void init()
-      .then(restoreUiState)
-      .then(() => {
-        // Save layout changes only after the remembered layout is back, so a restart
-        // never overwrites it with an empty one.
-        if (!cancelled) stopPersisting = startUiPersistence();
-        return api().clientReady().catch(() => undefined);
-      });
+    void startUp(() => cancelled).then((stop) => {
+      if (cancelled) stop?.();
+      else stopPersisting = stop;
+    });
     const events = api().subscribeEvents((event) =>
       handleServerEvent(event, {
         anyDirty: () => {
@@ -56,7 +52,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
       stopPersisting?.();
       events.close();
     };
-  }, [hasToken, init]);
+  }, [hasToken]);
 
   // Closing or reloading the page (browser tab, window) asks first when edits are unsaved.
   useEffect(() => {

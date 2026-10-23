@@ -718,6 +718,15 @@ pub struct ExchangeBody {
     pub code: String,
 }
 
+/// `POST /api/client-ready`: the page's startup finished, with its error if it failed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientReadyBody {
+    #[serde(default)]
+    #[ts(optional)]
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionTokenDto {
@@ -766,6 +775,7 @@ pub fn typescript_bindings() -> String {
         CapabilitiesDto::decl(&cfg),
         PickedFolderDto::decl(&cfg),
         ExchangeBody::decl(&cfg),
+        ClientReadyBody::decl(&cfg),
         SessionTokenDto::decl(&cfg),
         crate::events::ServerEvent::decl(&cfg),
     ];

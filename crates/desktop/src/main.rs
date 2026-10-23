@@ -230,24 +230,25 @@ fn stop_server(app: &AppHandle<Wry>) {
 }
 
 /// `PLOVER_DESKTOP_SMOKE=1`: exits 0 once the page has loaded in the window, traded its
-/// launch code for the token and reported ready (`POST /api/client-ready`), and the
-/// server answers an authorised request with the window's Host; exits 1 after 20 s.
+/// launch code for the token and reported a clean start (`POST /api/client-ready`), and
+/// the server answers an authorised request; otherwise prints where startup stopped and
+/// exits 1 (after `PLOVER_DESKTOP_SMOKE_TIMEOUT_SECS`, default 20 s).
 fn smoke_test(app: &AppHandle<Wry>, server: &ServerRuntime, running: &RunningServer) {
     let (addr, token) = (running.addr, running.token.clone());
-    let mut ready = running.client_ready.clone();
+    let client = running.client.clone();
+    let timeout = lifecycle::smoke_timeout(
+        std::env::var("PLOVER_DESKTOP_SMOKE_TIMEOUT_SECS")
+            .ok()
+            .as_deref(),
+    );
     let app = app.clone();
     server.spawn(async move {
-        let check = async {
-            if ready.wait_for(|r| *r).await.is_err() {
-                return false;
-            }
-            health(addr, &token).await.unwrap_or(false)
-        };
-        let ok = tokio::time::timeout(std::time::Duration::from_secs(20), check)
-            .await
-            .unwrap_or(false);
-        println!("plover smoke: {}", if ok { "ok" } else { "failed" });
-        app.exit(if ok { 0 } else { 1 });
+        let verdict = lifecycle::smoke_check(client, timeout, || health(addr, &token)).await;
+        match &verdict {
+            Ok(()) => println!("plover smoke: ok"),
+            Err(reason) => println!("plover smoke: failed ({reason})"),
+        }
+        app.exit(if verdict.is_ok() { 0 } else { 1 });
     });
 }
 

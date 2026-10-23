@@ -234,6 +234,8 @@ export type ExchangeBody = {
  */
 code: string, };
 
+export type ClientReadyBody = { error?: string, };
+
 export type SessionTokenDto = { token: string, };
 
 export type ServerEvent = { "type": "collection_opened", id: string, } | { "type": "reload_requested" };

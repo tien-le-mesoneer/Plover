@@ -48,7 +48,8 @@ export interface ApiClient {
   /** Opens this session in the default browser (desktop only). */
   openInBrowser(): Promise<void>;
   /** Tells the server the page has mounted (the desktop smoke test waits for it). */
-  clientReady(): Promise<void>;
+  /** Startup finished; `error` says why it failed (the desktop smoke test prints it). */
+  clientReady(error?: string): Promise<void>;
   /** Server → UI notifications (collection opened natively, reload requested). */
   subscribeEvents(onEvent: (e: ServerEvent) => void): { close(): void };
   openCollection(path: string): Promise<CollectionSummaryDto>;
@@ -162,7 +163,7 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     capabilities: () => call("GET", "/capabilities"),
     pickFolder: async () => (await call<PickedFolderDto>("POST", "/native/pick-folder", {})).path,
     openInBrowser: () => call("POST", "/native/open-browser", {}),
-    clientReady: () => call("POST", "/client-ready", {}),
+    clientReady: (error) => call("POST", "/client-ready", error ? { error } : {}),
     subscribeEvents(onEvent) {
       const url = new URL("/api/events", baseUrl || window.location.href);
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";

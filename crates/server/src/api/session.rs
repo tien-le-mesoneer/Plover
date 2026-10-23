@@ -6,7 +6,7 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::Response;
 
-use super::dto::{ExchangeBody, SessionTokenDto};
+use super::dto::{ClientReadyBody, ExchangeBody, SessionTokenDto};
 use super::extract::ApiJson;
 use crate::error::ApiError;
 use crate::security::TOKEN_PROTOCOL_PREFIX;
@@ -18,7 +18,12 @@ pub async fn exchange(
     State(state): State<AppState>,
     ApiJson(body): ApiJson<ExchangeBody>,
 ) -> Result<Json<SessionTokenDto>, ApiError> {
-    match state.codes.redeem(&body.code) {
+    let redeemed = state.codes.redeem(&body.code);
+    state.client.send_modify(|p| match redeemed {
+        Ok(()) => p.codes_exchanged += 1,
+        Err(_) => p.codes_rejected += 1,
+    });
+    match redeemed {
         Ok(()) => Ok(Json(SessionTokenDto {
             token: state.token.to_string(),
         })),
@@ -35,9 +40,20 @@ pub async fn exchange(
     }
 }
 
-/// The page calls this once it has mounted (the desktop smoke test waits for it).
-pub async fn client_ready(State(state): State<AppState>) -> StatusCode {
-    state.client_ready.send_replace(true);
+/// Longest page-reported startup error kept (characters); the rest is cut.
+const MAX_READY_ERROR_CHARS: usize = 500;
+
+/// The page calls this once its startup finished, with the error if it failed (the
+/// desktop smoke test waits for it and prints the error).
+pub async fn client_ready(
+    State(state): State<AppState>,
+    ApiJson(body): ApiJson<ClientReadyBody>,
+) -> StatusCode {
+    let report = match body.error.filter(|e| !e.trim().is_empty()) {
+        None => Ok(()),
+        Some(e) => Err(e.chars().take(MAX_READY_ERROR_CHARS).collect()),
+    };
+    state.client.send_modify(|p| p.ready = Some(report));
     StatusCode::NO_CONTENT
 }
 

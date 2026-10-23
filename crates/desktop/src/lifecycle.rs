@@ -6,10 +6,48 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use plover_server::{RunningServer, ServerConfig};
+use plover_server::{ClientProgress, RunningServer, ServerConfig};
 
 /// How long Quit waits for the server to finish before cancelling what is left.
 pub const SHUTDOWN_DEADLINE: Duration = Duration::from_secs(3);
+
+/// How long the smoke test waits for the page: `PLOVER_DESKTOP_SMOKE_TIMEOUT_SECS`, else
+/// 20 s (a fresh CI runner can start its webview slowly).
+pub fn smoke_timeout(var: Option<&str>) -> Duration {
+    Duration::from_secs(var.and_then(|v| v.trim().parse().ok()).unwrap_or(20))
+}
+
+/// The smoke test's verdict: the page finished starting without an error and the server
+/// answers an authorised request. The error names where startup stopped.
+pub async fn smoke_check<F, Fut>(
+    mut client: tokio::sync::watch::Receiver<ClientProgress>,
+    timeout: Duration,
+    health: F,
+) -> Result<(), String>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = std::io::Result<bool>>,
+{
+    let report = tokio::time::timeout(timeout, client.wait_for(|p| p.ready.is_some()))
+        .await
+        .ok()
+        .and_then(|r| r.ok().and_then(|p| p.ready.clone()));
+    match report {
+        None => {
+            return Err(format!(
+                "page never reported ready; {}",
+                client.borrow().summary()
+            ));
+        }
+        Some(Err(e)) => return Err(format!("page reported: {e}")),
+        Some(Ok(())) => {}
+    }
+    match health().await {
+        Ok(true) => Ok(()),
+        Ok(false) => Err("health check: /api/health did not answer 200".into()),
+        Err(e) => Err(format!("health check: {e}")),
+    }
+}
 
 /// The native dialog text when the local server cannot start.
 pub fn startup_failure_message(err: &std::io::Error) -> String {
@@ -99,6 +137,55 @@ mod tests {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use wiremock::matchers::path;
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn progress(
+        f: impl FnOnce(&mut ClientProgress),
+    ) -> tokio::sync::watch::Receiver<ClientProgress> {
+        let mut p = ClientProgress::default();
+        f(&mut p);
+        tokio::sync::watch::channel(p).1
+    }
+
+    #[tokio::test]
+    async fn smoke_verdicts_name_where_startup_stopped() {
+        let healthy = || async { Ok::<bool, std::io::Error>(true) };
+        let short = Duration::from_millis(50);
+        let ok = progress(|p| p.ready = Some(Ok(())));
+        assert_eq!(smoke_check(ok, short, healthy).await, Ok(()));
+
+        let reported = progress(|p| p.ready = Some(Err("TypeError: x is undefined".into())));
+        assert_eq!(
+            smoke_check(reported, short, healthy).await,
+            Err("page reported: TypeError: x is undefined".into())
+        );
+
+        let silent = progress(|p| {
+            p.page_loads = 2;
+            p.codes_exchanged = 1;
+            p.codes_rejected = 1;
+        });
+        assert_eq!(
+            smoke_check(silent, short, healthy).await,
+            Err(
+                "page never reported ready; page loads: 2, launch codes exchanged: 1, rejected: 1"
+                    .into()
+            )
+        );
+
+        let ready = progress(|p| p.ready = Some(Ok(())));
+        let unhealthy = || async { Ok::<bool, std::io::Error>(false) };
+        assert_eq!(
+            smoke_check(ready, short, unhealthy).await,
+            Err("health check: /api/health did not answer 200".into())
+        );
+    }
+
+    #[test]
+    fn smoke_timeout_comes_from_the_environment() {
+        assert_eq!(smoke_timeout(None), Duration::from_secs(20));
+        assert_eq!(smoke_timeout(Some("90")), Duration::from_secs(90));
+        assert_eq!(smoke_timeout(Some("nope")), Duration::from_secs(20));
+    }
 
     #[test]
     fn start_failure_shows_dialog() {

@@ -110,15 +110,19 @@ async fn repeated_wrong_codes_are_rate_limited() {
 #[tokio::test]
 async fn client_ready_needs_the_token_and_is_observable() {
     let state = state(SessionCodes::new(Duration::from_secs(60)));
-    let mut ready = state.client_ready.subscribe();
+    let mut progress = state.client.subscribe();
     let app = router(state);
-    assert!(!*ready.borrow());
+    assert_eq!(progress.borrow().ready, None);
     let (status, _) = call(&app, "POST", "/api/client-ready", Some(json!({}))).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    tokio::time::timeout(Duration::from_secs(1), ready.wait_for(|r| *r))
-        .await
-        .unwrap()
-        .unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        progress.wait_for(|p| p.ready.is_some()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(progress.borrow().ready, Some(Ok(())));
     let req = Request::builder()
         .method("POST")
         .uri("/api/client-ready")
@@ -128,6 +132,69 @@ async fn client_ready_needs_the_token_and_is_observable() {
     assert_eq!(
         app.oneshot(req).await.unwrap().status(),
         StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn client_ready_records_the_page_error_capped() {
+    let state = state(SessionCodes::new(Duration::from_secs(60)));
+    let progress = state.client.subscribe();
+    let app = router(state);
+    let long = "x".repeat(2000);
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/api/client-ready",
+        Some(json!({ "error": long })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    match progress.borrow().ready.clone() {
+        Some(Err(e)) => assert_eq!(e.chars().count(), 500),
+        other => panic!("{other:?}"),
+    }
+    // A blank error counts as success.
+    call(
+        &app,
+        "POST",
+        "/api/client-ready",
+        Some(json!({ "error": "  " })),
+    )
+    .await;
+    assert_eq!(progress.borrow().ready, Some(Ok(())));
+}
+
+#[tokio::test]
+async fn page_loads_and_launch_codes_are_counted() {
+    let state = state(SessionCodes::new(Duration::from_secs(60)));
+    let code = state.codes.mint();
+    let progress = state.client.subscribe();
+    let app = router(state);
+    for _ in 0..2 {
+        let req = Request::builder()
+            .uri("/")
+            .header("host", format!("127.0.0.1:{PORT}"))
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            app.clone().oneshot(req).await.unwrap().status(),
+            StatusCode::OK
+        );
+    }
+    // A page loaded twice holds the same code; the second exchange is rejected.
+    assert_eq!(exchange(&app, &code, None).await.0, StatusCode::OK);
+    assert_eq!(
+        exchange(&app, &code, None).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    let p = progress.borrow().clone();
+    assert_eq!(
+        (p.page_loads, p.codes_exchanged, p.codes_rejected),
+        (2, 1, 1)
+    );
+    assert_eq!(
+        p.summary(),
+        "page loads: 2, launch codes exchanged: 1, rejected: 1"
     );
 }
 
