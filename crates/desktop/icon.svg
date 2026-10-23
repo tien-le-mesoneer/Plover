@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Placeholder Plover glyph: a small round shorebird on a calm horizon. -->
+  <rect width="1024" height="1024" rx="224" fill="#1f2a37"/>
+  <path d="M120 760 H904" stroke="#3b82a0" stroke-width="28" stroke-linecap="round"/>
+  <ellipse cx="520" cy="560" rx="250" ry="170" fill="#e8d9b5"/>
+  <circle cx="700" cy="430" r="110" fill="#e8d9b5"/>
+  <path d="M800 420 L900 440 L800 462 Z" fill="#f59e0b"/>
+  <circle cx="725" cy="410" r="20" fill="#1f2a37"/>
+  <path d="M330 600 Q520 520 690 610" stroke="#b9a27a" stroke-width="26" fill="none" stroke-linecap="round"/>
+  <path d="M470 720 V780 M560 720 V780" stroke="#f59e0b" stroke-width="22" stroke-linecap="round"/>
+</svg>

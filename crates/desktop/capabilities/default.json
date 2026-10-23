@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The window loads the local server over http://127.0.0.1; it uses no Tauri IPC, so nothing is granted (decision P4-1).",
+  "windows": ["main"],
+  "permissions": []
+}

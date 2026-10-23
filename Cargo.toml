@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/server", "crates/cli"]
+members = ["crates/core", "crates/server", "crates/cli", "crates/desktop"]
 
 # Size-tuned (docs/development.md): fat LTO + opt-level "s" is ~40% smaller than the
 # default profile and within 3% on the scripted benchmark. Keep panic = "unwind":

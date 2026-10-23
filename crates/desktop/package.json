@@ -1,0 +1,13 @@
+{
+  "name": "plover-desktop",
+  "private": true,
+  "description": "Tauri CLI for building the Plover desktop app",
+  "scripts": {
+    "tauri": "tauri",
+    "icons": "tauri icon icon.svg -o icons",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

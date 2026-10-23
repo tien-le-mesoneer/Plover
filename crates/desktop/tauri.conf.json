@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Plover",
+  "version": "0.1.0",
+  "identifier": "dev.plover.app",
+  "build": {},
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "nsis", "deb", "appimage"],
+    "category": "DeveloperTool",
+    "shortDescription": "Bruno-compatible API client",
+    "longDescription": "Plover opens Bruno collections (.bru files) and sends requests from a local Rust backend.",
+    "copyright": "Copyright (c) 2026 Tien Le",
+    "license": "MIT",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/bin/plv": "packaging/plv.sh"
+        }
+      }
+    }
+  }
+}
