@@ -1,0 +1,62 @@
+<style>
+  .pv{background:#1e1f24;color:#d8d8dc;font:13px/1.4 -apple-system,system-ui,sans-serif;border-radius:8px;overflow:hidden;border:1px solid #33343a}
+  .row{display:flex;align-items:center;gap:8px}
+  .box{background:#16171b;border:1px solid #3a3b42;border-radius:6px;padding:5px 8px}
+  .chip{border-radius:999px;padding:2px 9px;font-size:12px;border:1px solid}
+  .btn{border-radius:6px;padding:5px 12px;font-weight:600;border:1px solid #3a3b42;background:#26272d;color:#d8d8dc}
+  .send{background:#f59e0b;color:#1a1a1a;border-color:#f59e0b}
+  .var{color:#7dd3fc;background:#0c4a6e55;border-radius:3px;padding:0 2px}
+  .code{font:12px ui-monospace,Menlo,monospace}
+  .GET{color:#4ade80;font-weight:700}
+  .mut{color:#8b8b93}
+  .side{width:170px;border-right:1px solid #2c2d33;padding:8px;position:relative}
+  .grip{position:absolute;right:-3px;top:0;bottom:0;width:6px;cursor:col-resize;background:repeating-linear-gradient(#55565e 0 2px,transparent 2px 5px);opacity:.6}
+  .top{height:34px;padding:0 10px;border-bottom:1px solid #2c2d33}
+  .ico{font-size:13px;color:#9a9aa2;border:1px solid #3a3b42;border-radius:5px;padding:1px 5px}
+</style>
+
+<h2>Đã sửa: copy body = icon nhỏ, sidebar kéo giãn được (vạch ở mép phải)</h2>
+<p class="subtitle">Còn số 1: bạn muốn environment hiện ở đâu? Bấm chọn một cái.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Giữ như hiện tại (thanh trên cùng), chỉ ghi rõ tên collection</h3>
+      <div class="pv" style="margin-top:8px">
+        <div class="row top"><b>◆ Plover</b><span style="flex:1"></span><span class="mut">signing-api ·</span><span class="box">Dev ▾</span><span class="btn" style="padding:3px 8px">Edit</span></div>
+        <div class="row" style="padding:8px"><span class="box GET">GET</span><span class="box code" style="flex:1"><span class="var">{{baseUrl}}</span>/documents</span><span class="btn send">Send</span></div>
+      </div>
+      <p>Không màu. Ít thay đổi nhất.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Thanh trên cùng như A, nhưng có màu theo mức rủi ro</h3>
+      <div class="pv" style="margin-top:8px">
+        <div class="row top"><b>◆ Plover</b><span style="flex:1"></span><span class="mut">signing-api ·</span><span class="chip" style="border-color:#f59e0b;color:#fbbf24">● Dev ▾</span></div>
+        <div class="row" style="padding:8px"><span class="box GET">GET</span><span class="box code" style="flex:1"><span class="var">{{baseUrl}}</span>/documents</span><span class="btn send">Send</span></div>
+      </div>
+      <p>Stg/Prod đỏ + hỏi xác nhận trước khi gửi. Chỗ gửi request không đổi.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Chỉ ở sidebar, cạnh tên collection</h3>
+      <div class="pv" style="margin-top:8px">
+        <div class="row" style="align-items:stretch">
+          <div class="side"><div class="row" style="justify-content:space-between"><b>signing-api</b><span class="chip" style="border-color:#f59e0b;color:#fbbf24">● Dev ▾</span></div><div class="mut" style="margin-top:6px">› documents</div><div class="grip"></div></div>
+          <div class="row" style="padding:8px;flex:1"><span class="box GET">GET</span><span class="box code" style="flex:1"><span class="var">{{baseUrl}}</span>/docs</span><span class="btn send">Send</span></div>
+        </div>
+      </div>
+      <p>Mỗi collection thấy env của nó. Thanh trên cùng trống hẳn.</p>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:22px">Copy body sau khi sửa</h3>
+<div class="pv" style="padding:8px;max-width:520px">
+  <div class="row"><span class="chip" style="border-color:#16a34a;color:#4ade80">200 OK</span><span class="mut">312 ms · 1.2 KB</span><span class="chip" style="border-color:#16a34a;color:#4ade80">✓ 5/5</span><span style="flex:1"></span><span class="ico" title="Copy body">⧉</span><span class="ico" title="Lưu ra file">⤓</span></div>
+</div>

@@ -1,0 +1,69 @@
+<style>
+  .pv{background:#1e1f24;color:#d8d8dc;font:13px/1.45 -apple-system,system-ui,sans-serif;border-radius:8px;overflow:hidden;border:1px solid #33343a}
+  .row{display:flex;align-items:center;gap:8px}
+  .chip{border-radius:999px;padding:2px 9px;font-size:12px;border:1px solid #3a3b42}
+  .btn{border-radius:6px;padding:4px 10px;border:1px solid #3a3b42;background:#26272d;color:#d8d8dc;font-size:12px}
+  .ico{font-size:12px;color:#9a9aa2;border:1px solid #3a3b42;border-radius:5px;padding:0 5px}
+  .mut{color:#8b8b93}
+  .ok{color:#4ade80}.bad{color:#f87171}.skip{color:#8b8b93}
+  .m{font:600 11px ui-monospace,Menlo,monospace;width:38px;display:inline-block}
+  .GET{color:#4ade80}.POST{color:#fbbf24}.PUT{color:#60a5fa}
+  .list{width:46%;border-right:1px solid #2c2d33}
+  .it{padding:5px 10px;border-bottom:1px solid #26272d}
+  .it.on{background:#2a2b31;box-shadow:inset 3px 0 #f87171}
+  .grp{padding:5px 10px;font-size:12px;color:#9a9aa2;background:#191a1e}
+  .det{flex:1;padding:10px;min-width:0}
+  .sub{display:flex;gap:14px;font-size:12px;color:#9a9aa2;border-bottom:1px solid #2c2d33;padding-bottom:6px;margin:8px 0}
+  .sub b{color:#e5e5e8;box-shadow:0 7px 0 -5px #f59e0b}
+  .code{font:12px/1.7 ui-monospace,Menlo,monospace}
+  .k{color:#93c5fd}.s{color:#fca5a5}
+  .fail{background:#7f1d1d33;border:1px solid #7f1d1d;border-radius:6px;padding:6px 8px;font-size:12px}
+  .seg{display:inline-flex;border:1px solid #3a3b42;border-radius:7px;overflow:hidden}.seg span{padding:3px 12px;border-right:1px solid #3a3b42;font-size:12px}.seg .on{background:#3a1d1f}
+  .hist{position:absolute;right:10px;top:40px;width:300px;background:#232429;border:1px solid #3a3b42;border-radius:8px;box-shadow:0 8px 24px #0008;z-index:2}
+  .hist .it{display:flex;gap:8px;align-items:center}
+</style>
+
+<h2>Runner v2: lọc theo status như Bruno (All / Fail / Pass / Skip)</h2>
+<p class="subtitle">Số đếm nằm luôn trên nút lọc, không lặp lại ở chỗ khác. Đang chọn "Fail". Danh sách theo thứ tự chạy, đường dẫn folder in mờ.</p>
+
+<div class="pv" style="position:relative">
+  <div class="row" style="padding:8px 10px;border-bottom:1px solid #2c2d33;flex-wrap:wrap">
+    <b>Run · signing-api</b><span class="mut">Dev · 14:02 · 5m16s</span>
+    
+    <span style="flex:1"></span>
+    <span class="btn">Lần chạy trước ▾</span>
+    <span class="ico" title="Export HTML/JSON/JUnit">⤓</span>
+    <span class="btn">Chạy lại</span>
+  </div>
+  <div class="hist" style="display:none">
+    <div class="it mut" style="font-size:11px">20 lần gần nhất</div>
+    <div class="it" style="background:#2a2b31"><span>Hôm nay 14:02</span><span class="mut">app</span><span style="flex:1"></span><span class="ok">318</span>/<span class="bad">32</span></div>
+    <div class="it"><span>Hôm nay 10:40</span><span class="mut">plv</span><span style="flex:1"></span><span class="ok">276</span>/<span class="bad">69</span></div>
+    <div class="it"><span>Hôm qua 17:15</span><span class="mut">plv</span><span style="flex:1"></span><span class="ok">6</span>/<span class="bad">0</span></div>
+  </div>
+  <div class="row" style="padding:6px 10px;border-bottom:1px solid #2c2d33">
+    <span class="seg"><span>All 409</span><span class="on bad">Fail 32</span><span class="ok">Pass 318</span><span class="skip">Skip 59</span></span>
+    <span class="mut" style="margin-left:8px">🔍 lọc theo tên…</span>
+  </div>
+  <div class="row" style="align-items:stretch;min-height:330px">
+    <div class="list">
+      <div class="it on"><span class="bad">✕</span> <span class="m GET">GET</span>get document <span class="mut" style="float:right">404 · 95ms</span><div class="mut" style="font-size:11px;padding-left:20px">P2 documents</div></div>
+      <div class="it"><span class="bad">✕</span> <span class="m PUT">PUT</span>update signers <span class="mut" style="float:right">500 · 1.2s</span><div class="mut" style="font-size:11px;padding-left:20px">P2 documents</div></div>
+      <div class="it"><span class="bad">✕</span> <span class="m POST">POST</span>request-signing <span class="mut" style="float:right">413 · 2.1s</span><div class="mut" style="font-size:11px;padding-left:20px">P2 limits</div></div>
+      <div class="it"><span class="bad">✕</span> <span class="m POST">POST</span>reject document <span class="mut" style="float:right">429 · 40ms</span><div class="mut" style="font-size:11px;padding-left:20px">P5 reject</div></div>
+    </div>
+    <div class="det">
+      <div class="row"><b>get document</b><span class="chip bad" style="border-color:#f87171">404 Not Found</span><span class="mut">95 ms · 210 B</span><span style="flex:1"></span><span class="ico" title="Mở request này">↗</span></div>
+      <div class="fail" style="margin-top:8px"><span class="bad">✕ test</span> "status is 200" · expected 404 to equal 200</div>
+      <div class="sub"><b>Response</b><span>Headers 9</span><span>Request</span><span>Tests 1/2</span><span>Console 1</span></div>
+      <div class="row" style="justify-content:flex-end"><span class="ico">⧉</span></div>
+      <div class="code">{<br>&nbsp;&nbsp;<span class="k">"error"</span>: <span class="s">"document d-8812 not found"</span><br>}</div>
+      <div class="mut" style="margin-top:12px;font-size:12px">x-request-id: <span style="color:#e5e5e8">7f3c…a91</span> ⧉</div>
+    </div>
+  </div>
+</div>
+
+<div class="options" style="margin-top:18px">
+  <div class="option" data-choice="like" onclick="toggleSelect(this)"><div class="letter">✓</div><div class="content"><h3>Ổn</h3><p>Chốt runner</p></div></div>
+  <div class="option" data-choice="change" onclick="toggleSelect(this)"><div class="letter">✎</div><div class="content"><h3>Cần sửa</h3><p>Nói trong terminal</p></div></div>
+</div>

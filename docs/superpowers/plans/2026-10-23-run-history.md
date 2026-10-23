@@ -4,7 +4,7 @@
 
 **Goal:** Every request in a run keeps what was sent and received, the app and `plv` reports show it, and every run (app or `plv`) is saved to a masked local history that the app and `plv runs` can reopen.
 
-**Architecture:** Core captures a `RequestDetail`/`ResponseDetail` on `RequestOutcome` at the send site. A new core `RunRecorder` turns `RunEvent`s into `ResultRecord`s (replacing the CLI's `Collector`), a `Masker` replaces collected secret values with `***`, and `RunHistory` stores one masked `RunRecord` per run under the state directory. The CLI renders reports from those records and saves them. The server keeps live recorders in memory, saves on finish or cancel, and serves list and detail endpoints. The UI fetches a row's detail on click.
+**Architecture:** Core captures a `RequestDetail`/`ResponseDetail` on `RequestOutcome` at the send site. A new core `RunRecorder` turns `RunEvent`s into `ResultRecord`s (replacing the CLI's `Collector`), a `Masker` replaces collected secret values with `***`, and `RunHistory` stores one masked `RunRecord` per run under the state directory. Core renders reports from those records (`plover_core::report`, moved out of `crates/cli`); the CLI writes them and saves the run. The server keeps live recorders in memory, saves on finish or cancel, and serves list and detail endpoints. The UI fetches a row's detail on click.
 
 **Tech Stack:** Rust (tokio, serde, axum, ts-rs, clap, wiremock, assert_cmd), React + TypeScript + Zustand + Vitest.
 
@@ -22,7 +22,7 @@
 - Reports (JSON, HTML, JUnit) are built from the same masked records as history. HTML stays script-free with no external resources.
 - Gate before every commit (`set -o pipefail` when piping): `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and for frontend tasks `cd frontend && npm run typecheck && npm run lint && npm test`. After DTO changes: `PLOVER_UPDATE_BINDINGS=1 cargo test -p plover-server --test bindings`, then commit `frontend/src/api/types.ts`.
 - CI matrix stays macOS, Windows, Linux. Paths in records use `/` separators; file writes go through `store::write_atomic`.
-- No mideal content, real hosts or real tokens in fixtures. Test tokens are obviously fake (e.g. `tok-AAAABBBBCCCC`).
+- No content from real collections, real hosts or real tokens in fixtures. Test tokens are obviously fake (e.g. `tok-AAAABBBBCCCC`).
 - Conventional Commit subjects; end each commit message with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Do not push.
 
 ## Review Focus
@@ -222,17 +222,20 @@
 - [ ] **Step 4: Run** `cargo test -p plover-core` → PASS.
 - [ ] **Step 5: Commit** `feat(core): store run history per collection`.
 
-### Task 5: Reports from core records (JSON, HTML, JUnit, skip flags)
+### Task 5: Reports from core records, rendered in core (JSON, HTML, JUnit, skip flags)
+
+User decision: the renderers live in core from this task on, so the app's Export (data-driven/export plan) and `plv` share them without a later move.
 
 **Files:**
-- Modify: `crates/cli/src/report/{mod.rs,json.rs,html.rs,junit.rs}`, `crates/cli/src/lib.rs`, `crates/cli/src/print.rs`
-- Test: `crates/cli/tests/report.rs`
+- Create: `crates/core/src/report/{mod.rs,json.rs,html.rs,junit.rs}` (moved from `crates/cli/src/report/` with `git mv`, then changed to take `RunRecord`)
+- Modify: `crates/core/src/lib.rs` (`pub mod report`), `crates/cli/src/lib.rs` (flags → `ReportFilter`, writes the files), `crates/cli/src/print.rs`; delete `crates/cli/src/report/`
+- Test: `crates/core/tests/report.rs` (renderer unit tests: shape, masking, skip flags, no `<script`), `crates/cli/tests/report.rs` (end-to-end through `plv run`)
 
 **Interfaces:**
 - Consumes: `RunRecord`, `ResultRecord`, `RunRecorder`, `Masker` from core.
 - Produces:
   ```rust
-  // crates/cli/src/report/mod.rs (Collector and RequestRecord are deleted)
+  // crates/core/src/report/mod.rs (the CLI's Collector and RequestRecord are deleted)
   pub struct ReportFilter { pub skip_all_headers: bool, pub skip_headers: Vec<String>, pub skip_request_body: bool, pub skip_response_body: bool }
   pub fn json::render(record: &RunRecord, filter: &ReportFilter) -> serde_json::Value;
   pub fn html::render(record: &RunRecord, filter: &ReportFilter) -> String;
@@ -249,10 +252,10 @@
   - `skip_flags_match_bruno`: `--reporter-skip-all-headers` → `{}` headers; `--reporter-skip-headers x-r` removes only `x-r` (case-insensitive); `--reporter-skip-body` removes `request.data` and `response.data` keys.
   - `html_has_details_and_no_script`: the HTML has one `<details>` per sent result with header tables and `<pre>` bodies, and no `<script`.
   - Existing report tests keep passing unchanged except the removed "minus headers" note.
-- [ ] **Step 2: Run** `cargo test -p plover-cli --test report` → FAIL.
-- [ ] **Step 3: Implement.** `plv run` builds a `RunRecorder` (header source `Plv`, target = root-relative path or `.`), switches from `runner::run` to `RunVars::start` + `run_with_state` so end secrets are known, prints each recorded result via `Printer::result` (unmasked, as today), then `finish(RunEnd::Finished { report, end_secrets })` and renders all reports from the masked record. Start/end secrets: `masking::secret_strings(&runner::secret_values(environment, &state.environment))`. Delete `Collector`, `RequestRecord`, `RecordStatus` and the moved helpers; update the `json.rs` module comment.
+- [ ] **Step 2: Run** `cargo test -p plover-core --test report` and `cargo test -p plover-cli --test report` → FAIL.
+- [ ] **Step 3: Implement.** `plv run` builds a `RunRecorder` (header source `Plv`, target = root-relative path or `.`), switches from `runner::run` to `RunVars::start` + `run_with_state` so end secrets are known, prints each recorded result via `Printer::result` (unmasked, as today), then `finish(RunEnd::Finished { report, end_secrets })` and renders all reports from the masked record with `plover_core::report::{json,html,junit}::render`; the CLI only maps flags to `ReportFilter` and writes the files. Start/end secrets: `masking::secret_strings(&runner::secret_values(environment, &state.environment))`. Delete `Collector`, `RequestRecord`, `RecordStatus` and the moved helpers; update the `json.rs` module comment.
 - [ ] **Step 4: Run** the gate → PASS.
-- [ ] **Step 5: Commit** `feat(cli): include masked request and response detail in reports`.
+- [ ] **Step 5: Commit** `feat(core): render masked reports in core with request and response detail`.
 
 ### Task 6: `plv` saves history; `plv runs`
 
@@ -326,6 +329,8 @@
 - [ ] **Step 5: Commit** `feat(server): save app runs and serve run history and result detail`.
 
 ### Task 8: UI — result detail pane and History
+
+> Layout note (user decision, after this plan was written): the runner becomes a **tab** with a Bruno-style `All | Fail | Pass | Skip` filter and a "Previous runs ▾" menu — see `docs/superpowers/specs/2026-10-23-dev-ux-design.md` §6. This task still builds `RunResultDetail` and `RunHistoryMenu` as standalone components and mounts them in today's `RunPanel`; the dev-UX work moves them into the Run tab after the run-history and curl/HAR branches merge. Build them so they take a `runId` prop and do not depend on `RunPanel` internals.
 
 **Files:**
 - Create: `frontend/src/components/RunResultDetail.tsx`, `frontend/src/components/RunHistoryMenu.tsx`

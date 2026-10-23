@@ -43,8 +43,8 @@ Two features that Bruno puts behind a paid plan in its app
 ## Anti-goals
 
 - Values from a data file (they can be passwords) reaching history or reports
-  unmasked when they are also secrets or credential header values. The run-history
-  masking must cover them like any other text.
+  unmasked. The run-history masking must cover them like any other text, and credential
+  columns are masked by name (see "Masking data-file values").
 - An export that differs from what `plv runs show <id> --reporter-*` writes for the
   same run.
 - A data run that silently does nothing: a missing file, a broken file or an empty
@@ -173,6 +173,18 @@ auto-retry on 429.
   earlier requests), the same rule as the live detail in the run-history design.
 - The summary adds an "Iterations: N" line when N > 1. *Claude's call.*
 
+### Masking data-file values (user decision)
+
+- The values of every column whose name is on the curl/HAR credential list
+  (`password`, `client_secret`, `token`, `api_key`, … — the same fixed list as the
+  curl/HAR design, matched case-insensitively, JSON keys at any depth) are added to the
+  values masked in pass 1 of the run-history masking, for every row read.
+- They are masked everywhere the run's text goes: history, reports, Export, `--verbose`
+  output, `iterationStarted.data` and the UI chips. The same minimum length as the
+  run-history masking applies.
+- Other columns stay visible, unless their value is also a secret or a credential header
+  value (the normal value-based rule).
+
 ### History and reports
 
 - Each result in the run record (run-history design, "What a result keeps") gains
@@ -191,10 +203,15 @@ auto-retry on 429.
   columns in a small table and that iteration's summary. With one iteration it looks
   as it does now. Still script-free.
 
-### Run panel (UI)
+### Runner (UI)
 
-- One-click "Run" in the sidebar stays as it is. The collection and folder actions
-  gain **"Run with data…"**, which opens a `Modal` with these controls. *Claude's call.*
+> The runner is a **tab** after the dev-UX work (`2026-10-23-dev-ux-design.md` §6); until
+> then these controls live in `RunPanel`. Layout follows the dev-UX doc.
+
+- One-click ▶ "Run" in the sidebar stays exactly as it is (user decision: no menu on ▶).
+  **"Run with data…"** sits in the Runner tab header next to **Re-run** (user decision)
+  and opens a `Modal` with these controls, reusing the tab's collection, folder and
+  environment.
   - A file picker (`<input type="file" accept=".csv,.json">`). The browser reads the
     text, and the format comes from the extension. After a file is picked, the dialog
     shows the row count and column names, or the parse error, from a server call. It
@@ -211,7 +228,7 @@ auto-retry on 429.
   - `RunEventDto` events gain `iteration`, and a new
     `iterationStarted { index, total, data }` is added, with `data` masked like the
     live detail. ts-rs regenerates the TS types.
-- **Results grouped by iteration** in `RunPanel.tsx`.
+- **Results grouped by iteration** in the runner (`RunPanel.tsx`, then the Run tab).
   - When there is more than one iteration, each one starts with a header row:
     `Iteration 2 of 5`, its pass/fail counts and its row as `key=value` chips. The values
     are masked by the server, and long values are cut at 40 characters with the full
@@ -222,11 +239,11 @@ auto-retry on 429.
 
 ### Export (UI)
 
-- **Report code moves to core** (*Claude's call*): `crates/cli/src/report/{mod,json,
-  junit,html}.rs` become `crates/core/src/report/`, rendering from the core run record
-  that the run-history design introduces. `plv run`, `plv runs show` and the app all
-  call the same functions. The same masked record therefore gives the same bytes,
-  apart from timestamps and hostname in JUnit.
+- **Report code is already in core**: the run-history work moves
+  `crates/cli/src/report/` to `crates/core/src/report/` (user decision), rendering from
+  the core run record. This work only adds iteration sections to those renderers and
+  calls them from the export endpoint. `plv run`, `plv runs show` and the app produce the
+  same bytes, apart from timestamps and hostname in JUnit.
 - **Endpoint**: `GET /collections/{id}/runs/{runId}/report?format=html|json|junit`.
   - It returns the file with `Content-Type` and
     `Content-Disposition: attachment; filename="<collection>-<runId>.<ext>"`.
@@ -234,7 +251,8 @@ auto-retry on 429.
     lookup as the run-history detail endpoint. A run whose history save failed is
     still exportable until the server stops.
   - 409 `run_in_progress` while the run is still going.
-- **Button**: the Run panel header gets **Export ▾ (HTML, JSON, JUnit)**. It is
+- **Button**: the runner header's export icon ⤓ (dev-UX doc §6) opens **HTML, JSON,
+  JUnit**. It is
   enabled for a finished, cancelled or history run, and disabled while running.
   `--reporter-skip-*` options are not offered, so export always writes the full masked
   record. *Claude's call.*
@@ -271,7 +289,8 @@ auto-retry on 429.
   - JSON report has one entry per iteration with its own summary; the HTML report shows
     iteration sections; JUnit suite names match Bruno's;
   - a data value equal to a secret's value is `***` in history, reports and the UI
-    chips;
+    chips; a `password` column's value sent only in a JSON body is `***` too, and a
+    `username` column's value is not;
   - export through the endpoint gives the same JSON as `plv runs show --reporter-json`
     for the same run;
   - a Bruno comparison with a small public fixture (`fixtures/`): the same
@@ -280,12 +299,6 @@ auto-retry on 429.
 
 ## Open questions for the user
 
-1. **Credential columns in a data file.** A CSV often has a `password` or
-   `client_secret` column. Value-based masking (run-history design) only hides values
-   that are environment secrets or that were sent in `Authorization`, `Cookie` and
-   similar headers. A password sent in a JSON login body would be stored in plain text
-   in history, reports, the `--verbose` output and the UI chips.
-   *Recommendation:* treat the values of columns whose names are on the credential
-   list from the curl/HAR design (`password`, `client_secret`, `token`, `api_key`, …,
-   matched case-insensitively) as values to mask in pass 1 of the masking. Other
-   columns stay visible.
+None. Answered: credential columns are masked by name (see "Masking data-file
+values"); "Run with data…" is in the Runner tab; report code lives in core from the
+run-history work.
