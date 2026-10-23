@@ -12,11 +12,13 @@ interface Props {
 
 /**
  * Edits an environment's variables (saved to its .bru file) and secret values
- * (memory only). Only secrets the user changed are sent; others keep their value.
+ * (OS keychain, or memory when unavailable). Only secrets the user changed are
+ * sent; others keep their value.
  */
 export function EnvEditor({ collectionId, name, onClose }: Props) {
   const env = useWorkspace((s) => s.environments[collectionId]?.find((e) => e.name === name));
   const { saveEnvironment, setSecrets } = useWorkspace();
+  const keychain = useWorkspace((s) => s.capabilities?.secretBackend === "keychain");
   const [vars, setVars] = useState<KeyValueDto[]>(env?.vars ?? []);
   // Only touched secrets: a string sets it, null clears it.
   const [edits, setEdits] = useState<Record<string, string | null>>({});
@@ -44,7 +46,11 @@ export function EnvEditor({ collectionId, name, onClose }: Props) {
         {env.secretNames.length > 0 && (
           <>
             <h4>Secrets</h4>
-            <p className="muted">Kept in memory for this session only; never written to disk.</p>
+            <p className="muted">
+              {keychain
+                ? "Stored in the OS keychain; never written to collection files."
+                : "Memory only — values are lost when Plover quits; never written to disk."}
+            </p>
             {env.secretNames.map((secret) => {
               const isSet = env.secretsSet.includes(secret);
               const edit = edits[secret];

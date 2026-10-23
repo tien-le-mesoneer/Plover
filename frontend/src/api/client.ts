@@ -1,15 +1,17 @@
 // The only module that talks to the backend (fetch + WebSocket).
 import type {
   ApiErrorDto,
+  CapabilitiesDto,
   ClientMessage,
   CollectionSummaryDto,
   EnvironmentDto,
   HashDto,
   HttpRequestDto,
   KeyValueDto,
-  SendResultDto,
+  PickedFolderDto,
   RunEventDto,
   SavedRequestDto,
+  SendResultDto,
   StoredRequestDto,
   TreeNodeDto,
 } from "./types";
@@ -34,6 +36,12 @@ export interface RunHandle {
 }
 
 export interface ApiClient {
+  /** What this server can do beyond the web API (desktop app features, secret storage). */
+  capabilities(): Promise<CapabilitiesDto>;
+  /** Native folder picker (desktop only); `null` when cancelled. */
+  pickFolder(): Promise<string | null>;
+  /** Opens this session in the default browser (desktop only). */
+  openInBrowser(): Promise<void>;
   openCollection(path: string): Promise<CollectionSummaryDto>;
   listCollections(): Promise<CollectionSummaryDto[]>;
   tree(id: string): Promise<TreeNodeDto>;
@@ -112,6 +120,9 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
   const collections = (id: string) => `/collections/${enc(id)}`;
 
   return {
+    capabilities: () => call("GET", "/capabilities"),
+    pickFolder: async () => (await call<PickedFolderDto>("POST", "/native/pick-folder", {})).path,
+    openInBrowser: () => call("POST", "/native/open-browser", {}),
     openCollection: (path) => call("POST", "/collections", { path }),
     listCollections: () => call("GET", "/collections"),
     tree: (id) => call("GET", `${collections(id)}/tree`),

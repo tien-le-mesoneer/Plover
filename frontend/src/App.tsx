@@ -11,7 +11,7 @@ import { useWorkspace } from "./store/workspace";
 
 export default function App({ hasToken }: { hasToken: boolean }) {
   const { tabs, active, save } = useTabs();
-  const { collections, activeEnv, error, clearError, init } = useWorkspace();
+  const { collections, activeEnv, error, clearError, init, capabilities, openInBrowser } = useWorkspace();
   const startRun = useRuns((s) => s.start);
   const [showRun, setShowRun] = useState(false);
   const tab = tabs.find((t) => t.key === active) ?? null;
@@ -46,6 +46,11 @@ export default function App({ hasToken }: { hasToken: boolean }) {
       <header className="topbar">
         <span className="logo">Plover</span>
         <span className="spacer" />
+        {capabilities?.desktop && (
+          <button type="button" onClick={() => void openInBrowser()}>
+            Open in browser
+          </button>
+        )}
         <EnvSelector collectionId={collectionId} />
       </header>
       {error && (

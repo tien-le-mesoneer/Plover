@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { ApiError } from "../api/client";
 import { api } from "../api/instance";
 import type {
+  CapabilitiesDto,
   CollectionSummaryDto,
   EnvironmentDto,
   KeyValueDto,
@@ -14,6 +15,8 @@ export interface WorkspaceState {
   environments: Record<string, EnvironmentDto[]>;
   /** Selected environment per collection; null = no environment. */
   activeEnv: Record<string, string | null>;
+  /** `null` until loaded; web mode has no native features and memory-only secrets. */
+  capabilities: CapabilitiesDto | null;
   error?: string;
   init(): Promise<void>;
   open(path: string): Promise<void>;
@@ -23,6 +26,8 @@ export interface WorkspaceState {
   saveEnvironment(id: string, name: string, vars: KeyValueDto[]): Promise<"saved" | "conflict">;
   /** Sends only the given names (`null` clears) and refreshes which secrets are set. */
   setSecrets(id: string, name: string, values: Record<string, string | null>): Promise<void>;
+  /** Opens this session in the default browser (desktop only). */
+  openInBrowser(): Promise<void>;
   clearError(): void;
 }
 
@@ -54,10 +59,24 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => {
     trees: {},
     environments: {},
     activeEnv: {},
+    capabilities: null,
 
     async init() {
       try {
+        set({ capabilities: await api().capabilities() });
+      } catch (e) {
+        set({ error: message(e) });
+      }
+      try {
         for (const summary of await api().listCollections()) await load(summary);
+      } catch (e) {
+        set({ error: message(e) });
+      }
+    },
+
+    async openInBrowser() {
+      try {
+        await api().openInBrowser();
       } catch (e) {
         set({ error: message(e) });
       }

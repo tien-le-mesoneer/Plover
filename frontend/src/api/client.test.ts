@@ -42,6 +42,26 @@ class FakeSocket {
 }
 
 describe("ApiClient", () => {
+  it("calls the capabilities and native routes", async () => {
+    const fetch = vi.fn(async (url: string) =>
+      url.endsWith("/capabilities")
+        ? jsonResponse(200, { desktop: true, nativePicker: true, openExternal: true, secretBackend: "keychain" })
+        : url.endsWith("/pick-folder")
+          ? jsonResponse(200, { path: "/c" })
+          : jsonResponse(204, undefined),
+    );
+    const api = createApiClient("http://127.0.0.1:4000", "tok", { fetch: fetch as unknown as typeof window.fetch });
+    expect((await api.capabilities()).secretBackend).toBe("keychain");
+    expect(await api.pickFolder()).toBe("/c");
+    await api.openInBrowser();
+    const calls = fetch.mock.calls as unknown as [string, RequestInit][];
+    expect(calls.map(([u, i]) => `${i.method} ${u}`)).toEqual([
+      "GET http://127.0.0.1:4000/api/capabilities",
+      "POST http://127.0.0.1:4000/api/native/pick-folder",
+      "POST http://127.0.0.1:4000/api/native/open-browser",
+    ]);
+  });
+
   it("sends the bearer token on every call", async () => {
     const fetch = vi.fn(async () => jsonResponse(200, []));
     const api = createApiClient("http://127.0.0.1:4000", "tok", { fetch });
