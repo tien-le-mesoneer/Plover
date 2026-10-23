@@ -429,9 +429,11 @@ impl Worker {
             )
             .map_err(internal_err)?;
             globals.set("__brsHost", host_fn).map_err(internal_err)?;
-            eval_global(&ctx, PRELUDE_JS, "brs-prelude", true)
+            // Compiled once per worker like the libraries: both are strict IIFEs over
+            // globalThis, so module evaluation runs them unchanged.
+            load_module(&ctx, &self.libs, "brs-prelude", PRELUDE_JS)
                 .map_err(|e| self.classify(&ctx, e, deadline, &[]))?;
-            eval_global(&ctx, API_JS, "brs-api", true)
+            load_module(&ctx, &self.libs, "brs-api", API_JS)
                 .map_err(|e| self.classify(&ctx, e, deadline, &[]))?;
             eval_global(&ctx, &code, SCRIPT_FILE, false)
                 .map_err(|e| self.classify(&ctx, e, deadline, &segments))?;
@@ -697,6 +699,18 @@ fn load_lib<'js>(
             &format!("unknown library {name}"),
         ));
     };
+    load_module(ctx, cache, name, source)
+}
+
+/// Evaluates `source` as a module in the calling context, from bytecode compiled the first
+/// time this worker needs it. The modules have no imports or top-level await, so
+/// evaluation completes synchronously.
+fn load_module<'js>(
+    ctx: &Ctx<'js>,
+    cache: &RefCell<HashMap<&'static str, Vec<u8>>>,
+    name: &'static str,
+    source: &'static str,
+) -> rquickjs::Result<()> {
     if !cache.borrow().contains_key(name) {
         let bytes = Module::declare(ctx.clone(), name, source)?.write(WriteOptions::default())?;
         cache.borrow_mut().insert(name, bytes);

@@ -238,7 +238,7 @@ test('verify and decode', () => {{
   expect(jwt.decode('nope')).to.equal(null);
   let e;
   try {{ jwt.verify(jwt.sign({{ a: 1, iat: 1700000000, exp: 1700000001 }}, 'secret'), 'secret'); }} catch (err) {{ e = err; }}
-  expect([e.name, e.message]).to.eql(['Error', 'jwt expired']);
+  expect([e.name, e.message, Object.keys(e)]).to.eql(['Error', 'jwt expired', ['message']]);
   expect(() => jwt.verify(jwt.sign({{ a: 1 }}, 'secret'), 'other')).to.throw('invalid signature');
   expect(() => jwt.verify(jwt.sign({{ a: 1, aud: 'x' }}, 'secret'), 'secret', {{ audience: 'y' }})).to.throw('jwt audience invalid. expected: y');
   expect(() => jwt.verify('a.b', 'secret')).to.throw('jwt malformed');

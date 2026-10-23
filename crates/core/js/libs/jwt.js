@@ -3,6 +3,13 @@
 // the host (`jwt.sign` / `jwt.verify`); errors cross as plain `Error`s, as in Bruno's shim.
 import ms from 'ms';
 
+// Bruno's shim rethrows `vm.newError(message)`: a plain Error whose message is enumerable.
+const jwtError = (message) => {
+  const error = new Error(message);
+  Object.defineProperty(error, 'message', { value: message, enumerable: true, writable: true, configurable: true });
+  return error;
+};
+
 const host = (op, args) => JSON.parse(globalThis.__brsHost(op, JSON.stringify(args)));
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -65,15 +72,15 @@ const settle = (callback, err, value) => {
 
 const signSync = (payload, secretOrPrivateKey, options) => {
   options = options || {};
-  if (typeof payload === 'undefined') throw new Error('payload is required');
+  if (typeof payload === 'undefined') throw jwtError('payload is required');
   const isObjectPayload = typeof payload === 'object' && !isBuffer(payload);
   const header = Object.assign(
     { alg: options.algorithm || 'HS256', typ: isObjectPayload ? 'JWT' : undefined, kid: options.keyid },
     options.header
   );
-  if (!secretOrPrivateKey && options.algorithm !== 'none') throw new Error('secretOrPrivateKey must have a value');
+  if (!secretOrPrivateKey && options.algorithm !== 'none') throw jwtError('secretOrPrivateKey must have a value');
   if (typeof options.expiresIn !== 'undefined' && !isObjectPayload) {
-    throw new Error('invalid expiresIn option for string payload');
+    throw jwtError('invalid expiresIn option for string payload');
   }
   if (isObjectPayload) payload = Object.assign({}, payload);
   const timestamp = (isObjectPayload && payload.iat) || Math.floor(Date.now() / 1000);
@@ -85,20 +92,20 @@ const signSync = (payload, secretOrPrivateKey, options) => {
   if (typeof options.notBefore !== 'undefined') {
     payload.nbf = timespan(options.notBefore, timestamp);
     if (typeof payload.nbf === 'undefined') {
-      throw new Error('"notBefore" should be a number of seconds or string representing a timespan eg: "1d", "20h", 60');
+      throw jwtError('"notBefore" should be a number of seconds or string representing a timespan eg: "1d", "20h", 60');
     }
   }
   if (typeof options.expiresIn !== 'undefined' && isObjectPayload) {
     payload.exp = timespan(options.expiresIn, timestamp);
     if (typeof payload.exp === 'undefined') {
-      throw new Error('"expiresIn" should be a number of seconds or string representing a timespan eg: "1d", "20h", 60');
+      throw jwtError('"expiresIn" should be a number of seconds or string representing a timespan eg: "1d", "20h", 60');
     }
   }
   for (const key of Object.keys(OPTIONS_TO_PAYLOAD)) {
     const claim = OPTIONS_TO_PAYLOAD[key];
     if (typeof options[key] !== 'undefined') {
       if (typeof payload[claim] !== 'undefined') {
-        throw new Error('Bad "options.' + key + '" option. The payload already has an "' + claim + '" property.');
+        throw jwtError('Bad "options.' + key + '" option. The payload already has an "' + claim + '" property.');
       }
       payload[claim] = options[key];
     }
@@ -143,34 +150,34 @@ const verifySync = (token, secretOrPublicKey, options) => {
   options = Object.assign({}, options);
   const clockTimestamp = options.clockTimestamp || Math.floor(Date.now() / 1000);
   const tolerance = options.clockTolerance || 0;
-  if (!token) throw new Error('jwt must be provided');
-  if (typeof token !== 'string') throw new Error('jwt must be a string');
+  if (!token) throw jwtError('jwt must be provided');
+  if (typeof token !== 'string') throw jwtError('jwt must be a string');
   const parts = token.split('.');
-  if (parts.length !== 3) throw new Error('jwt malformed');
+  if (parts.length !== 3) throw jwtError('jwt malformed');
   const decoded = decode(token, { complete: true });
-  if (!decoded) throw new Error('invalid token');
+  if (!decoded) throw jwtError('invalid token');
   const header = decoded.header;
   const hasSignature = parts[2].trim() !== '';
-  if (!hasSignature && secretOrPublicKey) throw new Error('jwt signature is required');
-  if (hasSignature && !secretOrPublicKey) throw new Error('secret or public key must be provided');
+  if (!hasSignature && secretOrPublicKey) throw jwtError('jwt signature is required');
+  if (hasSignature && !secretOrPublicKey) throw jwtError('secret or public key must be provided');
   const algorithms = options.algorithms || (isPem(secretOrPublicKey) ? PUBLIC : HS);
   if (!hasSignature && !options.algorithms) options.algorithms = ['none'];
-  if ((options.algorithms || algorithms).indexOf(header.alg) === -1) throw new Error('invalid algorithm');
+  if ((options.algorithms || algorithms).indexOf(header.alg) === -1) throw jwtError('invalid algorithm');
   if (hasSignature) {
     const valid = host(
       'jwt.verify',
       Object.assign({ alg: header.alg, input: parts[0] + '.' + parts[1], signature: parts[2] }, keyArgs(secretOrPublicKey))
     );
-    if (!valid) throw new Error('invalid signature');
+    if (!valid) throw jwtError('invalid signature');
   }
   const payload = decoded.payload;
   if (typeof payload.nbf !== 'undefined' && !options.ignoreNotBefore) {
-    if (typeof payload.nbf !== 'number') throw new Error('invalid nbf value');
-    if (payload.nbf > clockTimestamp + tolerance) throw new Error('jwt not active');
+    if (typeof payload.nbf !== 'number') throw jwtError('invalid nbf value');
+    if (payload.nbf > clockTimestamp + tolerance) throw jwtError('jwt not active');
   }
   if (typeof payload.exp !== 'undefined' && !options.ignoreExpiration) {
-    if (typeof payload.exp !== 'number') throw new Error('invalid exp value');
-    if (clockTimestamp >= payload.exp + tolerance) throw new Error('jwt expired');
+    if (typeof payload.exp !== 'number') throw jwtError('invalid exp value');
+    if (clockTimestamp >= payload.exp + tolerance) throw jwtError('jwt expired');
   }
   if (options.audience) {
     const audiences = Array.isArray(options.audience) ? options.audience : [options.audience];
@@ -178,27 +185,27 @@ const verifySync = (token, secretOrPublicKey, options) => {
     const match = target.some((aud) =>
       audiences.some((a) => (a instanceof RegExp ? a.test(aud) : a === aud))
     );
-    if (!match) throw new Error('jwt audience invalid. expected: ' + audiences.join(' or '));
+    if (!match) throw jwtError('jwt audience invalid. expected: ' + audiences.join(' or '));
   }
   if (options.issuer) {
     const invalid =
       (typeof options.issuer === 'string' && payload.iss !== options.issuer) ||
       (Array.isArray(options.issuer) && options.issuer.indexOf(payload.iss) === -1);
-    if (invalid) throw new Error('jwt issuer invalid. expected: ' + options.issuer);
+    if (invalid) throw jwtError('jwt issuer invalid. expected: ' + options.issuer);
   }
   if (options.subject && payload.sub !== options.subject) {
-    throw new Error('jwt subject invalid. expected: ' + options.subject);
+    throw jwtError('jwt subject invalid. expected: ' + options.subject);
   }
   if (options.jwtid && payload.jti !== options.jwtid) {
-    throw new Error('jwt jwtid invalid. expected: ' + options.jwtid);
+    throw jwtError('jwt jwtid invalid. expected: ' + options.jwtid);
   }
   if (options.maxAge) {
-    if (typeof payload.iat !== 'number') throw new Error('iat required when maxAge is specified');
+    if (typeof payload.iat !== 'number') throw jwtError('iat required when maxAge is specified');
     const maxAgeTimestamp = timespan(options.maxAge, payload.iat);
     if (typeof maxAgeTimestamp === 'undefined') {
-      throw new Error('"maxAge" should be a number of seconds or string representing a timespan eg: "1d", "20h", 60');
+      throw jwtError('"maxAge" should be a number of seconds or string representing a timespan eg: "1d", "20h", 60');
     }
-    if (clockTimestamp >= maxAgeTimestamp + tolerance) throw new Error('maxAge exceeded');
+    if (clockTimestamp >= maxAgeTimestamp + tolerance) throw jwtError('maxAge exceeded');
   }
   if (options.complete === true) return { header, payload, signature: decoded.signature };
   return payload;
