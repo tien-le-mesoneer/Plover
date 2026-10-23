@@ -8,33 +8,41 @@ import { useWorkspace } from "./workspace";
 
 const SAVE_DELAY_MS = 500;
 
+/** Applies one collection's remembered layout; resolves to its active tab key, if reopened. */
+async function apply(id: string, ui: UiStateDto): Promise<string | null> {
+  const names = new Set((useWorkspace.getState().environments[id] ?? []).map((e) => e.name));
+  useWorkspace.setState((s) => ({
+    expanded: { ...s.expanded, [id]: ui.expanded },
+    activeEnv: ui.env !== null && names.has(ui.env) ? { ...s.activeEnv, [id]: ui.env } : s.activeEnv,
+  }));
+  for (const item of ui.tabs) {
+    try {
+      await useTabs.getState().open(id, item);
+    } catch {
+      // The request no longer exists (renamed, deleted): drop it.
+    }
+  }
+  const key = `${id}:${ui.active}`;
+  return ui.active !== null && useTabs.getState().tabs.some((t) => t.key === key) ? key : null;
+}
+
+async function remembered(): Promise<Record<string, UiStateDto>> {
+  try {
+    return await api().uiState();
+  } catch {
+    return {};
+  }
+}
+
 /** Reopens remembered tabs (missing requests are dropped), folders and environments. */
 export async function restoreUiState(): Promise<void> {
-  let saved: Record<string, UiStateDto>;
-  try {
-    saved = await api().uiState();
-  } catch {
-    return;
-  }
-  const ws = useWorkspace.getState();
+  const saved = await remembered();
   let active: string | null = null;
-  for (const c of ws.collections) {
+  for (const c of useWorkspace.getState().collections) {
     const ui = saved[c.id];
     if (!c.available || !ui) continue;
-    const names = new Set((useWorkspace.getState().environments[c.id] ?? []).map((e) => e.name));
-    useWorkspace.setState((s) => ({
-      expanded: { ...s.expanded, [c.id]: ui.expanded },
-      activeEnv: ui.env !== null && names.has(ui.env) ? { ...s.activeEnv, [c.id]: ui.env } : s.activeEnv,
-    }));
-    for (const item of ui.tabs) {
-      try {
-        await useTabs.getState().open(c.id, item);
-      } catch {
-        // The request no longer exists (renamed, deleted): drop it.
-      }
-    }
-    const key = `${c.id}:${ui.active}`;
-    if (ui.active !== null && !active && useTabs.getState().tabs.some((t) => t.key === key)) active = key;
+    const key = await apply(c.id, ui);
+    active ??= key;
   }
   if (active) useTabs.getState().activate(active);
 }
@@ -57,12 +65,34 @@ function snapshot(): Record<string, UiStateDto> {
   return out;
 }
 
-/** Saves layout changes (debounced, per collection). Returns a function that stops it. */
+/**
+ * Saves layout changes (debounced, per collection). A collection that becomes available
+ * later (opened, reopened from Recent, retried) first gets its remembered layout back, so
+ * an empty layout never overwrites it. Returns a function that stops saving.
+ */
 export function startUiPersistence(): () => void {
   const last = new Map(Object.entries(snapshot()).map(([id, ui]) => [id, JSON.stringify(ui)]));
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  const restoring = new Set<string>();
+  let stopped = false;
+
   const check = () => {
     for (const [id, ui] of Object.entries(snapshot())) {
+      if (restoring.has(id)) continue;
+      if (!last.has(id)) {
+        restoring.add(id);
+        void remembered()
+          .then((saved) => (saved[id] ? apply(id, saved[id]) : null))
+          .then((key) => {
+            if (key) useTabs.getState().activate(key);
+          })
+          .finally(() => {
+            restoring.delete(id);
+            const now = snapshot()[id];
+            if (now) last.set(id, JSON.stringify(now));
+          });
+        continue;
+      }
       const text = JSON.stringify(ui);
       if (last.get(id) === text) continue;
       last.set(id, text);
@@ -71,15 +101,19 @@ export function startUiPersistence(): () => void {
         id,
         setTimeout(() => {
           timers.delete(id);
+          if (stopped) return;
           void api()
             .saveUiState(id, ui)
             .catch(() => undefined);
         }, SAVE_DELAY_MS),
       );
     }
+    // A closed collection is forgotten here, so reopening it restores its layout again.
+    for (const id of [...last.keys()]) if (!(id in snapshot())) last.delete(id);
   };
   const unsubscribe = [useWorkspace.subscribe(check), useTabs.subscribe(check)];
   return () => {
+    stopped = true;
     unsubscribe.forEach((u) => u());
     timers.forEach((t) => clearTimeout(t));
   };

@@ -185,6 +185,26 @@ describe("remembered UI state", () => {
     expect(ws.collections.map((c) => c.id)).toEqual(["c1", "c2"]);
   });
 
+  it("restores a collection opened later (retry, recent) before saving its layout", async () => {
+    vi.useFakeTimers();
+    useWorkspace.setState({ collections: [], trees: {} });
+    client.uiState!.mockResolvedValue({
+      c1: { tabs: ["users/me.bru"], active: "users/me.bru", expanded: ["users"], env: null },
+    });
+    const stop = startUiPersistence();
+    await act(async () => {
+      await useWorkspace.getState().open("/work/demo");
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(useWorkspace.getState().expanded.c1).toEqual(["users"]);
+    expect(useTabs.getState().tabs.map((t) => t.item)).toEqual(["users/me.bru"]);
+    // Nothing overwrote the remembered layout with an empty one.
+    for (const [, ui] of client.saveUiState!.mock.calls) expect((ui as { tabs: string[] }).tabs).toEqual(["users/me.bru"]);
+    stop();
+  });
+
   it("saves changes debounced, per collection", async () => {
     vi.useFakeTimers();
     const stop = startUiPersistence();
