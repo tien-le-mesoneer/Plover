@@ -227,7 +227,18 @@ fn concurrent_saves_with_same_base_hash_one_wins() {
             .iter()
             .filter(|r| matches!(r, Err(StoreError::Conflict { .. })))
             .count();
-        assert_eq!((ok, conflicts), (1, 7), "round {round}");
+        let other: Vec<String> = results
+            .iter()
+            .filter_map(|r| match r {
+                Err(StoreError::Conflict { .. }) | Ok(_) => None,
+                Err(e) => Some(format!("{e:?}")),
+            })
+            .collect();
+        assert_eq!(
+            (ok, conflicts),
+            (1, 7),
+            "round {round}; other errors: {other:?}"
+        );
     }
 }
 

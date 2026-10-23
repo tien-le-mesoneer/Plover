@@ -153,7 +153,7 @@ pub fn update_file(
     path: &Path,
     update: impl FnOnce(Option<&str>) -> Result<String, String>,
 ) -> Result<bool, StoreError> {
-    let lock = lock_file(path).or_else(|_| lock_missing(path))?;
+    let lock = lock_file(path)?;
     let _guard = lock.lock().unwrap_or_else(PoisonError::into_inner);
     let current = match std::fs::read_to_string(path) {
         Ok(text) => Some(text),
@@ -168,23 +168,27 @@ pub fn update_file(
     Ok(true)
 }
 
-/// The lock for a file that does not exist yet, keyed by its canonical directory.
-fn lock_missing(path: &Path) -> Result<Arc<Mutex<()>>, StoreError> {
+/// One lock per file, held from the hash check to the rename so two saves with the same
+/// base hash cannot both succeed. Guards writers in this process; other programs editing
+/// the file are caught by the hash check on the next save.
+///
+/// The key is the canonical directory plus the file name, so taking the lock never opens
+/// the file itself: on Windows, canonicalizing a file that another thread is renaming over
+/// fails with a sharing violation. Windows names are case-insensitive, so the name is
+/// lower-cased there.
+fn lock_file(path: &Path) -> Result<Arc<Mutex<()>>, StoreError> {
     let dir = path
         .parent()
         .ok_or_else(|| StoreError::NotFound(path.display().to_string()))?;
     let name = path
         .file_name()
         .ok_or_else(|| StoreError::NotFound(path.display().to_string()))?;
+    let name = if cfg!(windows) {
+        std::ffi::OsString::from(name.to_string_lossy().to_lowercase())
+    } else {
+        name.to_os_string()
+    };
     lock_key(dir.canonicalize()?.join(name))
-}
-
-/// One lock per file (by canonical path), held from the hash check to the
-/// rename so two saves with the same base hash cannot both succeed.
-/// Guards writers in this process; other programs editing the file are
-/// caught by the hash check on the next save.
-fn lock_file(path: &Path) -> Result<Arc<Mutex<()>>, StoreError> {
-    lock_key(path.canonicalize()?)
 }
 
 fn lock_key(key: PathBuf) -> Result<Arc<Mutex<()>>, StoreError> {
@@ -229,6 +233,23 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<ContentHash, Sto
     if let Ok(meta) = std::fs::metadata(path) {
         tmp.as_file().set_permissions(meta.permissions())?;
     }
-    tmp.persist(path).map_err(|e| StoreError::Io(e.error))?;
+    // Windows refuses to replace a file that another program (antivirus, an editor, a
+    // reader in this process) has open without delete sharing; that clears up quickly.
+    let mut attempt = 0;
+    loop {
+        match tmp.persist(path) {
+            Ok(_) => break,
+            Err(e)
+                if cfg!(windows)
+                    && attempt < 10
+                    && e.error.kind() == std::io::ErrorKind::PermissionDenied =>
+            {
+                attempt += 1;
+                tmp = e.file;
+                std::thread::sleep(std::time::Duration::from_millis(20 * attempt));
+            }
+            Err(e) => return Err(StoreError::Io(e.error)),
+        }
+    }
     Ok(ContentHash::of(bytes))
 }
