@@ -298,3 +298,41 @@ fn secrets_merge_and_clear() {
 fn names(status: &[(String, plover_core::secrets::SecretBackend)]) -> Vec<&str> {
     status.iter().map(|(name, _)| name.as_str()).collect()
 }
+
+/// Collections are listed in the order they were opened (the UI sidebar order),
+/// not by their hash IDs, so reloading the page keeps the same order.
+#[test]
+fn list_keeps_open_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let roots: Vec<PathBuf> = ["alpha", "beta", "gamma"]
+        .iter()
+        .map(|name| {
+            let root = dir.path().join(name);
+            fs::create_dir_all(&root).unwrap();
+            fs::write(
+                root.join("bruno.json"),
+                format!(r#"{{"version":"1","name":"{name}","type":"collection"}}"#),
+            )
+            .unwrap();
+            root
+        })
+        .collect();
+    for order in [[0, 1, 2], [2, 0, 1], [1, 2, 0]] {
+        let ws = Workspace::new(ExecOptions::default());
+        for i in order {
+            ws.open(&roots[i]).unwrap();
+        }
+        // Re-opening an already open collection must not move it.
+        ws.open(&roots[order[0]]).unwrap();
+        let listed: Vec<String> = ws
+            .list()
+            .iter()
+            .map(|c| c.collection().config.name.clone())
+            .collect();
+        let expected: Vec<String> = order
+            .iter()
+            .map(|&i| ["alpha", "beta", "gamma"][i].to_owned())
+            .collect();
+        assert_eq!(listed, expected);
+    }
+}

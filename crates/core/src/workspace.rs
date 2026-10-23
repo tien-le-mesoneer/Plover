@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use crate::collection::{Collection, LoadError};
@@ -230,7 +231,9 @@ fn apply_changes(target: &mut ValueMap, before: &ValueMap, after: &ValueMap) {
 pub struct Workspace {
     exec: ExecOptions,
     secrets: Arc<SecretVault>,
-    collections: RwLock<HashMap<CollectionId, Arc<OpenCollection>>>,
+    /// Each entry keeps its open sequence number so `list` returns open order.
+    collections: RwLock<HashMap<CollectionId, (u64, Arc<OpenCollection>)>>,
+    next_seq: AtomicU64,
 }
 
 impl Workspace {
@@ -244,6 +247,7 @@ impl Workspace {
             exec,
             secrets,
             collections: RwLock::default(),
+            next_seq: AtomicU64::new(0),
         }
     }
 
@@ -273,7 +277,7 @@ impl Workspace {
             .write()
             .unwrap_or_else(PoisonError::into_inner)
             .entry(id.clone())
-            .or_insert(open);
+            .or_insert_with(|| (self.next_seq.fetch_add(1, Ordering::Relaxed), open));
         Ok(id)
     }
 
@@ -282,10 +286,10 @@ impl Workspace {
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .get(id)
-            .cloned()
+            .map(|(_, open)| open.clone())
     }
 
-    /// Open collections, ordered by ID.
+    /// Open collections in the order they were first opened.
     pub fn list(&self) -> Vec<Arc<OpenCollection>> {
         let mut all: Vec<_> = self
             .collections
@@ -294,7 +298,7 @@ impl Workspace {
             .values()
             .cloned()
             .collect();
-        all.sort_by(|a, b| a.id.cmp(&b.id));
-        all
+        all.sort_by_key(|(seq, _)| *seq);
+        all.into_iter().map(|(_, open)| open).collect()
     }
 }
