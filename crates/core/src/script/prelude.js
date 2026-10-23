@@ -1,15 +1,15 @@
 // Runs once per script context, after the safe-mode libraries (js/dist/sandbox-libs.js) and
 // before the user's code. It installs the globals Bruno's QuickJS sandbox offers (console,
 // require, timers, and the bru/req/res/test APIs from api.js) and the hooks the Rust driver
-// calls: __brsStart, __brsNextTimerDelay, __brsFireTimer and __brsResult.
+// calls: __plvStart, __plvNextTimerDelay, __plvFireTimer and __plvResult.
 //
-// Native helpers provided by the engine: __brsInputJson (string), __brsNow() (ms since the
-// script started) and __brsInterpolate(text, layersJson).
+// Native helpers provided by the engine: __plvInputJson (string), __plvNow() (ms since the
+// script started) and __plvInterpolate(text, layersJson).
 (function () {
   'use strict';
   const g = globalThis;
-  const input = JSON.parse(g.__brsInputJson || '{}');
-  delete g.__brsInputJson;
+  const input = JSON.parse(g.__plvInputJson || '{}');
+  delete g.__plvInputJson;
 
   const SAFE_MODULES =
     'chai, buffer, moment, btoa, atob, crypto-js, tv4, ajv, ajv-formats, axios, uuid, nanoid, path, jsonwebtoken';
@@ -59,14 +59,14 @@
   };
 
   // ---- libraries: loaded into this context on first use -------------------------------
-  g.__brsLibs = {};
+  g.__plvLibs = {};
   const libHooks = {};
   const lib = (name) => {
-    if (!(name in g.__brsLibs)) {
-      g.__brsLoadLib(name);
-      for (const hook of libHooks[name] || []) hook(g.__brsLibs[name]);
+    if (!(name in g.__plvLibs)) {
+      g.__plvLoadLib(name);
+      for (const hook of libHooks[name] || []) hook(g.__plvLibs[name]);
     }
-    return g.__brsLibs[name];
+    return g.__plvLibs[name];
   };
   const lazyGlobal = (prop, get) => {
     const settle = (value) =>
@@ -94,10 +94,10 @@
   lazyGlobal('addFormats', () => lib('ajv').addFormats);
 
   // Web Crypto's getRandomValues for the uuid and nanoid bundles (crates/core/js/build.mjs).
-  Object.defineProperty(g, '__brsCrypto', {
+  Object.defineProperty(g, '__plvCrypto', {
     value: {
       getRandomValues: (array) => {
-        const bytes = JSON.parse(g.__brsHost('random', JSON.stringify({ n: array.byteLength })));
+        const bytes = JSON.parse(g.__plvHost('random', JSON.stringify({ n: array.byteLength })));
         new Uint8Array(array.buffer, array.byteOffset, array.byteLength).set(bytes);
         return array;
       }
@@ -128,9 +128,9 @@
   g.require = (name) => {
     if (!Object.prototype.hasOwnProperty.call(modules, name)) {
       const err = new Error(
-        "Cannot find module '" + name + "' — bru-rs runs scripts like Bruno safe mode; available: " + SAFE_MODULES
+        "Cannot find module '" + name + "' — Plover runs scripts like Bruno safe mode; available: " + SAFE_MODULES
       );
-      err.__brsForbiddenModule = String(name);
+      err.__plvForbiddenModule = String(name);
       throw err;
     }
     if (!(name in required)) required[name] = modules[name]();
@@ -144,7 +144,7 @@
     if (typeof fn !== 'function') throw new TypeError('The "callback" argument must be of type function');
     const delay = Math.max(0, Number(ms) || 0);
     const id = nextTimerId++;
-    timers.set(id, { fn, args, delay, repeat, due: g.__brsNow() + delay, seq: id });
+    timers.set(id, { fn, args, delay, repeat, due: g.__plvNow() + delay, seq: id });
     return id;
   };
   g.setTimeout = (fn, ms, ...args) => addTimer(fn, ms, args, false);
@@ -159,17 +159,17 @@
     }
     return best;
   };
-  g.__brsNextTimerDelay = () => {
+  g.__plvNextTimerDelay = () => {
     const next = nextTimer();
-    return next ? Math.max(0, next[1].due - g.__brsNow()) : -1;
+    return next ? Math.max(0, next[1].due - g.__plvNow()) : -1;
   };
   let timerError = null;
-  g.__brsFireTimer = () => {
+  g.__plvFireTimer = () => {
     const next = nextTimer();
     if (!next) return;
     const [id, t] = next;
     if (t.repeat) {
-      t.due = g.__brsNow() + Math.max(1, t.delay);
+      t.due = g.__plvNow() + Math.max(1, t.delay);
       t.seq = nextTimerId++;
     } else {
       timers.delete(id);
@@ -189,7 +189,7 @@
         message: e.message !== undefined ? String(e.message) : String(e),
         name: e.name !== undefined ? String(e.name) : 'Error',
         stack: e.stack !== undefined ? String(e.stack) : null,
-        forbiddenModule: e.__brsForbiddenModule || null
+        forbiddenModule: e.__plvForbiddenModule || null
       };
     }
     return { message: String(e), name: 'Error', stack: null, forbiddenModule: null };
@@ -198,7 +198,7 @@
   const state = { done: false, error: null };
   const finishers = [];
   const resultParts = {};
-  g.__brs = {
+  g.__plv = {
     input,
     resultParts,
     lib,
@@ -213,7 +213,7 @@
     }
   };
 
-  g.__brsStart = (main) => {
+  g.__plvStart = (main) => {
     Promise.resolve()
       .then(main)
       .then(
@@ -236,7 +236,7 @@
         state.done = true;
       });
   };
-  g.__brsIsDone = () => {
+  g.__plvIsDone = () => {
     if (state.done) return true;
     if (timerError) {
       if (!state.error) state.error = serializeError(timerError);
@@ -247,7 +247,7 @@
 
   // Each part is its own JSON text, so one that cannot be serialized (BigInt, circular,
   // out of memory) is reported as `!name` with the reason instead of losing everything.
-  g.__brsResult = () => {
+  g.__plvResult = () => {
     const out = [];
     const put = (key, get) => {
       try {

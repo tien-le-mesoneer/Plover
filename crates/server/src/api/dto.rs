@@ -3,11 +3,11 @@
 
 use std::collections::BTreeMap;
 
-use brs_core::request::{
+use plover_core::request::{
     Auth, Body, HttpRequest, KeyValue, Method, MultipartField, MultipartValue, RequestSettings,
 };
-use brs_core::runner::{RequestOutcome, ScriptFailure};
-use brs_core::script::{AssertResult, ConsoleLine, LogLevel, ScriptError, TestResult};
+use plover_core::runner::{RequestOutcome, ScriptFailure};
+use plover_core::script::{AssertResult, ConsoleLine, LogLevel, ScriptError, TestResult};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -210,8 +210,8 @@ pub struct ScriptedRequestDto {
     pub duration_ms: u64,
 }
 
-impl From<&brs_core::session_host::ScriptedRequest> for ScriptedRequestDto {
-    fn from(r: &brs_core::session_host::ScriptedRequest) -> Self {
+impl From<&plover_core::session_host::ScriptedRequest> for ScriptedRequestDto {
+    fn from(r: &plover_core::session_host::ScriptedRequest) -> Self {
         ScriptedRequestDto {
             source: r.source.clone(),
             method: r.method.clone(),
@@ -648,7 +648,7 @@ pub fn typescript_bindings() -> String {
     ];
     let mut out = String::from(
         "// Generated from crates/server/src/api by ts-rs. Do not edit.\n\
-         // Regenerate: BRS_UPDATE_BINDINGS=1 cargo test -p brs-server --test bindings\n",
+         // Regenerate: PLOVER_UPDATE_BINDINGS=1 cargo test -p plover-server --test bindings\n",
     );
     for decl in decls {
         out.push('\n');

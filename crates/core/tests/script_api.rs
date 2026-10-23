@@ -1,7 +1,7 @@
 //! `bru`, `req` and `res` as scripts see them (bruno-js/src/bru.js, bruno-request.js,
 //! bruno-response.js).
 
-use brs_core::script::{
+use plover_core::script::{
     NextRequest, ScriptBody, ScriptContext, ScriptEngine, ScriptError, ScriptInfo, ScriptLimits,
     ScriptRequest, ScriptResponse, Segment, run_script,
 };
@@ -67,7 +67,7 @@ fn response() -> ScriptResponse {
     }
 }
 
-async fn ok(ctx: &ScriptContext, src: &str) -> brs_core::script::PhaseOutput {
+async fn ok(ctx: &ScriptContext, src: &str) -> plover_core::script::PhaseOutput {
     let out = run_script(&engine(), ctx, vec![Segment::new("request", src)]).await;
     assert!(
         out.error.is_none(),
@@ -256,7 +256,7 @@ async fn unsupported_apis_say_so() {
             Some(ScriptError::Thrown { message, .. }) => {
                 assert_eq!(
                     message,
-                    format!("{api} is not supported by bru-rs yet"),
+                    format!("{api} is not supported by Plover yet"),
                     "{src}"
                 )
             }
@@ -321,7 +321,7 @@ async fn interpolate_walks_object_variables() {
     assert_eq!(out.console[0].text, "42/x");
 }
 
-async fn run_src(limits: ScriptLimits, src: &str) -> brs_core::script::PhaseOutput {
+async fn run_src(limits: ScriptLimits, src: &str) -> plover_core::script::PhaseOutput {
     run_script(
         &ScriptEngine::new(limits),
         &context(),
@@ -330,7 +330,7 @@ async fn run_src(limits: ScriptLimits, src: &str) -> brs_core::script::PhaseOutp
     .await
 }
 
-fn result_error(out: &brs_core::script::PhaseOutput) -> String {
+fn result_error(out: &plover_core::script::PhaseOutput) -> String {
     match &out.error {
         Some(ScriptError::ResultUnavailable(message)) => message.clone(),
         other => panic!("expected ResultUnavailable, got {other:?}"),

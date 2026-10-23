@@ -247,7 +247,7 @@ const DEFAULT_ACCEPT: &str = "application/json, text/plain, */*";
 const DEFAULT_ACCEPT_ENCODING: &str = "gzip, compress, deflate, br";
 
 fn user_agent() -> String {
-    format!("bru-rs/{}", env!("CARGO_PKG_VERSION"))
+    format!("plover/{}", env!("CARGO_PKG_VERSION"))
 }
 
 /// run-single-request.js:555-575: reuse a boundary already in the content type,

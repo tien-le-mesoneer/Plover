@@ -1,4 +1,4 @@
-//! Thin axum shell over `brs-core`: security checks, REST + WebSocket API and
+//! Thin axum shell over `plover-core`: security checks, REST + WebSocket API and
 //! the embedded UI. Binds to 127.0.0.1 only.
 
 mod api;
@@ -13,8 +13,8 @@ use std::sync::Arc;
 
 use axum::routing::get;
 use axum::{Json, Router, middleware};
-use brs_core::executor::ExecOptions;
-use brs_core::workspace::Workspace;
+use plover_core::executor::ExecOptions;
+use plover_core::workspace::Workspace;
 
 pub use api::MAX_INLINE_BODY;
 pub use api::dto::typescript_bindings;

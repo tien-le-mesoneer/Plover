@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-use brs_core::collection::Collection;
-use brs_core::runner::{RunError, RunEvent, RunOptions, run};
+use plover_core::collection::Collection;
+use plover_core::runner::{RunError, RunEvent, RunOptions, run};
 use wiremock::matchers::path;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -29,7 +29,7 @@ fn collection(root: &Path) {
 async fn run_all(
     root: &Path,
     opts: &RunOptions,
-) -> (Result<brs_core::runner::RunReport, RunError>, Vec<RunEvent>) {
+) -> (Result<plover_core::runner::RunReport, RunError>, Vec<RunEvent>) {
     let c = Collection::load(root).unwrap();
     let mut events = Vec::new();
     let report = run(&c, root, opts, &mut |e| events.push(e.clone())).await;
@@ -197,9 +197,9 @@ async fn finished_is_last_and_carries_report() {
 
 #[tokio::test]
 async fn run_with_shares_session_cookies_and_runtime() {
-    use brs_core::executor::{ExecOptions, Session};
-    use brs_core::runner::run_with;
-    use brs_core::vars::ValueMap;
+    use plover_core::executor::{ExecOptions, Session};
+    use plover_core::runner::run_with;
+    use plover_core::vars::ValueMap;
     use wiremock::matchers::header;
 
     let server = MockServer::start().await;
@@ -220,11 +220,11 @@ async fn run_with_shares_session_cookies_and_runtime() {
         .respond_with(ResponseTemplate::new(200).insert_header("set-cookie", "sid=1; Path=/"))
         .mount(&server)
         .await;
-    let login = brs_core::resolve::ResolvedRequest {
-        method: brs_core::request::Method::Get,
+    let login = plover_core::resolve::ResolvedRequest {
+        method: plover_core::request::Method::Get,
         url: format!("{}/login", server.uri()),
         headers: Vec::new(),
-        body: brs_core::resolve::ResolvedBody::None,
+        body: plover_core::resolve::ResolvedBody::None,
         settings: Default::default(),
     };
     session.send(&login).await.unwrap();

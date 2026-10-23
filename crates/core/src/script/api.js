@@ -1,15 +1,15 @@
-// The `bru`, `req` and `res` objects scripts use, built from the job input (__brs.input)
-// and reported back through __brs.resultParts. Semantics follow Bruno's bruno-js:
+// The `bru`, `req` and `res` objects scripts use, built from the job input (__plv.input)
+// and reported back through __plv.resultParts. Semantics follow Bruno's bruno-js:
 // src/bru.js, src/bruno-request.js, src/bruno-response.js and src/utils.js
 // (createResponseParser).
 (function () {
   'use strict';
   const g = globalThis;
-  const brs = g.__brs;
-  const input = brs.input;
+  const plv = g.__plv;
+  const input = plv.input;
   const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const unsupported = (name) => () => {
-    throw new Error(name + ' is not supported by bru-rs yet');
+    throw new Error(name + ' is not supported by Plover yet');
   };
 
   // ---- variables -----------------------------------------------------------------------
@@ -28,11 +28,11 @@
   // bru.js `interpolate`: strings are interpolated, objects via their JSON, anything else as is.
   const interpolate = (value) => {
     if (!value) return value;
-    if (typeof value === 'object') return JSON.parse(g.__brsInterpolate(JSON.stringify(value), layersJson()));
+    if (typeof value === 'object') return JSON.parse(g.__plvInterpolate(JSON.stringify(value), layersJson()));
     if (typeof value !== 'string') return value;
-    return g.__brsInterpolate(value, layersJson());
+    return g.__plvInterpolate(value, layersJson());
   };
-  brs.interpolate = interpolate;
+  plv.interpolate = interpolate;
 
   const VARIABLE_NAME = /^[\w-.]*$/;
   const assertValidVariableName = (key) => {
@@ -225,7 +225,7 @@
   // headers, text, durationMs } or { ok: false, error: { message, code } }.
   const exchange = (config, source) => {
     const req = toHttp(config, source);
-    const r = JSON.parse(g.__brsHost('http', JSON.stringify(req)));
+    const r = JSON.parse(g.__plvHost('http', JSON.stringify(req)));
     const cfg = {
       url: req.url,
       method: req.method.toLowerCase(),
@@ -295,7 +295,7 @@
   for (const method of ['post', 'put', 'patch']) {
     axios[method] = (url, data, config) => axiosRequest(Object.assign({}, config, { url, method, data }));
   }
-  brs.addModule('axios', () => axios, 'axios');
+  plv.addModule('axios', () => axios, 'axios');
 
   // ---- path: Bruno safe mode offers only resolve (shims/lib/path.js); relative paths start
   // at the collection root (Bruno: the host process's working directory).
@@ -317,10 +317,10 @@
     }
     return '/' + out.join('/');
   };
-  brs.addModule('path', () => ({ resolve: resolvePath }), 'path');
+  plv.addModule('path', () => ({ resolve: resolvePath }), 'path');
 
   // ---- cookies: bru.cookies (cookie-list.js) over the session's cookie jar ---------------
-  const cookieHost = (op, args) => JSON.parse(g.__brsHost('cookies.' + op, JSON.stringify(args || {})));
+  const cookieHost = (op, args) => JSON.parse(g.__plvHost('cookies.' + op, JSON.stringify(args || {})));
   // tough-cookie's JSON for jar methods; the property list uses cookie-list.js's shape.
   const expiresText = (c) => (typeof c.expiresMs === 'number' ? new Date(c.expiresMs).toISOString() : undefined);
   const jarCookie = (c) => {
@@ -442,11 +442,11 @@
   Object.defineProperty(bru, 'cookies', { value: cookieList, enumerable: false });
   g.bru = bru;
 
-  brs.resultParts.vars = () => vars;
-  brs.resultParts.skipRequest = () => flow.skipRequest;
-  brs.resultParts.stopExecution = () => flow.stopExecution;
-  brs.resultParts.nextRequestSet = () => flow.nextRequestSet;
-  brs.resultParts.nextRequest = () => flow.nextRequest;
+  plv.resultParts.vars = () => vars;
+  plv.resultParts.skipRequest = () => flow.skipRequest;
+  plv.resultParts.stopExecution = () => flow.stopExecution;
+  plv.resultParts.nextRequestSet = () => flow.nextRequestSet;
+  plv.resultParts.nextRequest = () => flow.nextRequest;
 
   // ---- req -----------------------------------------------------------------------------
   const r = input.req || { url: '', method: 'GET', headers: [], body: { mode: 'none' } };
@@ -555,9 +555,9 @@
     Object.defineProperty(req, prop, { get, enumerable: true });
   }
   g.req = req;
-  brs.req = req;
+  plv.req = req;
 
-  brs.resultParts.req = () => {
+  plv.resultParts.req = () => {
     const headers = [];
     for (const [name, value] of Object.entries(reqState.headers || {})) {
       if (value === undefined || value === null) continue;
@@ -583,7 +583,7 @@
 
   // ---- chai plugins: Bruno's custom assertions (runtime/assert-runtime.js:14-200 and
   // sandbox/quickjs/shims/test.js) plus chai-string's startWith/endWith ------------------
-  brs.onLibLoad('chai', (chai) => {
+  plv.onLibLoad('chai', (chai) => {
     chai.use((chai, utils) => {
       const A = chai.Assertion;
       A.addProperty('json', function () {
@@ -604,7 +604,7 @@
             'Unsupported JSON Schema version: "' + schema.$schema + '".'
           );
         }
-        const { Ajv, addFormats } = brs.lib('ajv');
+        const { Ajv, addFormats } = plv.lib('ajv');
         let ajv;
         if (ajvOptions) {
           ajv = new Ajv(Object.assign({ allErrors: true }, ajvOptions));
@@ -729,10 +729,10 @@
   };
   // Like Bruno's waitForPendingTests: the phase ends when every test() has settled,
   // including tests registered by other tests.
-  brs.onFinish(async () => {
+  plv.onFinish(async () => {
     while (pendingTests.length) await Promise.all(pendingTests.splice(0));
   });
-  brs.resultParts.tests = () => testResults;
+  plv.resultParts.tests = () => testResults;
 
   // ---- expressions --------------------------------------------------------------------
   // Bruno evaluates assert/post-response expressions with variables and bru/req/res in
@@ -743,10 +743,10 @@
     for (const layer of layers) Object.assign(scope, layer);
     scope.bru = bru;
     scope.req = req;
-    if (brs.res) scope.res = brs.res;
+    if (plv.res) scope.res = plv.res;
     return scope;
   };
-  const evaluate = (scope, code) => new Function('__brsScope', 'with (__brsScope) { return (' + code + '\n); }')(scope);
+  const evaluate = (scope, code) => new Function('__plvScope', 'with (__plvScope) { return (' + code + '\n); }')(scope);
   // sandbox/quickjs/index.js executeQuickJsVm with scriptType 'template-literal'.
   const evaluateTemplateLiteral = (text, scope) => {
     if (typeof text !== 'string' || !text.length) return text;
@@ -791,8 +791,8 @@
     return evaluateTemplateLiteral(interpolate(rhs), scope);
   };
   const assertResults = [];
-  brs.runAsserts = async () => {
-    const { expect } = brs.lib('chai');
+  plv.runAsserts = async () => {
+    const { expect } = plv.lib('chai');
     const scope = scopeOf([vars.collection, vars.environment, vars.folder, vars.request, vars.runtime]);
     for (const [lhsExpr, rhsExpr] of input.asserts || []) {
       const { operator, value: rhsOperand } = parseAssertionOperator(rhsExpr);
@@ -836,10 +836,10 @@
       }
     }
   };
-  brs.resultParts.asserts = () => assertResults;
+  plv.resultParts.asserts = () => assertResults;
 
   // ---- vars:post-response (runtime/vars-runtime.js) -----------------------------------
-  brs.runPostVars = async () => {
+  plv.runPostVars = async () => {
     const scope = scopeOf([vars.environment, vars.runtime]);
     const errors = [];
     for (const [name, expr] of input.postVars || []) {
@@ -883,7 +883,7 @@
     }
     return current;
   };
-  brs.getPath = getPath;
+  plv.getPath = getPath;
 
   const rs = input.res;
   if (rs) {
@@ -934,8 +934,8 @@
       }
     });
     g.res = res;
-    brs.res = res;
-    brs.resultParts.resBodySet = () => bodySet;
-    brs.resultParts.resBody = () => (bodySet && body !== undefined ? body : null);
+    plv.res = res;
+    plv.resultParts.resBodySet = () => bodySet;
+    plv.resultParts.resBody = () => (bodySet && body !== undefined ? body : null);
   }
 })();

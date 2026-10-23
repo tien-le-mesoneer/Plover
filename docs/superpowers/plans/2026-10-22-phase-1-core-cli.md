@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A `brs-core` library that loads Bruno collections losslessly and executes HTTP requests, plus a `bru-rs run` CLI.
+**Goal:** A `plover-core` library that loads Bruno collections losslessly and executes HTTP requests, plus a `plv run` CLI.
 
 **Architecture:** `.bru` files are parsed in two layers. The syntax layer (`bru::syntax`) splits a file into blocks and keeps each block's exact source text; the typed layer (`bru::model`) maps blocks to `HttpRequest`/folder/collection/environment types and writes changes back by replacing only blocks whose meaning changed. A pure resolver merges scopes and interpolates variables; the executor sends a `ResolvedRequest` with reqwest; the runner walks the tree and emits `RunEvent`s that the CLI prints.
 
@@ -12,8 +12,8 @@
 
 ## Global Constraints
 
-- Crates: `crates/core` (package `brs-core`, lib `brs_core`), `crates/cli` (package `brs-cli`, binary `bru-rs`). No `server`/`desktop` crates yet.
-- All logic in `brs-core`; `brs-cli` only parses args, calls `brs_core::runner::run`, prints, sets exit code.
+- Crates: `crates/core` (package `plover-core`, lib `plover_core`), `crates/cli` (package `plover-cli`, binary `Plover`). No `server`/`desktop` crates yet.
+- All logic in `plover-core`; `plover-cli` only parses args, calls `plover_core::runner::run`, prints, sets exit code.
 - Library code returns `Result` with `thiserror` enums; no `unwrap`/`expect`/`panic!` outside tests.
 - Variable precedence (highest first): runtime > request > folder (innermost first) > environment > collection. One constant: `vars::PRECEDENCE`.
 - Unknown variables stay as written (`{{missing}}` sent literally).
@@ -65,9 +65,9 @@
   - `list_block`: `"vars:secret [\n  token\n]\n"` is one block named `vars:secret`.
   - `syntax_error_has_position`: `"meta {\n  name: a\n"` (unterminated) → `Err` whose `line` and `column` are ≥ 1 and whose `message` names the unterminated block `meta`.
 - [ ] **Step 2: Golden test** `crates/core/tests/roundtrip.rs::all_fixtures_roundtrip_byte_identical`: walk `fixtures/` for `*.bru`, assert `BruDocument::parse(&s)?.write() == s` for each; print failing paths; assert at least 280 files were checked.
-- [ ] **Step 3: Run** `cargo test -p brs-core` → FAIL (types missing).
+- [ ] **Step 3: Run** `cargo test -p plover-core` → FAIL (types missing).
 - [ ] **Step 4: Implement grammar + scanner.** Top-level grammar: `file = SOI ~ (trivia | block)* ~ EOI`; `block = name ~ (" " | "\t")* ~ ("{" ~ brace_body ~ nl ~ "}" | "[" ~ list_body ~ nl ~ "]")`; `nl = "\r"? ~ "\n"`; a block ends at the first line that is exactly `}` (or `]`) at column 0 — this is Bruno's `tagend`. `name` = chars except whitespace, `{`, `[`. Trivia = whitespace/BOM between blocks, kept verbatim. Store each block's full source slice in `raw`; `write()` concatenates segments.
-- [ ] **Step 5: Run** `cargo test -p brs-core` → PASS (all fixtures).
+- [ ] **Step 5: Run** `cargo test -p plover-core` → PASS (all fixtures).
 - [ ] **Step 6: Commit** `feat(core): lossless .bru block scanner with golden fixtures`
 
 ### Task 2: Block content parsing (dictionary, text, list)
@@ -104,7 +104,7 @@
   - `json_body_outdented`: `"body:json {\n  {\n    \"a\": 1\n  }\n}\n"` → `text() == Some("{\n  \"a\": 1\n}")`.
   - `assert_keys_with_spaces`: `"assert {\n  res.status: eq 200\n  res.body.length: gt 0\n}\n"` → keys `["res.status","res.body.length"]`, values `["eq 200","gt 0"]`.
 - [ ] **Step 2: Golden addition** `all_fixtures_have_no_unexpected_opaque`: for every fixture, every block with a known name parses to a non-`Opaque` content (list offenders).
-- [ ] **Step 3: Run** → FAIL. **Step 4: Implement.** **Step 5: Run** `cargo test -p brs-core` → PASS.
+- [ ] **Step 3: Run** → FAIL. **Step 4: Implement.** **Step 5: Run** `cargo test -p plover-core` → PASS.
 - [ ] **Step 6: Commit** `feat(core): parse .bru dictionary, text and list blocks`
 
 ### Task 3: Canonical rendering + minimal-diff block edits
@@ -308,7 +308,7 @@
 - [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS.
 - [ ] **Step 5: Commit** `feat(core): reqwest executor with per-session cookie jar`
 
-### Task 9: Runner + `bru-rs run` CLI
+### Task 9: Runner + `plv run` CLI
 
 **Files:**
 - Create: `crates/core/src/runner.rs`, `crates/cli/Cargo.toml`, `crates/cli/src/main.rs`, `crates/cli/src/print.rs`
@@ -330,7 +330,7 @@
   ```
   `RunError` only for setup problems (unknown env name, target outside collection). Per-request problems become `Failed`/`Skipped` events.
 - Rules: one `Session` and one runtime `VarMap` per run (runtime stays empty in Phase 1; scripts fill it in Phase 3). `Item::Invalid` → `Skipped { reason: "parse error: <error>" }` plus `tracing::warn!`. `kind != "http"` (graphql, grpc, ws) → `Skipped { reason: "unsupported request type <kind>" }`. `ResolveError::Unsupported` → `Skipped`. Non-empty `vars_post`, scripts, tests or `assert` → still `Passed`/`Failed` by transport outcome, plus a `tracing::info!` that they run in Phase 3.
-- CLI (`clap` derive): `bru-rs run <PATH> [--env <NAME>] [--env-var <KEY=VALUE>]... [--insecure] [--timeout-ms <N>] [--no-follow-redirects]`. Output per event: `✓ GET  ping  200  12ms  1.2KB`, `✗ path: error`, `- path: reason`; final line `N passed, N failed, N skipped (Xms)`. Exit codes: 0 all passed (skips allowed), 1 any failed, 2 usage/load/`RunError`. `RUST_LOG` controls `tracing` output to stderr.
+- CLI (`clap` derive): `plv run <PATH> [--env <NAME>] [--env-var <KEY=VALUE>]... [--insecure] [--timeout-ms <N>] [--no-follow-redirects]`. Output per event: `✓ GET  ping  200  12ms  1.2KB`, `✗ path: error`, `- path: reason`; final line `N passed, N failed, N skipped (Xms)`. Exit codes: 0 all passed (skips allowed), 1 any failed, 2 usage/load/`RunError`. `RUST_LOG` controls `tracing` output to stderr.
 
 - [ ] **Step 1: Failing tests:**
   - `runner.rs::runs_in_order_and_reports` (temp collection + wiremock, 3 requests, env `local` with `host`): events order Started/Passed ×3 in seq order; `RunReport { passed: 3, failed: 0, .. }`.
@@ -340,8 +340,8 @@
   - `cli.rs::exit_codes` (`assert_cmd`): all pass → 0; one 500 response → 0; connection refused → 1; unknown `--env` → 2; missing path → 2.
   - `cli.rs::env_var_flag_overrides`: `--env-var token=xyz` → mock sees `Authorization: Bearer xyz`.
 - [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** `cargo test --workspace` → PASS.
-- [ ] **Step 5: Phase gate:** `cargo clippy --workspace --all-targets -- -D warnings` → no warnings. Manual: `cargo run -p brs-cli -- run fixtures/bruno-tests/collection/ping.bru` prints one result line (failure is expected without Bruno's test server; exit code 1).
-- [ ] **Step 6: Commit** `feat(cli): bru-rs run with per-request results and exit codes`
+- [ ] **Step 5: Phase gate:** `cargo clippy --workspace --all-targets -- -D warnings` → no warnings. Manual: `cargo run -p plover-cli -- run fixtures/bruno-tests/collection/ping.bru` prints one result line (failure is expected without Bruno's test server; exit code 1).
+- [ ] **Step 6: Commit** `feat(cli): plv run with per-request results and exit codes`
 
 ---
 

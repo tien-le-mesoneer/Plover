@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const out = mkdtempSync(join(tmpdir(), 'brs-libs-'));
+const out = mkdtempSync(join(tmpdir(), 'plv-libs-'));
 execFileSync(process.execPath, ['build.mjs', out], { stdio: 'inherit' });
 const built = readdirSync(out).filter((f) => f.endsWith('.js')).sort();
 const committed = readdirSync('dist').filter((f) => f.endsWith('.js')).sort();

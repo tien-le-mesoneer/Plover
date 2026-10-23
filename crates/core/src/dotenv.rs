@@ -123,7 +123,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join(".env"),
-            "PATH=from-dotenv\nBRS_ONLY_IN_DOTENV=x\n",
+            "PATH=from-dotenv\nPLOVER_ONLY_IN_DOTENV=x\n",
         )
         .unwrap();
         let env = process_env(dir.path());
@@ -132,7 +132,7 @@ mod tests {
             Some("from-dotenv")
         );
         assert_eq!(
-            env.get("BRS_ONLY_IN_DOTENV").and_then(|v| v.as_str()),
+            env.get("PLOVER_ONLY_IN_DOTENV").and_then(|v| v.as_str()),
             Some("x")
         );
         let none = tempfile::tempdir().unwrap();

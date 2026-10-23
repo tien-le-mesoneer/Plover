@@ -10,8 +10,8 @@ use rust_embed::RustEmbed;
 #[allow_missing = true]
 struct Assets;
 
-const NOT_BUILT: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>bru-rs</title></head>\
-<body><p>UI not built &mdash; run <code>npm run build</code> in <code>frontend/</code>, then rebuild bru-rs.</p></body></html>";
+const NOT_BUILT: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Plover</title></head>\
+<body><p>UI not built &mdash; run <code>npm run build</code> in <code>frontend/</code>, then rebuild Plover.</p></body></html>";
 
 /// Monaco needs blob workers and inline styles; the API and WebSocket are same-host.
 const CSP: &str = "default-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; \

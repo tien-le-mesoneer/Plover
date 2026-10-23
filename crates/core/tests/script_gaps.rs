@@ -4,11 +4,11 @@
 use std::fs;
 use std::path::Path;
 
-use brs_core::collection::Collection;
-use brs_core::executor::{ExecOptions, Session};
-use brs_core::runner::{Persist, RunEvent, RunOptions, RunReport, run, run_with};
-use brs_core::script::ScriptLimits;
-use brs_core::vars::ValueMap;
+use plover_core::collection::Collection;
+use plover_core::executor::{ExecOptions, Session};
+use plover_core::runner::{Persist, RunEvent, RunOptions, RunReport, run, run_with};
+use plover_core::script::ScriptLimits;
+use plover_core::vars::ValueMap;
 use serde_json::json;
 use std::time::{Duration, Instant};
 use wiremock::matchers::{body_json, header, method, path, query_param};
@@ -89,7 +89,7 @@ async fn process_env_and_dotenv() {
     let server = MockServer::start().await;
     Mock::given(path("/from-dotenv"))
         .and(header("authorization", "Bearer dot"))
-        .and(header("x-missing", "{{process.env.BRS_SURELY_MISSING}}"))
+        .and(header("x-missing", "{{process.env.PLOVER_SURELY_MISSING}}"))
         .respond_with(ResponseTemplate::new(200))
         .mount(&server)
         .await;
@@ -109,9 +109,9 @@ async fn process_env_and_dotenv() {
     );
     let tests = text_block(
         "tests",
-        "test('process env', () => {\n  expect(bru.getProcessEnv('TOKEN')).to.equal('dot');\n  expect(bru.getProcessEnv('BRS_SURELY_MISSING')).to.equal(undefined);\n  expect(typeof bru.getProcessEnv('PATH')).to.equal('string');\n  expect(bru.interpolate('{{process.env.API_PATH}}')).to.equal('/from-dotenv');\n  expect(bru.getEnvVar('auth')).to.equal('Bearer dot');\n});",
+        "test('process env', () => {\n  expect(bru.getProcessEnv('TOKEN')).to.equal('dot');\n  expect(bru.getProcessEnv('PLOVER_SURELY_MISSING')).to.equal(undefined);\n  expect(typeof bru.getProcessEnv('PATH')).to.equal('string');\n  expect(bru.interpolate('{{process.env.API_PATH}}')).to.equal('/from-dotenv');\n  expect(bru.getEnvVar('auth')).to.equal('Bearer dot');\n});",
     );
-    let headers = "\nheaders {\n  authorization: {{auth}}\n  x-missing: {{process.env.BRS_SURELY_MISSING}}\n}\n";
+    let headers = "\nheaders {\n  authorization: {{auth}}\n  x-missing: {{process.env.PLOVER_SURELY_MISSING}}\n}\n";
     write(
         dir.path(),
         "r.bru",
@@ -258,7 +258,7 @@ test('callbacks', async () => {{
     run_script_ok(&server, "/x", &script, "").await;
 }
 
-fn outcome(events: &[RunEvent]) -> brs_core::runner::RequestOutcome {
+fn outcome(events: &[RunEvent]) -> plover_core::runner::RequestOutcome {
     events
         .iter()
         .find_map(|e| match e {

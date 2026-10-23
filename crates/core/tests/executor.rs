@@ -1,8 +1,8 @@
 use std::time::Duration;
 
-use brs_core::executor::{ExecError, ExecOptions, Session};
-use brs_core::request::{Method, RequestSettings};
-use brs_core::resolve::{ResolvedBody, ResolvedPart, ResolvedRequest};
+use plover_core::executor::{ExecError, ExecOptions, Session};
+use plover_core::request::{Method, RequestSettings};
+use plover_core::resolve::{ResolvedBody, ResolvedPart, ResolvedRequest};
 use wiremock::matchers::{body_string, body_string_contains, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -312,7 +312,7 @@ async fn redirect_limit_returns_last_redirect() {
 }
 
 // axios-instance.js:101-111: default Accept (axios common default) and User-Agent;
-// the user's own value (any case) replaces them. We identify as bru-rs.
+// the user's own value (any case) replaces them. We identify as Plover.
 #[tokio::test]
 async fn default_accept_and_user_agent() {
     let server = MockServer::start().await;
@@ -329,7 +329,7 @@ async fn default_accept_and_user_agent() {
     );
     assert_eq!(
         received_headers(&server, "user-agent").await,
-        [format!("bru-rs/{}", env!("CARGO_PKG_VERSION"))]
+        [format!("plover/{}", env!("CARGO_PKG_VERSION"))]
     );
     r.headers.push(("accept".into(), "text/html".into()));
     r.headers.push(("USER-AGENT".into(), "mine".into()));

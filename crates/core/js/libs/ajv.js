@@ -1,3 +1,3 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-globalThis.__brsLibs.ajv = { Ajv, addFormats };
+globalThis.__plvLibs.ajv = { Ajv, addFormats };

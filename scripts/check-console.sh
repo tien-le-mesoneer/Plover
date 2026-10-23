@@ -2,17 +2,17 @@
 # Opens the built UI in a real browser, creates Monaco editors (request body
 # and response viewer) and fails if the page logged any uncaught errors.
 #
-# Needs: a built binary (default target/release/bru-rs; override with BRU_RS)
+# Needs: a built binary (default target/release/plv; override with PLV_BIN)
 # and the `agent-browser` CLI on PATH. Localhost only: the request is sent to
-# the bru-rs server itself.
+# the Plover server itself.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-BIN=${BRU_RS:-target/release/bru-rs}
+BIN=${PLV_BIN:-target/release/plv}
 command -v agent-browser >/dev/null || { echo "agent-browser not found on PATH" >&2; exit 2; }
 [ -x "$BIN" ] || { echo "$BIN not built; run scripts/build-release.sh" >&2; exit 2; }
 
 TMP=$(mktemp -d)
-SESSION="brs-console-$$"
+SESSION="plv-console-$$"
 cleanup() {
   agent-browser --session "$SESSION" close >/dev/null 2>&1 || true
   if [ -n "${SERVER_PID:-}" ]; then
@@ -50,7 +50,7 @@ BRU
 "$BIN" serve --no-open --port "$PORT" "$COL" > "$TMP/serve.log" 2>&1 &
 SERVER_PID=$!
 for _ in $(seq 50); do grep -q "listening on" "$TMP/serve.log" 2>/dev/null && break; sleep 0.1; done
-URL=$(sed -n 's/^bru-rs listening on //p' "$TMP/serve.log")
+URL=$(sed -n 's/^plv listening on //p' "$TMP/serve.log")
 [ -n "$URL" ] || { cat "$TMP/serve.log" >&2; exit 1; }
 
 ab() { agent-browser --session "$SESSION" "$@"; }

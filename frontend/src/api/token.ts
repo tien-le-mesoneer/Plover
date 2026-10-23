@@ -1,4 +1,4 @@
-const STORAGE_KEY = "bru-rs.token";
+const STORAGE_KEY = "plover.token";
 
 /**
  * The server opens the UI at `/#token=<token>`. The fragment never reaches

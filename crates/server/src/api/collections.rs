@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use axum::Json;
 use axum::extract::State;
-use brs_core::collection::{Folder, Item};
-use brs_core::workspace::OpenCollection;
+use plover_core::collection::{Folder, Item};
+use plover_core::workspace::OpenCollection;
 
 use super::dto::{CollectionSummaryDto, OpenCollectionBody, TreeNodeDto, TreeNodeKind};
 use super::extract::{ApiJson, ApiPath};

@@ -127,7 +127,7 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
       call("PUT", `${collections(id)}/environments/${enc(name)}/secrets`, { values }),
     startRun(id, item, env, onEvent) {
       const runId = crypto.randomUUID();
-      const socket = new Socket(wsUrl(), [`brs.token.${token}`]);
+      const socket = new Socket(wsUrl(), [`plover.token.${token}`]);
       let resolve!: () => void;
       const done = new Promise<void>((r) => (resolve = r));
       const send = (msg: ClientMessage) => socket.send(JSON.stringify(msg));

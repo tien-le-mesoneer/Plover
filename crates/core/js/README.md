@@ -1,13 +1,13 @@
 # Script sandbox libraries
 
-`dist/*.js` are the libraries bru-rs scripts can use. They mirror Bruno's safe mode
+`dist/*.js` are the libraries Plover scripts can use. They mirror Bruno's safe mode
 (`packages/bruno-js/src/sandbox/bundle-libraries.js`): chai (`expect`, `assert`), `Buffer`,
 `moment`, `btoa`, `atob`, `crypto-js`, `tv4`, `ajv`, `ajv-formats`, `uuid`, `nanoid` and `jsonwebtoken` (our own `libs/jwt.js` on `ms`, signatures from the host; `axios` and `path` live in `src/script/api.js`). Each file (one per entry in
-`libs/`) registers its exports on `globalThis.__brsLibs`; the script engine compiles a library to
+`libs/`) registers its exports on `globalThis.__plvLibs`; the script engine compiles a library to
 bytecode and loads it into a script's context only when the script first uses it
 (`crates/core/src/script/prelude.js`).
 
-The bundles are committed so building bru-rs never needs Node. Rebuild them after changing
+The bundles are committed so building Plover never needs Node. Rebuild them after changing
 `libs/` or the dependencies:
 
 ```sh

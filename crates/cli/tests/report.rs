@@ -1,4 +1,4 @@
-//! Test output, JUnit and JSON reports from `bru-rs run` (Bruno CLI reporters:
+//! Test output, JUnit and JSON reports from `plv run` (Bruno CLI reporters:
 //! bruno-cli/src/reporters/junit.js, commands/run.js `--reporter-json`).
 
 use std::fs;
@@ -131,7 +131,7 @@ async fn junit_matches_bruno_layout() {
     let out = dir.path().join("out");
     fs::create_dir(&out).unwrap();
     let junit = out.join("results.xml");
-    Command::cargo_bin("bru-rs")
+    Command::cargo_bin("plv")
         .unwrap()
         .arg("run")
         .arg(dir.path())
@@ -189,7 +189,7 @@ async fn json_report_counts() {
     let server = MockServer::start().await;
     let dir = collection(&server).await;
     let json_path = dir.path().join("results.json");
-    Command::cargo_bin("bru-rs")
+    Command::cargo_bin("plv")
         .unwrap()
         .arg("run")
         .arg(dir.path())
@@ -237,7 +237,7 @@ async fn json_report_counts() {
 async fn cli_prints_tests_and_summary() {
     let server = MockServer::start().await;
     let dir = collection(&server).await;
-    let out = Command::cargo_bin("bru-rs")
+    let out = Command::cargo_bin("plv")
         .unwrap()
         .arg("run")
         .arg(dir.path())
@@ -267,7 +267,7 @@ async fn cli_prints_tests_and_summary() {
 async fn console_hidden_without_verbose() {
     let server = MockServer::start().await;
     let dir = collection(&server).await;
-    let out = Command::cargo_bin("bru-rs")
+    let out = Command::cargo_bin("plv")
         .unwrap()
         .arg("run")
         .arg(dir.path())
@@ -281,7 +281,7 @@ async fn console_hidden_without_verbose() {
 async fn missing_report_directory_is_a_setup_error() {
     let server = MockServer::start().await;
     let dir = collection(&server).await;
-    Command::cargo_bin("bru-rs")
+    Command::cargo_bin("plv")
         .unwrap()
         .arg("run")
         .arg(dir.path().join("c.bru"))
@@ -305,7 +305,7 @@ async fn script_limits_flags() {
             "\nscript:pre-request {\n  while (true) {}\n}\n",
         ),
     );
-    let out = Command::cargo_bin("bru-rs")
+    let out = Command::cargo_bin("plv")
         .unwrap()
         .arg("run")
         .arg(dir.path().join("slow.bru"))
@@ -342,7 +342,7 @@ async fn junit_reports_post_response_script_errors_like_bruno() {
         ),
     );
     let junit = root.join("junit.xml");
-    Command::cargo_bin("bru-rs")
+    Command::cargo_bin("plv")
         .unwrap()
         .arg("run")
         .arg(root)
@@ -390,7 +390,7 @@ async fn requests_that_never_ran_are_named_by_meta_name() {
         &request("r4", 4, &format!("{}/b", server.uri()), ""),
     );
     let json_path = root.join("results.json");
-    Command::cargo_bin("bru-rs")
+    Command::cargo_bin("plv")
         .unwrap()
         .arg("run")
         .arg(root)

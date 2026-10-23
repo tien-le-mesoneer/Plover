@@ -1,4 +1,4 @@
-//! REST handlers. Each maps wire DTOs to `brs-core` calls and core errors to `ApiError`s.
+//! REST handlers. Each maps wire DTOs to `plover-core` calls and core errors to `ApiError`s.
 
 mod collections;
 pub mod dto;
@@ -14,10 +14,10 @@ use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::http::StatusCode;
 use axum::routing::{get, post, put};
-use brs_core::collection::LoadError;
-use brs_core::runner::SendError;
-use brs_core::store::StoreError;
-use brs_core::workspace::{CollectionId, OpenCollection, WorkspaceError};
+use plover_core::collection::LoadError;
+use plover_core::runner::SendError;
+use plover_core::store::StoreError;
+use plover_core::workspace::{CollectionId, OpenCollection, WorkspaceError};
 
 use crate::error::ApiError;
 use crate::state::AppState;

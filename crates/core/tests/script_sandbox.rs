@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use brs_core::script::{
+use plover_core::script::{
     EngineJob, LogLevel, Main, ScriptEngine, ScriptError, ScriptLimits, Segment,
 };
 
@@ -10,7 +10,7 @@ fn engine() -> ScriptEngine {
     ScriptEngine::new(ScriptLimits::default())
 }
 
-async fn run(engine: &ScriptEngine, src: &str) -> brs_core::script::EngineOutput {
+async fn run(engine: &ScriptEngine, src: &str) -> plover_core::script::EngineOutput {
     engine
         .run(EngineJob {
             input: serde_json::json!({}),

@@ -10,7 +10,7 @@ const jwtError = (message) => {
   return error;
 };
 
-const host = (op, args) => JSON.parse(globalThis.__brsHost(op, JSON.stringify(args)));
+const host = (op, args) => JSON.parse(globalThis.__plvHost(op, JSON.stringify(args)));
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const utf8Bytes = (str) => {
@@ -229,7 +229,7 @@ const withCallback = (fn) => (first, key, options, callback) => {
   return undefined;
 };
 
-globalThis.__brsLibs.jsonwebtoken = {
+globalThis.__plvLibs.jsonwebtoken = {
   sign: withCallback(signSync),
   verify: withCallback(verifySync),
   decode

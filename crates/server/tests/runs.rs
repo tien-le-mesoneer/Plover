@@ -2,8 +2,8 @@ mod common;
 
 use std::time::Duration;
 
-use brs_core::executor::ExecOptions;
-use brs_server::{RunningServer, ServerConfig, start};
+use plover_core::executor::ExecOptions;
+use plover_server::{RunningServer, ServerConfig, start};
 use common::{small_collection, write};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -45,7 +45,7 @@ async fn connect(running: &RunningServer, protocol: Option<String>) -> Result<So
                 res.headers()
                     .get("sec-websocket-protocol")
                     .and_then(|v| v.to_str().ok()),
-                Some(format!("brs.token.{}", running.token).as_str())
+                Some(format!("plover.token.{}", running.token).as_str())
             );
             socket
         })
@@ -53,7 +53,7 @@ async fn connect(running: &RunningServer, protocol: Option<String>) -> Result<So
 }
 
 async fn authed(running: &RunningServer) -> Socket {
-    connect(running, Some(format!("brs.token.{}", running.token)))
+    connect(running, Some(format!("plover.token.{}", running.token)))
         .await
         .unwrap()
 }
@@ -100,7 +100,7 @@ async fn ws_requires_token_subprotocol() {
     let running = server().await;
     let err = connect(&running, None).await.unwrap_err();
     assert!(err.contains("401"), "{err}");
-    let err = connect(&running, Some("brs.token.wrong".into()))
+    let err = connect(&running, Some("plover.token.wrong".into()))
         .await
         .unwrap_err();
     assert!(err.contains("401"), "{err}");
@@ -275,7 +275,7 @@ async fn run_events_include_tests() {
 
 #[tokio::test]
 async fn concurrent_send_and_run_keep_each_others_runtime_vars() {
-    use brs_core::runner::{SendInput, send_one};
+    use plover_core::runner::{SendInput, send_one};
     let mock = MockServer::start().await;
     Mock::given(path_regex("^/slow$"))
         .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_millis(600)))

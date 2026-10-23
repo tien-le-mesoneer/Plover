@@ -17,14 +17,14 @@ describe("takeTokenFromLocation", () => {
       history,
     );
     expect(token).toBe("abc");
-    expect(storage.getItem("bru-rs.token")).toBe("abc");
+    expect(storage.getItem("plover.token")).toBe("abc");
     expect(history.replaceState).toHaveBeenCalledWith(null, "", "/c/x?q=1");
   });
 
   it("falls back to the stored token after a reload", () => {
     const storage = window.sessionStorage;
     storage.clear();
-    storage.setItem("bru-rs.token", "kept");
+    storage.setItem("plover.token", "kept");
     const history = { replaceState: vi.fn() };
     expect(takeTokenFromLocation(fakeLocation("http://127.0.0.1:4000/"), storage, history)).toBe(
       "kept",

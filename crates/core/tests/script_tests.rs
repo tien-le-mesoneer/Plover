@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use brs_core::script::{
+use plover_core::script::{
     AssertResult, ScriptContext, ScriptEngine, ScriptError, ScriptLimits, ScriptResponse, Segment,
     run_asserts, run_post_response_vars, run_script,
 };

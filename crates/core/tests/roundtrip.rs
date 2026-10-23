@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use brs_core::bru::kind::{BlockKind, block_kind};
-use brs_core::bru::syntax::{BlockContent, BruDocument};
+use plover_core::bru::kind::{BlockKind, block_kind};
+use plover_core::bru::syntax::{BlockContent, BruDocument};
 
 fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")
@@ -86,7 +86,7 @@ fn render_parse_is_identity_on_content() {
             if *block.content() == BlockContent::Opaque {
                 continue;
             }
-            let rendered = brs_core::bru::render::render_block(&block.name, block.content());
+            let rendered = plover_core::bru::render::render_block(&block.name, block.content());
             let reparsed = BruDocument::parse(&rendered);
             let same = reparsed
                 .as_ref()
@@ -107,7 +107,7 @@ fn render_parse_is_identity_on_content() {
 
 #[test]
 fn typed_files_roundtrip_unchanged() {
-    use brs_core::bru::model::{EnvironmentFile, RequestFile, ScopeFile};
+    use plover_core::bru::model::{EnvironmentFile, RequestFile, ScopeFile};
     let mut failures = Vec::new();
     for path in all_fixtures() {
         let src = std::fs::read_to_string(&path).expect("read fixture");
@@ -123,7 +123,7 @@ fn typed_files_roundtrip_unchanged() {
         } else {
             match RequestFile::parse(&src) {
                 Ok(f) => Ok(f.to_bru()),
-                Err(brs_core::bru::model::ModelError::MissingHttpBlock) => continue,
+                Err(plover_core::bru::model::ModelError::MissingHttpBlock) => continue,
                 Err(e) => Err(e),
             }
         };

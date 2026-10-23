@@ -134,10 +134,10 @@ pub enum Main {
 
 #[derive(Debug, Clone)]
 pub struct EngineJob {
-    /// Available to `api.js` as `__brs.input`.
+    /// Available to `api.js` as `__plv.input`.
     pub input: serde_json::Value,
     pub main: Main,
-    /// Where `__brsHost` sends operations the worker can't do itself (HTTP, cookies);
+    /// Where `__plvHost` sends operations the worker can't do itself (HTTP, cookies);
     /// `None` makes them throw.
     pub host: Option<HostSender>,
 }
@@ -256,7 +256,7 @@ impl ScriptEngine {
                 let rx = Arc::clone(&rx);
                 let limits = self.inner.limits;
                 let spawned = std::thread::Builder::new()
-                    .name(format!("brs-script-{i}"))
+                    .name(format!("plover-script-{i}"))
                     // Room for QuickJS's own stack limit plus the Rust frames around it.
                     .stack_size(limits.max_stack_bytes + 8 * 1024 * 1024)
                     .spawn(move || worker_loop(limits, &rx));
@@ -376,13 +376,13 @@ impl Worker {
             let globals = ctx.globals();
             let internal_err = |e: rquickjs::Error| ScriptError::Internal(e.to_string());
             globals
-                .set("__brsInputJson", input_json.as_str())
+                .set("__plvInputJson", input_json.as_str())
                 .map_err(internal_err)?;
             let now = Function::new(ctx.clone(), move || {
                 started.elapsed().as_secs_f64() * 1000.0
             })
             .map_err(internal_err)?;
-            globals.set("__brsNow", now).map_err(internal_err)?;
+            globals.set("__plvNow", now).map_err(internal_err)?;
             let max_bytes = self.limits.memory_bytes;
             let interpolate = Function::new(
                 ctx.clone(),
@@ -397,7 +397,7 @@ impl Worker {
             )
             .map_err(internal_err)?;
             globals
-                .set("__brsInterpolate", interpolate)
+                .set("__plvInterpolate", interpolate)
                 .map_err(internal_err)?;
             let libs = Rc::clone(&self.libs);
             let load_lib = Function::new(ctx.clone(), move |ctx: Ctx<'_>, name: String| {
@@ -405,7 +405,7 @@ impl Worker {
             })
             .map_err(internal_err)?;
             globals
-                .set("__brsLoadLib", load_lib)
+                .set("__plvLoadLib", load_lib)
                 .map_err(internal_err)?;
             let host_fn = Function::new(
                 ctx.clone(),
@@ -428,12 +428,12 @@ impl Worker {
                 },
             )
             .map_err(internal_err)?;
-            globals.set("__brsHost", host_fn).map_err(internal_err)?;
+            globals.set("__plvHost", host_fn).map_err(internal_err)?;
             // Compiled once per worker like the libraries: both are strict IIFEs over
             // globalThis, so module evaluation runs them unchanged.
-            load_module(&ctx, &self.libs, "brs-prelude", PRELUDE_JS)
+            load_module(&ctx, &self.libs, "plv-prelude", PRELUDE_JS)
                 .map_err(|e| self.classify(&ctx, e, deadline, &[]))?;
-            load_module(&ctx, &self.libs, "brs-api", API_JS)
+            load_module(&ctx, &self.libs, "plv-api", API_JS)
                 .map_err(|e| self.classify(&ctx, e, deadline, &[]))?;
             eval_global(&ctx, &code, SCRIPT_FILE, false)
                 .map_err(|e| self.classify(&ctx, e, deadline, &segments))?;
@@ -452,7 +452,7 @@ impl Worker {
         let collected: Result<Vec<String>, String> = context.with(|ctx| {
             let f: Function = ctx
                 .globals()
-                .get("__brsResult")
+                .get("__plvResult")
                 .map_err(|e| e.to_string())?;
             f.call::<_, Vec<String>>(())
                 .map_err(|e| match CaughtError::from_error(&ctx, e) {
@@ -540,7 +540,7 @@ impl Worker {
                     }
                 }
             }
-            let done = context.with(|ctx| call_global::<bool>(&ctx, "__brsIsDone"));
+            let done = context.with(|ctx| call_global::<bool>(&ctx, "__plvIsDone"));
             match done {
                 Ok(true) => return None,
                 Ok(false) => {}
@@ -551,7 +551,7 @@ impl Worker {
             if Instant::now() >= deadline {
                 return Some(ScriptError::Timeout(self.limits.timeout));
             }
-            let delay = match context.with(|ctx| call_global::<f64>(&ctx, "__brsNextTimerDelay")) {
+            let delay = match context.with(|ctx| call_global::<f64>(&ctx, "__plvNextTimerDelay")) {
                 Ok(d) => d,
                 Err(e) => {
                     return Some(context.with(|ctx| self.classify(&ctx, e, deadline, segments)));
@@ -567,7 +567,7 @@ impl Worker {
             if wake >= deadline {
                 return Some(ScriptError::Timeout(self.limits.timeout));
             }
-            if let Err(e) = context.with(|ctx| call_global::<()>(&ctx, "__brsFireTimer")) {
+            if let Err(e) = context.with(|ctx| call_global::<()>(&ctx, "__plvFireTimer")) {
                 return Some(context.with(|ctx| self.classify(&ctx, e, deadline, segments)));
             }
         }
@@ -620,7 +620,7 @@ impl Worker {
                     .get("name")
                     .unwrap_or_else(|_| "Error".to_owned());
                 let forbidden: Option<String> =
-                    ex.as_object().get("__brsForbiddenModule").ok().flatten();
+                    ex.as_object().get("__plvForbiddenModule").ok().flatten();
                 error_from_parts(name, message, ex.stack(), forbidden, segments)
             }
             CaughtError::Value(v) => {
@@ -685,7 +685,7 @@ fn call_host(
     }
 }
 
-/// `__brsLoadLib(name)`: evaluates a library in the calling context, compiling it to bytecode
+/// `__plvLoadLib(name)`: evaluates a library in the calling context, compiling it to bytecode
 /// the first time this worker needs it. Library modules have no imports or top-level await,
 /// so evaluation completes synchronously.
 fn load_lib<'js>(
@@ -763,16 +763,16 @@ struct SegmentSpan {
     last_line: u32,
 }
 
-/// Wraps each segment in an awaited async closure inside `__brsStart`, like Bruno's
+/// Wraps each segment in an awaited async closure inside `__plvStart`, like Bruno's
 /// `wrapAndJoinScripts`, and records where each one starts for error positions.
 fn build_main(main: &Main) -> (String, Vec<SegmentSpan>) {
     match main {
         Main::Call(expr) => (
-            format!("__brsStart(async () => {{ await ({expr}); }});\n"),
+            format!("__plvStart(async () => {{ await ({expr}); }});\n"),
             Vec::new(),
         ),
         Main::Segments(segments) => {
-            let mut code = String::from("__brsStart(async () => {\n");
+            let mut code = String::from("__plvStart(async () => {\n");
             let mut line: u32 = 1;
             let mut spans = Vec::new();
             for segment in segments.iter().filter(|s| !s.source.trim().is_empty()) {
@@ -884,6 +884,6 @@ mod tests {
             Some((12, Some(5)))
         );
         assert_eq!(script_position("    at bru-script:7\n"), Some((7, None)));
-        assert_eq!(script_position("    at foo (brs-api:3:1)\n"), None);
+        assert_eq!(script_position("    at foo (plv-api:3:1)\n"), None);
     }
 }

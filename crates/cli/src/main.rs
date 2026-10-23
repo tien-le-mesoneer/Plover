@@ -1,4 +1,4 @@
-//! `bru-rs`: run Bruno collections from the command line.
+//! `Plover`: run Bruno collections from the command line.
 
 mod print;
 mod report;
@@ -7,16 +7,16 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
-use brs_core::collection::Collection;
-use brs_core::executor::ExecOptions;
-use brs_core::runner::{self, Persist, RunOptions};
-use brs_core::script::ScriptLimits;
-use brs_core::vars::VarMap;
+use plover_core::collection::Collection;
+use plover_core::executor::ExecOptions;
+use plover_core::runner::{self, Persist, RunOptions};
+use plover_core::script::ScriptLimits;
+use plover_core::vars::VarMap;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
-    name = "bru-rs",
+    name = "plv",
     version,
     about = "Run Bruno-compatible API collections"
 )]
@@ -182,8 +182,8 @@ async fn serve(args: ServeArgs) -> Result<ExitCode, String> {
     let shutdown = async {
         let _ = tokio::signal::ctrl_c().await;
     };
-    let (running, server) = brs_server::start(
-        brs_server::ServerConfig {
+    let (running, server) = plover_server::start(
+        plover_server::ServerConfig {
             port: args.port,
             dev_origins: args.dev_origins,
             exec: ExecOptions::default(),
@@ -198,7 +198,7 @@ async fn serve(args: ServeArgs) -> Result<ExitCode, String> {
             .open(path)
             .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
     }
-    println!("bru-rs listening on {}", running.url);
+    println!("plv listening on {}", running.url);
     if !args.no_open
         && let Err(e) = webbrowser::open(&running.url)
     {

@@ -8,11 +8,11 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
-use brs_core::runner::{
+use plover_core::runner::{
     Persist, RunEvent, RunOptions, RunReport, RunVars, run_with_state, secret_values,
 };
-use brs_core::store;
-use brs_core::workspace::{CollectionId, OpenCollection};
+use plover_core::store;
+use plover_core::workspace::{CollectionId, OpenCollection};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;

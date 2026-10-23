@@ -1,5 +1,5 @@
 // Generated from crates/server/src/api by ts-rs. Do not edit.
-// Regenerate: BRS_UPDATE_BINDINGS=1 cargo test -p brs-server --test bindings
+// Regenerate: PLOVER_UPDATE_BINDINGS=1 cargo test -p plover-server --test bindings
 
 export type KeyValueDto = { name: string, value: string, enabled: boolean, 
 /**

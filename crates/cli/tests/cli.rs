@@ -33,7 +33,7 @@ fn collection(host: &str) -> tempfile::TempDir {
 }
 
 fn bru_rs() -> Command {
-    Command::cargo_bin("bru-rs").unwrap()
+    Command::cargo_bin("plv").unwrap()
 }
 
 async fn server() -> MockServer {
@@ -171,7 +171,7 @@ fn serve_prints_url_and_opens_collection() {
 
     let dir = collection("http://127.0.0.1:9");
     write(dir.path(), "a.bru", &request("a", "/a"));
-    let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("bru-rs"))
+    let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("plv"))
         .args(["serve", "--no-open", "--port", "0"])
         .arg(dir.path())
         .stdout(Stdio::piped())
@@ -184,7 +184,7 @@ fn serve_prints_url_and_opens_collection() {
         .unwrap();
     let url = line
         .trim()
-        .strip_prefix("bru-rs listening on ")
+        .strip_prefix("plv listening on ")
         .unwrap_or_else(|| panic!("unexpected first line: {line}"))
         .to_owned();
     let (base, token) = url.split_once("/#token=").unwrap();

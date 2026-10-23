@@ -39,7 +39,7 @@ async fn phase3_chain_passes() {
         .await;
     let out_dir = tempfile::tempdir().unwrap();
     let junit = out_dir.path().join("junit.xml");
-    let out = Command::cargo_bin("bru-rs")
+    let out = Command::cargo_bin("plv")
         .unwrap()
         .arg("run")
         .arg(fixture())

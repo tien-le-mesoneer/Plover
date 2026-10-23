@@ -1,4 +1,4 @@
-# bruno-rs — Product Requirements
+# Plover — Product Requirements
 
 Status: draft for review · 2026-10-22
 
@@ -9,8 +9,8 @@ without conversion and saves them without noisy diffs. One core, three shells:
 
 | Shell | What it is |
 |---|---|
-| CLI (`bru-rs`) | Runs a collection, folder or single request in CI |
-| Web | `bru-rs serve` — single binary, embedded UI on `127.0.0.1` |
+| CLI (`Plover`) | Runs a collection, folder or single request in CI |
+| Web | `plv serve` — single binary, embedded UI on `127.0.0.1` |
 | Desktop | Tauri 2 window that starts the same server internally |
 
 The UI never sends HTTP itself. Every request runs in the Rust backend, so there
@@ -31,7 +31,7 @@ are no CORS limits and full control of headers, cookies, mTLS and proxies.
 | D2 | Two-layer `.bru` handling: a **syntax layer** keeps every block's exact source; a **typed layer** maps blocks to the request model. Saving rewrites only blocks whose meaning changed. | Bruno's own parse→serialize normalizes files; byte-exact round-trip needs source retention. |
 | D3 | Blocks we do not model (gRPC, WebSocket, OAuth2, `example`, unknown future blocks) are **kept verbatim** and never block loading. | Collections from newer Bruno versions must still open and save cleanly. |
 | D4 | A request **fails** on transport error or (Phase 3) a failed test/assert. HTTP 4xx/5xx alone is not a failure. A `.bru` file that cannot be parsed is **skipped with a warning** naming its path and error; it does not change the exit code. | Matches Bruno CLI semantics (`brunoSkippedFiles`, `bruno-cli/src/utils/collection.js:80`). |
-| D5 | Binary name `bru-rs` (Bruno's CLI is `bru`; avoid the clash). | — |
+| D5 | Binary name `Plover` (Bruno's CLI is `bru`; avoid the clash). | — |
 | D6 | Reference fixtures: Bruno's own `packages/bruno-tests` (288 `.bru` files, MIT) copied into `fixtures/bruno-tests/` with its license. User collections may be added under `fixtures/user/`. | Real files beat invented samples. |
 
 ## 4. Tech stack (fixed — ask before substituting)
@@ -81,7 +81,7 @@ Scope:
   cycles terminate; unknown variables left as written.
 - Executor: timeout, follow-redirects toggle, TLS-verify toggle, cookie jar per
   session.
-- CLI: `bru-rs run <path> [--env <name>] [--env-var K=V]... [--insecure]
+- CLI: `plv run <path> [--env <name>] [--env-var K=V]... [--insecure]
   [--timeout-ms N]`. Exit 0 = all passed, 1 = any failed, 2 = usage/load error.
 
 Acceptance:
@@ -98,7 +98,7 @@ Acceptance:
 - UI: sidebar tree, request tabs, Monaco body editor, headers/query/auth tabs,
   response viewer (status, time, size, headers, pretty JSON), environment
   selector.
-- `bru-rs serve` opens the browser at the local URL; frontend embedded with
+- `plv serve` opens the browser at the local URL; frontend embedded with
   `rust-embed`.
 - Acceptance: open a real Bruno collection, edit a request, save, `git diff`
   shows only the edited lines.

@@ -1,8 +1,8 @@
 {
-  "name": "brs-sandbox-libs",
+  "name": "plover-sandbox-libs",
   "private": true,
   "version": "0.0.0",
-  "description": "Libraries available to bru-rs scripts; mirrors Bruno safe mode (bruno-js/src/sandbox/bundle-libraries.js).",
+  "description": "Libraries available to Plover scripts; mirrors Bruno safe mode (bruno-js/src/sandbox/bundle-libraries.js).",
   "type": "module",
   "scripts": {
     "build": "node build.mjs dist",

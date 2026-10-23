@@ -221,7 +221,7 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<ContentHash, StoreError> {
         .parent()
         .ok_or_else(|| StoreError::NotFound(path.display().to_string()))?;
     let mut tmp = tempfile::Builder::new()
-        .prefix(".bru-rs-")
+        .prefix(".plover-")
         .suffix(".tmp")
         .tempfile_in(dir)?;
     tmp.write_all(bytes)?;

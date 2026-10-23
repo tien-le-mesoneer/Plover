@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use brs_core::executor::ExecOptions;
-use brs_server::{AllowList, AppState, router};
+use plover_core::executor::ExecOptions;
+use plover_server::{AllowList, AppState, router};
 use http_body_util::BodyExt;
 use serde_json::Value;
 use tower::ServiceExt;

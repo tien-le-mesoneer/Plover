@@ -1,15 +1,16 @@
 [package]
-name = "brs-server"
+name = "plover-server"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [lib]
-name = "brs_server"
+name = "plover_server"
 
 [dependencies]
 axum = { version = "0.8.9", features = ["ws", "macros"] }
 base64 = "0.23.1"
-brs-core = { path = "../core" }
+plover-core = { path = "../core" }
 rand = "0.10.3"
 rust-embed = { version = "8.13.0", features = ["mime-guess"] }
 serde = { version = "1.0.229", features = ["derive"] }

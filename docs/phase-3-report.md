@@ -41,7 +41,7 @@ Plan: `docs/superpowers/plans/2026-10-23-phase-3-scripts-tests.md`. All 9 tasks 
 
 **Benchmark** (macOS, local Python server). Every request has one post-response script and one chai test. Bruno 4.3.0 runs in safe mode. 5 runs each, 3 runs for 1000 requests:
 
-| Requests | Bruno wall / CPU / RSS | bru-rs wall / CPU / RSS |
+| Requests | Bruno wall / CPU / RSS | Plover wall / CPU / RSS |
 |---|---|---|
 | 1 | 1.33 s / 1.49 s / 232 MB | 0.05 s / 0.01 s / 16 MB (first, cold run 0.18 s) | fixed b128523: iterative port of `replace`, depth cap 1000 (literal past it); 200k via `bru.interpolate`, 20k in URL: exit 0 |
 | 200 | 27.5 s / 26.5 s / 284 MB | 0.80 s / 0.77 s / 24 MB |
@@ -89,7 +89,7 @@ Read-only review of a89d348..967a1f6. Each finding was verified by a localhost p
 | 1 | HIGH | `core/src/vars.rs:118-121` via `script/api.rs:272`, `runner.rs:588` | `VarStack::replace` recurses once per nested `{{var}}` level with no depth limit. A deep chain (20k levels in a URL, or 200k via `bru.interpolate`) overflows the Rust stack and the process aborts (exit 134). | probes `p_deep`, `p_deep2` | fixed b128523: iterative port of `replace`, depth cap 1000 (literal past it); 200k via `bru.interpolate`, 20k in URL: exit 0 |
 | 2 | HIGH | `script/engine.rs:358-376`, `prelude.js:214` | If collecting a phase's result fails, the error is swallowed. Tests, console output, `setVar`s and request edits from that phase disappear, and a failing test is silently dropped so the request passes. Triggers: a lone surrogate (`console.log('\ud800')`), a circular object or an array nested deeper than 128 in `setVar`, or a 70 MB `setVar` that runs out of memory during stringify. Bruno fails all three requests. | probes `p_surrogate`, `p_nest`, `p_big` + Bruno diff | fixed ef4a09a: per-part JSON results, lone surrogates → U+FFFD, unserializable/deep/OOM → `ResultUnavailable` fails the request; all 3 probes fail like Bruno |
 | 3 | HIGH | `api.rs:272`, `vars.rs:76` | `bru.interpolate` builds its result in Rust, outside the QuickJS memory limit and deadline. 29 doubling variables make a 512 MiB string, with peak RSS 2.06 GB before the request is reported as out of memory. | probe `p_interp` | fixed b128523: output cap (script memory limit; 64 MiB for requests), 2× work budget, deadline; probe RSS 1776 MB → 174 MB, clear error |
-| 4 | MED | `vars.rs:64-69` | `{{obj.path}}` doesn't resolve JSON object variables. Bruno uses lodash `get`. `bru.setVar('user', {...})` then `/users/{{user.id}}` → bru-rs sends a literal `{{user.id}}`; Bruno sends `/users/42`. | Bruno diff `p_nested` | fixed b128523: variables keep JSON values; lodash-`get` paths incl. `a[0].b`; Bruno diff `p_nested` now identical |
+| 4 | MED | `vars.rs:64-69` | `{{obj.path}}` doesn't resolve JSON object variables. Bruno uses lodash `get`. `bru.setVar('user', {...})` then `/users/{{user.id}}` → Plover sends a literal `{{user.id}}`; Bruno sends `/users/42`. | Bruno diff `p_nested` | fixed b128523: variables keep JSON values; lodash-`get` paths incl. `a[0].b`; Bruno diff `p_nested` now identical |
 | 5 | MED | `cli/src/report/junit.rs:21-26` | Post-response script errors are not emitted as JUnit testcases: the exit code is 1 but the suite shows `tests="0" failures="0"`, which CI reads as green. Bruno emits a failing "Post-Response Script Error" testcase. | Bruno diff `p_posterr` | fixed 11fa12e: failing `Post-Response Script Error` testcase with the thrown message |
 | 6 | MED | `bru/syntax.rs:185-206`, `bru/render.rs:86-90` | Editing one line of a script/tests block re-indents the whole block: trimmed blank lines become `"  "` and tab indentation changes, so a one-line edit produces a multi-line diff. `fixtures/` has 399 such blank lines. | Rust probe test | fixed ef7c1c6: LCS line merge; golden test edits 1 line in all 427 fixture text blocks → 1/1 |
 | 7 | MED | `runner.rs:843,855`, `server/src/api/runs.rs:222,240` | Server runtime vars are copied at the start of a send or run and fully replaced at the end, so concurrent sends and runs overwrite each other. Example: a slow folder run wipes the `token` set by a `login` send from the UI. Env changes are merged as diffs, but runtime vars are not. | code reading | fixed 7791c54: sends and runs apply set/delete diffs; concurrency test |
@@ -107,7 +107,7 @@ Read-only review of a89d348..967a1f6. Each finding was verified by a localhost p
 **Fix notes (2026-10-23):**
 - Tests were confirmed failing before each fix, except #1, #3 and #4. For those I ran the new tests together with the new interpolation code; the failure was confirmed by running the reviewer's probes on the old release binary (exit 134, 1776 MB, literal `{{user.id}}`).
 - Re-running the 5-request Bruno comparison (`p_par`) and `p_nested` shows no differences in summaries, statuses, names, test messages or assert messages.
-- Benchmark after the fixes (bru-rs, scripted): 1 request 0.014 s, 200 requests 0.83 s (was 0.80 s), 1000 requests 4.07 s (was 4.64 s); RSS unchanged at 16, 25 and 29 MB.
+- Benchmark after the fixes (Plover, scripted): 1 request 0.014 s, 200 requests 0.83 s (was 0.80 s), 1000 requests 4.07 s (was 4.64 s); RSS unchanged at 16, 25 and 29 MB.
 - Still open (unchanged from "Gaps"): unsupported APIs, Windows and Linux are untested, and Node `util.inspect` console formatting is not matched.
 - #1 caps nesting at 1000 levels, which is lower than where Bruno's JS stack would overflow.
 
@@ -138,7 +138,7 @@ Plan: `docs/superpowers/plans/2026-10-23-script-gaps.md`. Commits on `main` (not
 - *Persistence:* Bruno 4.3 persists after every request with no flag (`utils/persist-variables.js`). The output of our merge for the probe collection is byte-identical to what Bruno CLI wrote.
 
 **Design:**
-- *Host calls:* scripts call `__brsHost`. Random bytes and JWT signatures are answered on the worker. HTTP and cookie operations go over a channel to the runner, which serves them with the run's `Session` inside the script deadline; cancellation interrupts the wait.
+- *Host calls:* scripts call `__plvHost`. Random bytes and JWT signatures are answered on the worker. HTTP and cookie operations go over a channel to the runner, which serves them with the run's `Session` inside the script deadline; cancellation interrupts the wait.
 - *Persistence:* `RunOptions.persist` selects what is written.
   - The CLI writes both the environment file and `collection.bru`.
   - The server writes the environment file only, as the Bruno app does; secrets stay in memory and the collection is reloaded.

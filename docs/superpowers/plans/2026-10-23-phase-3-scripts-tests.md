@@ -4,7 +4,7 @@
 
 **Goal:** Run Bruno `script:pre-request`, `script:post-response`, `tests`, `assert` and `vars:post-response` in a sandboxed `rquickjs` runtime, with results in the CLI (text, JUnit XML, JSON) and the web UI.
 
-**Architecture:** A new `brs_core::script` module owns a sandboxed QuickJS engine. Its library set mirrors **Bruno's own safe mode** (`packages/bruno-js/src/sandbox/bundle-libraries.js`): chai (`expect`, `assert`), `Buffer`, `moment`, `btoa`, `atob`, `crypto-js`, `tv4`, `ajv`, `ajv-formats`, prebuilt into one committed JS bundle. `require()` resolves only those names; anything else throws a clear error and the request fails (user decision, PRD §8 Q2). The runner calls the engine at Bruno's hook points; results flow out through `RunEvent`/`send_one` to the CLI reporters and the server DTOs.
+**Architecture:** A new `plover_core::script` module owns a sandboxed QuickJS engine. Its library set mirrors **Bruno's own safe mode** (`packages/bruno-js/src/sandbox/bundle-libraries.js`): chai (`expect`, `assert`), `Buffer`, `moment`, `btoa`, `atob`, `crypto-js`, `tv4`, `ajv`, `ajv-formats`, prebuilt into one committed JS bundle. `require()` resolves only those names; anything else throws a clear error and the request fails (user decision, PRD §8 Q2). The runner calls the engine at Bruno's hook points; results flow out through `RunEvent`/`send_one` to the CLI reporters and the server DTOs.
 
 **Tech Stack:** Phase 1–2 stack + `rquickjs` (features: `futures`, `macro`, `loader` only if needed), `quick-xml` (JUnit writer) or hand-written XML escaping; bundling: `esbuild` (dev-only, in `crates/core/js/`).
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Sandbox: no filesystem, network, process, or timers beyond what this plan exposes. `require(x)` for `x` outside the safe-mode set → `Error: Cannot find module 'x' — bru-rs runs scripts like Bruno safe mode; available: chai, buffer, moment, btoa, atob, crypto-js, tv4, ajv, ajv-formats`. That request is reported **failed** with this message.
+- Sandbox: no filesystem, network, process, or timers beyond what this plan exposes. `require(x)` for `x` outside the safe-mode set → `Error: Cannot find module 'x' — Plover runs scripts like Bruno safe mode; available: chai, buffer, moment, btoa, atob, crypto-js, tv4, ajv, ajv-formats`. That request is reported **failed** with this message.
 - Limits (defaults, all configurable via `ScriptLimits`, CLI flags `--script-timeout-ms`, `--script-memory-mb`): timeout 30 000 ms per script phase (wall clock, includes awaited promises), memory 64 MiB per runtime, max stack 1 MiB. Exceeding a limit fails that request with `script timed out after N ms` / `script exceeded memory limit`; the process and the rest of the run continue.
 - Bruno parity is the default answer for any behavior question; cite the reference file:line in a test comment.
 - Script/test/assert blocks are written losslessly (Phase 1 guarantees); editing a script in the UI changes only that block.
@@ -38,7 +38,7 @@
 - Test: `crates/core/js/check.mjs` (`npm run check` rebuilds to a temp file and fails if it differs from the committed bundle)
 
 **Interfaces:**
-- Produces: `pub const SANDBOX_LIBS_JS: &str = include_str!("../js/dist/sandbox-libs.js");` in `crates/core/src/script/libs.rs`. The bundle defines `globalThis.{expect, assert, moment, btoa, atob, Buffer, tv4, Ajv, addFormats}` and `globalThis.__brsRequireObject`.
+- Produces: `pub const SANDBOX_LIBS_JS: &str = include_str!("../js/dist/sandbox-libs.js");` in `crates/core/src/script/libs.rs`. The bundle defines `globalThis.{expect, assert, moment, btoa, atob, Buffer, tv4, Ajv, addFormats}` and `globalThis.__plvRequireObject`.
 
 - [ ] **Step 1:** `npm ci && npm run build` in `crates/core/js` → bundle written; record its size.
 - [ ] **Step 2:** `npm run check` → PASS (bundle reproducible).
@@ -68,7 +68,7 @@
   }
   pub trait HostBindings { fn install<'js>(&self, ctx: &rquickjs::Ctx<'js>) -> rquickjs::Result<()>; }
   ```
-- Rules: fresh context per `run` (no state leaks between scripts except through host bindings). Interrupt handler enforces the deadline; memory limit via `set_memory_limit`; `console.*` formats objects like Node's `util.inspect` closely enough for JSON-ish values (strings unquoted at top level). `require` throws `ForbiddenModule` for names not in `__brsRequireObject`. Top-level `await` works.
+- Rules: fresh context per `run` (no state leaks between scripts except through host bindings). Interrupt handler enforces the deadline; memory limit via `set_memory_limit`; `console.*` formats objects like Node's `util.inspect` closely enough for JSON-ish values (strings unquoted at top level). `require` throws `ForbiddenModule` for names not in `__plvRequireObject`. Top-level `await` works.
 
 - [ ] **Step 1: Failing tests:** `expect_and_assert_available` (`expect(1).to.equal(1)` passes; `expect(1).to.equal(2)` → `Thrown` with chai message `expected 1 to equal 2`); `require_safe_set_works` (`require('crypto-js').MD5('a').toString() == '0cc175b9c0f1b6a831c399e269772661'`, `require('moment')` defined, `Buffer.from('hi').toString('base64') == 'aGk='`); `require_outside_safe_set_fails` (`fs`, `axios`); `no_ambient_globals` (`typeof process`, `typeof fetch`, `typeof setTimeout` → `'undefined'` unless provided by bindings — `setTimeout` is provided only as part of `bru.sleep`); `infinite_loop_times_out` (limit 200 ms → `Timeout` in < 1.2 s); `memory_bomb_is_contained` (limit 32 MiB → `OutOfMemory`; second `run` on same engine still works); `throw_reports_line` (`\n\nthrow new Error('x')` → line 3); `console_captured`; `top_level_await`.
 - [ ] **Step 2–4:** run → FAIL, implement, run → PASS. Record cold `ScriptEngine::new` time and per-`run` overhead for an empty script (print in test output with `--nocapture`, not asserted).
@@ -100,7 +100,7 @@
   - `bru`: `getVar/setVar/hasVar/deleteVar/deleteAllVars/getAllVars`, `getEnvVar/setEnvVar/hasEnvVar/deleteEnvVar/getAllEnvVars`, `getEnvName`, `getCollectionName`, `getCollectionVar/hasCollectionVar`, `getFolderVar`, `getRequestVar`, `interpolate(strOrObj)` (Phase 1 `VarStack` precedence), `sleep(ms)` (async, counts toward timeout), `runner.setNextRequest(name)`, `runner.skipRequest()`, `runner.stopExecution()`, `setNextRequest(name)` alias, `cwd()` (collection root as string). `setVar` name rule from Bruno (`/^[\w-.]*$/`, else throw same message).
   - `req`: `getUrl/setUrl`, `getMethod/setMethod`, `getHeader/getHeaders/setHeader/setHeaders/deleteHeader`, `getBody/setBody` (JSON bodies as objects, like Bruno), `getTimeout/setTimeout`, `setMaxRedirects`, `getName`, `getAuthMode`; properties `req.url`, `req.method`, `req.headers`, `req.body`. Mutations change the `ResolvedRequest` that is sent.
   - `res`: `getStatus/getStatusText/getHeader/getHeaders/getBody/setBody/getResponseTime/getSize/getUrl`; properties `res.status`, `res.statusText`, `res.headers`, `res.body` (JSON-parsed when the content type is JSON, like Bruno), `res.responseTime`. `res(...)` query function → **not in Phase 3** (gap; throws "res() query is not supported yet").
-- Unsupported Bruno APIs present in Bruno (`bru.sendRequest`, `bru.runRequest`, `bru.cookies`, global env vars, `bru.getProcessEnv`, `req.onFail`, `bru.setEnvVar(..., {persist:true})`) → throw `Error("bru.X is not supported by bru-rs yet")`; listed in the final gap report.
+- Unsupported Bruno APIs present in Bruno (`bru.sendRequest`, `bru.runRequest`, `bru.cookies`, global env vars, `bru.getProcessEnv`, `req.onFail`, `bru.setEnvVar(..., {persist:true})`) → throw `Error("bru.X is not supported by Plover yet")`; listed in the final gap report.
 
 - [ ] **Step 1: Failing tests** (one engine, fake request/response): set/get var round trip and invalid-name error; env var set visible to later `bru.interpolate('{{x}}')`; `req.setHeader('x-a','1')` reflected in the `ResolvedRequest`; `req.getBody()` returns object for JSON body; `res.body.items.length` for JSON response; `res.getHeader('Content-Type')` case-insensitive; flow control flags; unsupported API messages.
 - [ ] **Step 2–4:** FAIL → implement → PASS.
@@ -205,9 +205,9 @@
 - Modify: `docs/development.md`, `README.md` (scripts support matrix: supported / unsupported APIs).
 
 - [ ] **Step 1: CLI acceptance test** `phase3_chain_passes` (wiremock serving the chain) → exit 0, `Tests: N/N`, JUnit file valid.
-- [ ] **Step 2: Bruno parity spot-check** (localhost, `@usebruno/cli` already installed at `/private/tmp/claude-501/-Users-tienle-projects-rea/1bb5dcfd-43a5-447b-a541-d24ed1b9cd89/scratchpad/bench/brunocli`): run the same fixture with `bru run --env local --sandbox safe` (check the exact flag name with `bru run --help`) and with `bru-rs`; compare per-request pass/fail and test counts. Record differences.
+- [ ] **Step 2: Bruno parity spot-check** (localhost, `@usebruno/cli` already installed at `/private/tmp/claude-501/-Users-tienle-projects-rea/1bb5dcfd-43a5-447b-a541-d24ed1b9cd89/scratchpad/bench/brunocli`): run the same fixture with `bru run --env local --sandbox safe` (check the exact flag name with `bru run --help`) and with `Plover`; compare per-request pass/fail and test counts. Record differences.
 - [ ] **Step 3: Browser acceptance** (agent-browser, localhost only, release build): open fixture, send `login` then `me` → Tests tab shows all passed; edit a test to fail → red result; Save → `git diff --stat` 1 line; run folder → run panel shows test counts. Screenshots to the scratchpad. Console errors must be 0.
-- [ ] **Step 4: Performance:** repeat the earlier benchmark (`.../scratchpad/bench/`, `gen.py` + `server.py`) with a variant collection where every request has a small post-response script (`bru.setVar('id', res.body.items[0])`) and one `test()` with `expect`. Report wall time, CPU, peak RSS for 1/200/1000 requests, Bruno CLI vs bru-rs, cold vs warm, plus per-request script overhead.
+- [ ] **Step 4: Performance:** repeat the earlier benchmark (`.../scratchpad/bench/`, `gen.py` + `server.py`) with a variant collection where every request has a small post-response script (`bru.setVar('id', res.body.items[0])`) and one `test()` with `expect`. Report wall time, CPU, peak RSS for 1/200/1000 requests, Bruno CLI vs Plover, cold vs warm, plus per-request script overhead.
 - [ ] **Step 5: Full gate** and commit `test: phase 3 acceptance fixture and docs`.
 
 ---

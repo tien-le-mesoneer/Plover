@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the frontend, then the single bru-rs binary with the UI embedded.
+# Builds the frontend, then the single Plover binary with the UI embedded.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 (
@@ -8,5 +8,5 @@ cd "$(dirname "$0")/.."
   npm run build
   npm run check:no-cdn
 )
-cargo build --release -p brs-cli
-ls -lh target/release/bru-rs
+cargo build --release -p plover-cli
+ls -lh target/release/plv

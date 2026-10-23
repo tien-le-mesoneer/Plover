@@ -1,10 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use brs_core::executor::ExecOptions;
-use brs_core::runner::{SendInput, send_one};
-use brs_core::store::{self, ContentHash, StoreError};
-use brs_core::workspace::Workspace;
+use plover_core::executor::ExecOptions;
+use plover_core::runner::{SendInput, send_one};
+use plover_core::store::{self, ContentHash, StoreError};
+use plover_core::workspace::Workspace;
 use wiremock::matchers::path;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -244,7 +244,7 @@ fn save_returns_request_as_reread_from_disk() {
 
 #[test]
 fn inactive_bodies_survive_mode_switches() {
-    use brs_core::request::Body;
+    use plover_core::request::Body;
     let (_dir, root) = fixture_copy();
     let before = fs::read_to_string(root.join(ECHO_JSON)).unwrap();
     let stored = store::read_request(&root, ECHO_JSON).unwrap();

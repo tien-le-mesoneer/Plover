@@ -12,7 +12,7 @@ use crate::state::AppState;
 
 /// WebSocket clients send the token as this subprotocol prefix, because
 /// browsers cannot set headers on a WebSocket handshake.
-pub const TOKEN_PROTOCOL_PREFIX: &str = "brs.token.";
+pub const TOKEN_PROTOCOL_PREFIX: &str = "plover.token.";
 
 #[derive(Debug, Clone)]
 pub struct AllowList {

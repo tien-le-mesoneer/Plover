@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use brs_core::executor::ExecOptions;
-use brs_core::workspace::Workspace;
+use plover_core::executor::ExecOptions;
+use plover_core::workspace::Workspace;
 
 use crate::api::MAX_INLINE_BODY;
 use crate::security::AllowList;

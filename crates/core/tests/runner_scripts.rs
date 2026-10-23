@@ -4,11 +4,11 @@
 use std::fs;
 use std::path::Path;
 
-use brs_core::collection::Collection;
-use brs_core::executor::{ExecOptions, Session};
-use brs_core::runner::{RunEvent, RunOptions, RunReport, run, run_with};
-use brs_core::script::ScriptError;
-use brs_core::vars::ValueMap;
+use plover_core::collection::Collection;
+use plover_core::executor::{ExecOptions, Session};
+use plover_core::runner::{RunEvent, RunOptions, RunReport, run, run_with};
+use plover_core::script::ScriptError;
+use plover_core::vars::ValueMap;
 use serde_json::json;
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};

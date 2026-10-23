@@ -142,7 +142,7 @@ pub struct PhaseOutput {
     pub error: Option<ScriptError>,
 }
 
-/// What `api.js` reports back (`__brs.resultParts`).
+/// What `api.js` reports back (`__plv.resultParts`).
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 struct Reported {
@@ -207,7 +207,7 @@ pub async fn run_asserts(
     run(
         engine,
         ctx,
-        Main::Call("__brs.runAsserts()".into()),
+        Main::Call("__plv.runAsserts()".into()),
         asserts,
         &[],
         None,
@@ -225,7 +225,7 @@ pub async fn run_post_response_vars(
     run(
         engine,
         ctx,
-        Main::Call("__brs.runPostVars()".into()),
+        Main::Call("__plv.runPostVars()".into()),
         &[],
         vars,
         None,
@@ -304,7 +304,7 @@ async fn run(
     }
 }
 
-/// Variable layers as `api.js` sends them to `__brsInterpolate`.
+/// Variable layers as `api.js` sends them to `__plvInterpolate`.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct Layers {

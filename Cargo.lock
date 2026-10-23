@@ -286,77 +286,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "brs-cli"
-version = "0.1.0"
-dependencies = [
- "assert_cmd",
- "brs-core",
- "brs-server",
- "clap",
- "quick-xml",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing-subscriber",
- "webbrowser",
- "wiremock",
-]
-
-[[package]]
-name = "brs-core"
-version = "0.1.0"
-dependencies = [
- "base64 0.23.1",
- "brotli",
- "cookie_store",
- "flate2",
- "getrandom 0.3.4",
- "jsonwebtoken",
- "pest",
- "pest_derive",
- "regex",
- "reqwest",
- "reqwest_cookie_store",
- "rquickjs",
- "serde",
- "serde_json",
- "sha2",
- "similar",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "url",
- "wiremock",
-]
-
-[[package]]
-name = "brs-server"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64 0.23.1",
- "brs-core",
- "futures-util",
- "http-body-util",
- "rand 0.10.3",
- "rust-embed",
- "serde",
- "serde_json",
- "similar",
- "subtle",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-tungstenite 0.30.0",
- "tower",
- "tracing",
- "ts-rs",
- "wiremock",
-]
-
-[[package]]
 name = "bstr"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1589,6 +1518,77 @@ name = "pkg-config"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
+
+[[package]]
+name = "plover-cli"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "plover-core",
+ "plover-server",
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing-subscriber",
+ "webbrowser",
+ "wiremock",
+]
+
+[[package]]
+name = "plover-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "brotli",
+ "cookie_store",
+ "flate2",
+ "getrandom 0.3.4",
+ "jsonwebtoken",
+ "pest",
+ "pest_derive",
+ "regex",
+ "reqwest",
+ "reqwest_cookie_store",
+ "rquickjs",
+ "serde",
+ "serde_json",
+ "sha2",
+ "similar",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+ "wiremock",
+]
+
+[[package]]
+name = "plover-server"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "futures-util",
+ "http-body-util",
+ "plover-core",
+ "rand 0.10.3",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "similar",
+ "subtle",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tower",
+ "tracing",
+ "ts-rs",
+ "wiremock",
+]
 
 [[package]]
 name = "potential_utf"

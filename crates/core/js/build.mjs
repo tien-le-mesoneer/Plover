@@ -14,7 +14,7 @@ const common = {
   logLevel: 'warning',
   outdir
 };
-// These draw randomness from Web Crypto; the sandbox provides it as `__brsCrypto`
+// These draw randomness from Web Crypto; the sandbox provides it as `__plvCrypto`
 // (crates/core/src/script/prelude.js) instead of a `crypto` global.
 const webCrypto = ['uuid.js', 'nanoid.js'];
 const entries = readdirSync('libs').filter((f) => f.endsWith('.js'));
@@ -32,5 +32,5 @@ await build({
   // Browser builds: they use crypto.getRandomValues instead of Node's crypto module.
   conditions: ['browser'],
   mainFields: ['browser', 'module', 'main'],
-  define: { crypto: 'globalThis.__brsCrypto' }
+  define: { crypto: 'globalThis.__plvCrypto' }
 });

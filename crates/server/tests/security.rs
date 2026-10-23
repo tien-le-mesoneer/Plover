@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use brs_core::executor::ExecOptions;
-use brs_core::workspace::Workspace;
-use brs_server::{AllowList, AppState, ServerConfig, router, start};
+use plover_core::executor::ExecOptions;
+use plover_core::workspace::Workspace;
+use plover_server::{AllowList, AppState, ServerConfig, router, start};
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 

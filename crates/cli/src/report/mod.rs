@@ -6,8 +6,8 @@ pub mod junit;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use brs_core::runner::{RequestOutcome, RunEvent, ScriptPhase};
-use brs_core::script::ScriptError;
+use plover_core::runner::{RequestOutcome, RunEvent, ScriptPhase};
+use plover_core::script::ScriptError;
 
 /// One request of the run, as the reporters need it.
 #[derive(Debug, Clone)]

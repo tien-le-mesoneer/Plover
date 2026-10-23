@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use brs_core::collection::{Collection, Item};
+use plover_core::collection::{Collection, Item};
 
 fn testbench() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/bruno-tests/collection")

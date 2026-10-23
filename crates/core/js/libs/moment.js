@@ -1,2 +1,2 @@
 import moment from 'moment';
-globalThis.__brsLibs.moment = moment;
+globalThis.__plvLibs.moment = moment;

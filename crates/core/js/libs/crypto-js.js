@@ -1,2 +1,2 @@
 import * as cryptoJs from 'crypto-js';
-globalThis.__brsLibs['crypto-js'] = cryptoJs;
+globalThis.__plvLibs['crypto-js'] = cryptoJs;

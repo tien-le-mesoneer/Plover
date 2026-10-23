@@ -106,7 +106,7 @@ describe("ApiClient", () => {
     const run = api.startRun("c1", "", "local", (e) => events.push(e));
     const socket = FakeSocket.last!;
     expect(socket.url).toBe("ws://127.0.0.1:4000/api/ws");
-    expect(socket.protocols).toEqual(["brs.token.tok"]);
+    expect(socket.protocols).toEqual(["plover.token.tok"]);
     socket.open();
     const start = JSON.parse(socket.sent[0]!);
     expect(start).toMatchObject({ type: "start", collectionId: "c1", item: "", env: "local" });

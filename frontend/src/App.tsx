@@ -35,8 +35,8 @@ export default function App({ hasToken }: { hasToken: boolean }) {
   if (!hasToken) {
     return (
       <main className="empty">
-        <h1>bru-rs</h1>
-        <p>Open the URL printed by <code>bru-rs serve</code> (it contains the session token).</p>
+        <h1>Plover</h1>
+        <p>Open the URL printed by <code>plv serve</code> (it contains the session token).</p>
       </main>
     );
   }
@@ -44,7 +44,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
   return (
     <div className="app">
       <header className="topbar">
-        <span className="logo">bru-rs</span>
+        <span className="logo">Plover</span>
         <span className="spacer" />
         <EnvSelector collectionId={collectionId} />
       </header>

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** `bru-rs serve` starts a local axum server with an embedded React UI that opens real Bruno collections, edits and saves requests with minimal `.bru` diffs, sends requests, and streams collection runs over WebSocket.
+**Goal:** `plv serve` starts a local axum server with an embedded React UI that opens real Bruno collections, edits and saves requests with minimal `.bru` diffs, sends requests, and streams collection runs over WebSocket.
 
-**Architecture:** Collection state, file persistence, and "send one request" live in `brs-core` (`workspace.rs`, `store.rs`). A new `brs-server` library crate is a thin axum shell: a security layer (token, Origin, Host), REST handlers that map core types to wire DTOs, a WebSocket run endpoint that forwards `RunEvent`s, and `rust-embed` static serving. `brs-cli` gains `serve`. The frontend talks to the server only through `frontend/src/api/client.ts`; its wire types are generated from the Rust DTOs with `ts-rs`.
+**Architecture:** Collection state, file persistence, and "send one request" live in `plover-core` (`workspace.rs`, `store.rs`). A new `plover-server` library crate is a thin axum shell: a security layer (token, Origin, Host), REST handlers that map core types to wire DTOs, a WebSocket run endpoint that forwards `RunEvent`s, and `rust-embed` static serving. `plover-cli` gains `serve`. The frontend talks to the server only through `frontend/src/api/client.ts`; its wire types are generated from the Rust DTOs with `ts-rs`.
 
 **Tech Stack:** Phase 1 stack + `axum` (ws), `tower-http`, `rust-embed`, `ts-rs`, `sha2`, `webbrowser`, `uuid`; dev: `tokio-tungstenite`, `tower`. Frontend: Node 22.20.0, npm, Vite, React, TypeScript, Zustand, `@monaco-editor/react` + `monaco-editor` (local, no CDN), Vitest.
 
@@ -12,10 +12,10 @@
 
 ## Global Constraints
 
-- All business logic in `brs-core`. `brs-server` contains routing, auth/Origin/Host checks, DTO mapping, WebSocket framing, static files only.
+- All business logic in `plover-core`. `plover-server` contains routing, auth/Origin/Host checks, DTO mapping, WebSocket framing, static files only.
 - Server binds `127.0.0.1` only (no `--host` flag in Phase 2). Port default `0` (random); `--port N` overrides.
 - Every `/api/*` request and WebSocket upgrade must carry the session token; static assets do not.
-- Token: 32 random bytes, hex-encoded, generated per process start. REST: `Authorization: Bearer <token>`. WebSocket: subprotocol `brs.token.<token>` (browsers cannot set WS headers); the server echoes it.
+- Token: 32 random bytes, hex-encoded, generated per process start. REST: `Authorization: Bearer <token>`. WebSocket: subprotocol `plover.token.<token>` (browsers cannot set WS headers); the server echoes it.
 - Allowed `Origin` and `Host`: exactly `http://127.0.0.1:<port>` / `127.0.0.1:<port>` and `http://localhost:<port>` / `localhost:<port>`, plus each `--dev-origin <url>` given. A missing `Origin` is allowed (non-browser clients); a present but unlisted one → 403.
 - Files are written atomically (temp file in the same dir + rename) and only after a content-hash check; never write a block the user did not change (Phase 1 `to_bru` guarantees this).
 - Secret environment values entered in the UI are held in server memory only, never written to disk (keychain is Phase 4).
@@ -77,13 +77,13 @@
   - `save_minimal_diff`: read `ping.bru`, change one header value, save → `similar` line diff of file = 1 removed, 1 added; returned hash == sha256 of new bytes.
   - `save_conflict_does_not_write`: read, modify file on disk, save with old hash → `Conflict { current }` whose value equals new disk content; file bytes unchanged by the save.
   - `send_one_uses_draft_and_secrets` (wiremock): draft URL `{{host}}/draft`, env secret `host` set only in `secrets` → mock hit at `/draft`.
-- [ ] **Step 2: Run** `cargo test -p brs-core --test workspace` → FAIL. **Step 3: Implement.** **Step 4: Run** `cargo test --workspace` → PASS.
+- [ ] **Step 2: Run** `cargo test -p plover-core --test workspace` → FAIL. **Step 3: Implement.** **Step 4: Run** `cargo test --workspace` → PASS.
 - [ ] **Step 5: Commit** `feat(core): workspace, safe persistence and send_one`
 
 ### Task 2: Server crate + security layer
 
 **Files:**
-- Create: `crates/server/Cargo.toml` (package `brs-server`), `crates/server/src/lib.rs`, `crates/server/src/security.rs`, `crates/server/src/state.rs`
+- Create: `crates/server/Cargo.toml` (package `plover-server`), `crates/server/src/lib.rs`, `crates/server/src/security.rs`, `crates/server/src/state.rs`
 - Modify: root `Cargo.toml` (members)
 - Test: `crates/server/tests/security.rs`
 
@@ -134,7 +134,7 @@
   | `PUT /collections/{id}/environments/{name}/secrets` | `{values: Record<string,string>}` → 204 (memory only) |
 - `ResponseDto { status, headers: [string,string][], elapsedMs, size, bodyText?: string, bodyBase64?: string, truncated: bool }` — `bodyText` when the body is valid UTF-8, else `bodyBase64`; bodies over 10 MiB are cut to 10 MiB with `truncated: true` (size still reports the full length).
 - `HttpRequestDto` mirrors `HttpRequest` field-for-field (camelCase, tagged enums `{"mode":"json","text":…}` for body and `{"mode":"bearer","token":…}` for auth). `From`/`TryFrom` conversions live in `dto.rs`.
-- All DTOs derive `ts_rs::TS` with `#[ts(export, export_to = "../../frontend/src/api/types/")]`; `cargo test -p brs-server export_bindings` writes the `.ts` files, which are committed.
+- All DTOs derive `ts_rs::TS` with `#[ts(export, export_to = "../../frontend/src/api/types/")]`; `cargo test -p plover-server export_bindings` writes the `.ts` files, which are committed.
 - Error mapping: `OutsideRoot`→400 `bad_item`, `NotFound`→404, `Parse`→422 `parse_error`, `Conflict`→409, `Resolve`→422 `resolve_error`, `Exec` (transport failure) → 502 `send_failed` with the message. Any HTTP status from the target (incl. 4xx/5xx) is a successful `ResponseDto` with 200.
 
 - [ ] **Step 1: Failing tests** (temp fixture copy, wiremock for send):
@@ -158,7 +158,7 @@
 
 **Interfaces:**
 - Consumes: `runner::run`, `RunEvent`, `RunReport`, `Workspace`.
-- Produces: `GET /api/ws` (upgrade, subprotocol `brs.token.<token>`). Client → server: `{"type":"start","runId":"<uuid>","collectionId","item":"<folder or request id, '' = root>","env":null}` and `{"type":"cancel","runId"}`. Server → client: `RunEventDto` = `{"runId", "type":"started"|"passed"|"failed"|"skipped"|"finished", "item", ...fields}` (item IDs, not absolute paths; `elapsedMs`). One active run per socket; a second `start` while running → `{"type":"error","error":"run_in_progress"}`.
+- Produces: `GET /api/ws` (upgrade, subprotocol `plover.token.<token>`). Client → server: `{"type":"start","runId":"<uuid>","collectionId","item":"<folder or request id, '' = root>","env":null}` and `{"type":"cancel","runId"}`. Server → client: `RunEventDto` = `{"runId", "type":"started"|"passed"|"failed"|"skipped"|"finished", "item", ...fields}` (item IDs, not absolute paths; `elapsedMs`). One active run per socket; a second `start` while running → `{"type":"error","error":"run_in_progress"}`.
 - Rules: the run future is dropped on `cancel` or socket close, which aborts in-flight requests. Runtime vars from the run are written back to `OpenCollection.runtime` when it finishes.
 
 - [ ] **Step 1: Failing tests** (real TCP via `start`, `tokio-tungstenite`, wiremock):
@@ -169,7 +169,7 @@
 - [ ] **Step 2–4:** run → FAIL, implement, run → PASS.
 - [ ] **Step 5: Commit** `feat(server): stream collection runs over WebSocket`
 
-### Task 5: Embedded static UI + `bru-rs serve`
+### Task 5: Embedded static UI + `plv serve`
 
 **Files:**
 - Create: `crates/server/src/assets.rs`
@@ -179,11 +179,11 @@
 **Interfaces:**
 - Consumes: `start`, `ServerConfig` (Task 2).
 - Produces: `#[derive(RustEmbed)] #[folder = "$CARGO_MANIFEST_DIR/../../frontend/dist"] #[allow_missing = true] struct Assets;` Routes: `GET /` and any non-`/api` path → asset or SPA fallback `index.html`; if `dist` is missing, `/` returns 200 HTML "UI not built — run `npm run build` in frontend/". Correct `content-type` by extension; `cache-control: no-cache` for `index.html`, immutable for hashed `assets/*`. CSP header: `default-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:` (Monaco needs blob workers and inline styles).
-- CLI: `bru-rs serve [PATH] [--port <N>] [--no-open] [--dev-origin <URL>]...`. Prints `bru-rs listening on <url>` (with token fragment), opens it with `webbrowser` unless `--no-open`; if `PATH` given, opens that collection at startup. Ctrl-C shuts down gracefully.
+- CLI: `plv serve [PATH] [--port <N>] [--no-open] [--dev-origin <URL>]...`. Prints `plv listening on <url>` (with token fragment), opens it with `webbrowser` unless `--no-open`; if `PATH` given, opens that collection at startup. Ctrl-C shuts down gracefully.
 
 - [ ] **Step 1: Failing tests:** `index_served_without_token`, `spa_fallback`, `api_not_shadowed_by_fallback` (unknown `/api/x` → 404 JSON, not HTML), `csp_header_present`; CLI `serve_prints_url_and_opens_collection` (spawn with `--no-open --port 0 <fixture copy>`, read first stdout line, GET tree with token → 200, kill).
 - [ ] **Step 2–4:** run → FAIL, implement, run → PASS.
-- [ ] **Step 5: Commit** `feat(cli): bru-rs serve with embedded UI`
+- [ ] **Step 5: Commit** `feat(cli): plv serve with embedded UI`
 
 ### Task 6: Frontend scaffold, ApiClient, offline Monaco
 
@@ -213,9 +213,9 @@
   }
   export function createApiClient(baseUrl: string, token: string, deps?: { fetch?: typeof fetch; WebSocket?: typeof WebSocket }): ApiClient;
   ```
-- Scripts: `dev` (vite, proxy `/api` incl. ws to `BRS_API` env), `build`, `typecheck` (`tsc --noEmit`), `lint` (eslint), `test` (`vitest run`), `check:no-cdn` (fails if `dist/` contains `cdn.jsdelivr.net` or `unpkg.com`). `monaco.ts` calls `loader.config({ monaco })` with the bundled `monaco-editor` and registers Vite `?worker` workers for editor + json.
+- Scripts: `dev` (vite, proxy `/api` incl. ws to `PLOVER_API` env), `build`, `typecheck` (`tsc --noEmit`), `lint` (eslint), `test` (`vitest run`), `check:no-cdn` (fails if `dist/` contains `cdn.jsdelivr.net` or `unpkg.com`). `monaco.ts` calls `loader.config({ monaco })` with the bundled `monaco-editor` and registers Vite `?worker` workers for editor + json.
 
-- [ ] **Step 1: Failing tests:** `token.test.ts` (`#token=abc` → `"abc"`, stored, hash cleared; reload uses storage); `client.test.ts` (Bearer header on every call; 409 → `ApiError{code:"conflict"}`; `startRun` opens WS with subprotocol `brs.token.<t>` and forwards parsed events; `cancel()` sends cancel then closes).
+- [ ] **Step 1: Failing tests:** `token.test.ts` (`#token=abc` → `"abc"`, stored, hash cleared; reload uses storage); `client.test.ts` (Bearer header on every call; 409 → `ApiError{code:"conflict"}`; `startRun` opens WS with subprotocol `plover.token.<t>` and forwards parsed events; `cancel()` sends cancel then closes).
 - [ ] **Step 2:** `npm test` → FAIL. **Step 3: Implement.** **Step 4:** `npm run typecheck && npm run lint && npm test && npm run build && npm run check:no-cdn` → all pass (`no_cdn_in_bundle`).
 - [ ] **Step 5: Commit** `feat(frontend): vite scaffold, ApiClient and offline Monaco`
 
@@ -263,12 +263,12 @@
 ### Task 9: Phase gate — embedded build and end-to-end check
 
 **Files:**
-- Create: `scripts/build-release.sh` (`npm ci && npm run build` in `frontend/`, then `cargo build --release -p brs-cli`), `docs/development.md` (dev loop: `cargo run -p brs-cli -- serve --no-open --port 4000 --dev-origin http://localhost:5173` + `BRS_API=http://127.0.0.1:4000 npm run dev`)
-- Modify: `README.md` (create if missing: what it is, `bru-rs run`, `bru-rs serve`)
+- Create: `scripts/build-release.sh` (`npm ci && npm run build` in `frontend/`, then `cargo build --release -p plover-cli`), `docs/development.md` (dev loop: `cargo run -p plover-cli -- serve --no-open --port 4000 --dev-origin http://localhost:5173` + `PLOVER_API=http://127.0.0.1:4000 npm run dev`)
+- Modify: `README.md` (create if missing: what it is, `plv run`, `plv serve`)
 
-- [ ] **Step 1:** `scripts/build-release.sh` → `target/release/bru-rs` exists; `strings` on it contains `index.html` content marker.
+- [ ] **Step 1:** `scripts/build-release.sh` → `target/release/plv` exists; `strings` on it contains `index.html` content marker.
 - [ ] **Step 2:** Full gate: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `npm run typecheck && npm run lint && npm test && npm run check:no-cdn` → all pass.
-- [ ] **Step 3: Browser acceptance** (agent-browser skill, localhost only): copy `fixtures/bruno-tests/collection` to a temp dir and `git init` + commit it there; start a local wiremock-equivalent (`python3 -m http.server` is fine) as `host`; run `target/release/bru-rs serve --no-open --port 0 <copy>`; in the browser: open the URL, expand sidebar, open `ping.bru`, change one header value, Cmd+S, Send → response pane shows status/time/size. Then `git -C <copy> diff --stat` → exactly `1 file changed, 1 insertion(+), 1 deletion(-)`. Screenshot saved to the scratchpad.
+- [ ] **Step 3: Browser acceptance** (agent-browser skill, localhost only): copy `fixtures/bruno-tests/collection` to a temp dir and `git init` + commit it there; start a local wiremock-equivalent (`python3 -m http.server` is fine) as `host`; run `target/release/plv serve --no-open --port 0 <copy>`; in the browser: open the URL, expand sidebar, open `ping.bru`, change one header value, Cmd+S, Send → response pane shows status/time/size. Then `git -C <copy> diff --stat` → exactly `1 file changed, 1 insertion(+), 1 deletion(-)`. Screenshot saved to the scratchpad.
 - [ ] **Step 4: Commit** `chore: release build script and phase 2 docs`
 
 ---
