@@ -70,6 +70,20 @@ struct RunArgs {
     /// Write a JSON report to this file.
     #[arg(long, value_name = "FILE")]
     reporter_json: Option<PathBuf>,
+    /// Write a self-contained HTML report to this file.
+    #[arg(long, value_name = "FILE")]
+    reporter_html: Option<PathBuf>,
+    /// Wait this many milliseconds after each request except the last (Bruno `--delay`),
+    /// e.g. to stay under a server's rate limit.
+    #[arg(long, value_name = "MS")]
+    delay: Option<u64>,
+    /// Accepted for `bru run` compatibility: Plover always runs folders recursively.
+    #[arg(short = 'r', long = "recursive")]
+    _recursive: bool,
+    /// Accepted for `bru run` compatibility: Plover runs scripts like Bruno's `safe`
+    /// sandbox; `developer` (Node modules, filesystem) is not supported.
+    #[arg(long, value_name = "SANDBOX", value_parser = ["safe"])]
+    _sandbox: Option<String>,
     /// Time limit for each script phase, in milliseconds.
     #[arg(long, value_name = "N", default_value_t = 30_000)]
     script_timeout_ms: u64,
@@ -147,9 +161,13 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
     if !args.path.exists() {
         return Err(format!("{} does not exist", args.path.display()));
     }
-    for report in [&args.reporter_junit, &args.reporter_json]
-        .into_iter()
-        .flatten()
+    for report in [
+        &args.reporter_junit,
+        &args.reporter_json,
+        &args.reporter_html,
+    ]
+    .into_iter()
+    .flatten()
     {
         let dir = report.parent().filter(|d| !d.as_os_str().is_empty());
         if dir.is_some_and(|d| !d.is_dir()) {
@@ -184,6 +202,7 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
         },
         // Bruno CLI writes script changes to the environment file and collection.bru.
         persist: Persist::All,
+        delay: args.delay.map(Duration::from_millis),
         ..RunOptions::default()
     }
     .with_env_vars(&keychain)
@@ -207,6 +226,11 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
             .map_err(|e| e.to_string())?;
         std::fs::write(path, json).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
         println!("Wrote json results to {}", path.display());
+    }
+    if let Some(path) = &args.reporter_html {
+        let html = report::html::render(&collector.records, &report);
+        std::fs::write(path, html).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        println!("Wrote html results to {}", path.display());
     }
     Ok(if report.failed > 0 {
         ExitCode::from(EXIT_FAILED)

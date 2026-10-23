@@ -40,6 +40,9 @@ pub struct RunOptions {
     pub exec: ExecOptions,
     pub scripts: ScriptLimits,
     pub persist: Persist,
+    /// `--delay`: wait this long after every request except the last
+    /// (Bruno commands/run.js), e.g. to stay under a server's rate limit.
+    pub delay: Option<Duration>,
 }
 
 /// Which script changes to variables are written back to disk after each request
@@ -140,6 +143,8 @@ pub enum RunEvent {
     /// A transport error, a script error, or a failed test or assert.
     Failed {
         path: PathBuf,
+        /// The request's `meta.name`, or the file name when it has none.
+        name: String,
         error: String,
         outcome: RequestOutcome,
     },
@@ -170,7 +175,10 @@ pub struct RunReport {
 pub struct RequestOutcome {
     /// `None` when the request was not sent or the transport failed.
     pub status: Option<u16>,
+    /// The response time.
     pub elapsed: Duration,
+    /// The whole request in a run, scripts included (Bruno's `runDuration`).
+    pub duration: Duration,
     pub size: usize,
     pub tests: Vec<TestResult>,
     pub asserts: Vec<AssertResult>,
@@ -377,6 +385,7 @@ pub async fn run_with_state(
                     report.failed += 1;
                     on_event(&RunEvent::Failed {
                         path,
+                        name: display_name(r),
                         error: e.to_string(),
                         outcome: RequestOutcome::default(),
                     });
@@ -386,7 +395,8 @@ pub async fn run_with_state(
             continue;
         }
         let before = state.clone();
-        let executed = exec
+        let request_started = Instant::now();
+        let mut executed = exec
             .execute(r, None, state, &mut |name, resolved| {
                 on_event(&RunEvent::Started {
                     path: path.clone(),
@@ -396,6 +406,7 @@ pub async fn run_with_state(
                 })
             })
             .await;
+        executed.outcome.duration = request_started.elapsed();
         persist_changes(
             collection,
             environment,
@@ -422,6 +433,7 @@ pub async fn run_with_state(
                 report.failed += 1;
                 on_event(&RunEvent::Failed {
                     path,
+                    name: display_name(r),
                     error,
                     outcome: executed.outcome.clone(),
                 });
@@ -433,6 +445,13 @@ pub async fn run_with_state(
                     outcome: executed.outcome.clone(),
                 });
             }
+        }
+
+        // commands/run.js waits right after each request, before stop/jump handling.
+        if let Some(delay) = opts.delay.filter(|d| !d.is_zero())
+            && index + 1 < refs.len()
+        {
+            tokio::time::sleep(delay).await;
         }
 
         // commands/run.js: stopExecution skips the rest; setNextRequest jumps by name.
@@ -456,6 +475,7 @@ pub async fn run_with_state(
                     report.failed += 1;
                     on_event(&RunEvent::Failed {
                         path: r.path.to_path_buf(),
+                        name: display_name(r),
                         error: "too many jumps, possible infinite loop".to_owned(),
                         outcome: RequestOutcome::default(),
                     });

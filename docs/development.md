@@ -127,3 +127,20 @@ plv run fixtures/phase3-chain --env local      # 3 passed · Tests 5/5 · Assert
 layout in `state.json` (see the README for its location). Set `PLOVER_STATE_DIR` to a
 temp directory when you start them from tests or scripts so they don't touch your real
 list; the CLI tests, `npm run check:console` and the CI smoke step already do.
+
+## Desktop smoke test
+
+`PLOVER_DESKTOP_SMOKE=1 target/release/bundle/macos/Plover.app/Contents/MacOS/plover`
+(or `target/release/plover[.exe]`) starts the app, waits for the page to finish starting
+and checks the server, then exits. It prints one line:
+
+- `plover smoke: ok`
+- `plover smoke: failed (page reported: <error>)`: loading collections, restoring the
+  layout or rendering failed in the page.
+- `plover smoke: failed (page never reported ready; page loads: N, launch codes exchanged:
+  N, rejected: N)`: the page stalled. Two loads with one rejected code means the
+  webview loaded twice and the second load held an already-used launch code.
+- `plover smoke: failed (health check: <reason>)`.
+
+It waits `PLOVER_DESKTOP_SMOKE_TIMEOUT_SECS` (default 20; CI uses 90 for a cold
+WebView2). Set `PLOVER_STATE_DIR` to a temp directory.

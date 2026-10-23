@@ -404,3 +404,127 @@ async fn requests_that_never_ran_are_named_by_meta_name() {
     assert_eq!(results[1]["status"], "skipped");
     assert_eq!(results[1]["name"], "r4");
 }
+
+#[tokio::test]
+async fn junit_pre_request_errors_match_bruno() {
+    // Bruno 4.0 for a pre-request script that throws: the suite is named by meta name,
+    // the error message is the thrown message alone, and time is the real duration.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "bruno.json",
+        r#"{"version":"1","name":"pre","type":"collection"}"#,
+    );
+    write(
+        root,
+        "1-access-control/P1-07.bru",
+        &request(
+            "P1-07 · [token] · 401 token_invalid",
+            1,
+            "http://127.0.0.1:9/never",
+            "\nscript:pre-request {\n  await bru.sleep(80);\n  throw new Error('Request failed with status code 401');\n}\n",
+        ),
+    );
+    let junit = root.join("junit.xml");
+    let json_path = root.join("results.json");
+    Command::cargo_bin("plv")
+        .unwrap()
+        .arg("run")
+        .arg(root)
+        .arg("--reporter-junit")
+        .arg(&junit)
+        .arg("--reporter-json")
+        .arg(&json_path)
+        .assert()
+        .code(1);
+    let suites = parse_junit(&fs::read_to_string(&junit).unwrap());
+    let s = &suites[0];
+    assert_eq!(s.attr("name"), "P1-07 · [token] · 401 token_invalid");
+    assert_eq!(s.attr("file"), "1-access-control/P1-07.bru");
+    assert_eq!(
+        (s.attr("errors"), s.attr("failures"), s.attr("tests")),
+        ("1", "0", "1")
+    );
+    assert_eq!(s.errors, ["Request failed with status code 401"]);
+    let time: f64 = s.attr("time").parse().unwrap();
+    assert!(time >= 0.08, "real duration, got {time}");
+    let case = &s.cases[0];
+    let get = |k: &str| case.iter().find(|(n, _)| n == k).unwrap().1.clone();
+    assert_eq!(get("name"), "Test suite has no errors");
+    assert_eq!(get("classname"), "1-access-control/P1-07");
+    let report: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&json_path).unwrap()).unwrap();
+    let r = &report[0]["results"][0];
+    assert_eq!(r["name"], "P1-07 · [token] · 401 token_invalid");
+    assert_eq!(r["error"], "Request failed with status code 401");
+}
+
+#[tokio::test]
+async fn accepts_bruno_run_flags_used_by_existing_scripts() {
+    let server = MockServer::start().await;
+    let dir = collection(&server).await;
+    let root = dir.path();
+    // `bru run bruno -r --env Dev --sandbox safe --delay 0`: -r and --sandbox safe are
+    // what Plover always does.
+    Command::cargo_bin("plv")
+        .unwrap()
+        .arg("run")
+        .arg(root.join("a.bru"))
+        .args(["-r", "--sandbox", "safe", "--delay", "0"])
+        .assert()
+        .code(1); // a.bru has one failing test
+    Command::cargo_bin("plv")
+        .unwrap()
+        .arg("run")
+        .arg(root)
+        .arg("--recursive")
+        .assert()
+        .code(1);
+    let out = Command::cargo_bin("plv")
+        .unwrap()
+        .arg("run")
+        .arg(root)
+        .args(["--sandbox", "developer"])
+        .assert()
+        .code(2);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).into_owned();
+    assert!(stderr.contains("safe"), "{stderr}");
+}
+
+#[tokio::test]
+async fn html_report_is_self_contained_and_escaped() {
+    let server = MockServer::start().await;
+    let dir = collection(&server).await;
+    let root = dir.path();
+    let html_path = root.join("report.html");
+    Command::cargo_bin("plv")
+        .unwrap()
+        .arg("run")
+        .arg(root)
+        .arg("--reporter-html")
+        .arg(&html_path)
+        .assert()
+        .code(1);
+    let html = fs::read_to_string(&html_path).unwrap();
+    assert!(html.starts_with("<!doctype html>"));
+    // Summary (a fails a test, b cannot connect, c is skipped) and every request.
+    for needle in [
+        "Requests",
+        "0 passed",
+        "2 failed",
+        "1 skipped",
+        ">a<",
+        ">b<",
+        ">c<",
+    ] {
+        assert!(html.contains(needle), "missing {needle}");
+    }
+    // The failing test's name is escaped, and its message is shown.
+    assert!(html.contains("a&lt;b &amp; &quot;c&quot;"));
+    assert!(html.contains("expected 1 to equal 2"));
+    // Offline: no external resources and no script needed to read it.
+    for forbidden in ["<script", "<link", "src=\"http", "href=\"http", "@import"] {
+        assert!(!html.contains(forbidden), "found {forbidden}");
+    }
+}

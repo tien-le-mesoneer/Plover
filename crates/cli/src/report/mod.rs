@@ -1,5 +1,6 @@
 //! Run results collected from events, for the JUnit and JSON reporters.
 
+pub mod html;
 pub mod json;
 pub mod junit;
 
@@ -45,9 +46,14 @@ impl RecordStatus {
 }
 
 impl RequestRecord {
-    /// Request duration in seconds (the response time, like Bruno's `runDuration`).
+    /// The whole request, scripts included (Bruno's `runDuration`); the response time for
+    /// records that were never timed (skipped).
     pub fn duration(&self) -> Duration {
-        self.outcome.elapsed
+        if self.outcome.duration.is_zero() {
+            self.outcome.elapsed
+        } else {
+            self.outcome.duration
+        }
     }
 
     /// Bruno records a post-response script error as a failed post-response test named
@@ -63,6 +69,19 @@ impl RequestRecord {
 }
 
 pub const POST_RESPONSE_SCRIPT_ERROR: &str = "Post-Response Script Error";
+
+/// The error text the reporters show, like Bruno's: a script that stopped the request
+/// (pre-request) reports the thrown message alone (`Request failed with status code
+/// 401`), without the CLI's "pre-request script error (…): Error:" context.
+fn report_error(error: &str, outcome: &RequestOutcome) -> String {
+    match &outcome.script_error {
+        Some(failure) if outcome.status.is_none() => match &failure.error {
+            ScriptError::Thrown { message, .. } => message.clone(),
+            other => other.to_string(),
+        },
+        _ => error.to_owned(),
+    }
+}
 
 #[derive(Default)]
 pub struct Collector {
@@ -120,6 +139,7 @@ impl Collector {
             }
             RunEvent::Failed {
                 path,
+                name,
                 error,
                 outcome,
             } => {
@@ -128,7 +148,12 @@ impl Collector {
                 } else {
                     RecordStatus::Error
                 };
-                record(self, path, status, outcome, Some(error), None)
+                // A pre-request failure never sent the request, so no `Started` named it.
+                if self.started.is_none() {
+                    self.started = Some((String::new(), name.clone(), String::new()));
+                }
+                let error = report_error(error, outcome);
+                record(self, path, status, outcome, Some(&error), None)
             }
             RunEvent::Skipped { path, name, reason } => {
                 // Never started, so no `Started` event named it.

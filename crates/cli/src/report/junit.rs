@@ -110,7 +110,7 @@ fn escape(text: &str) -> String {
 }
 
 /// `new Date().toISOString().split('Z')[0]`: UTC, milliseconds, no `Z`.
-fn iso_timestamp(now: SystemTime) -> String {
+pub(super) fn iso_timestamp(now: SystemTime) -> String {
     let since = now.duration_since(UNIX_EPOCH).unwrap_or_default();
     let secs = since.as_secs();
     let (days, rem) = (secs / 86_400, secs % 86_400);

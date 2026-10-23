@@ -33,6 +33,7 @@ impl Printer {
                 path,
                 error,
                 outcome,
+                ..
             } => {
                 if outcome.status.is_some() {
                     self.request_line('✗', path, outcome);

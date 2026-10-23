@@ -244,3 +244,53 @@ async fn run_with_shares_session_cookies_and_runtime() {
     .unwrap();
     assert_eq!(report.passed, 1);
 }
+
+#[tokio::test]
+async fn delay_waits_between_requests_not_after_the_last() {
+    // Bruno commands/run.js: after every request except the last.
+    let server = MockServer::start().await;
+    Mock::given(wiremock::matchers::any())
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    collection(root);
+    write(
+        root,
+        "environments/local.bru",
+        &format!("vars {{\n  host: {}\n}}\n", server.uri()),
+    );
+    for (i, n) in ["a", "b", "c"].iter().enumerate() {
+        write(root, &format!("{n}.bru"), &request(n, i as u32 + 1));
+    }
+    let opts = RunOptions {
+        delay: Some(std::time::Duration::from_millis(300)),
+        ..env_opts()
+    };
+    let started = std::time::Instant::now();
+    let (report, _) = run_all(root, &opts).await;
+    let elapsed = started.elapsed();
+    assert_eq!(report.unwrap().passed, 3);
+    assert!(
+        elapsed >= std::time::Duration::from_millis(600),
+        "{elapsed:?}"
+    );
+    assert!(
+        elapsed < std::time::Duration::from_millis(890),
+        "no delay after the last: {elapsed:?}"
+    );
+
+    // A single request never waits.
+    let one = tempfile::tempdir().unwrap();
+    collection(one.path());
+    write(
+        one.path(),
+        "environments/local.bru",
+        &format!("vars {{\n  host: {}\n}}\n", server.uri()),
+    );
+    write(one.path(), "a.bru", &request("a", 1));
+    let started = std::time::Instant::now();
+    run_all(one.path(), &opts).await.0.unwrap();
+    assert!(started.elapsed() < std::time::Duration::from_millis(290));
+}

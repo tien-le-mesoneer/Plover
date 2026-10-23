@@ -296,6 +296,7 @@ fn event_dto(root: &std::path::Path, run_id: &str, event: &RunEvent) -> RunEvent
             path,
             error,
             outcome,
+            ..
         } => {
             let (tests, asserts, console, script_error) = outcome_lists(outcome);
             RunEventDto::Failed {

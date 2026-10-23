@@ -56,7 +56,18 @@ plv run coll --env local --reporter-junit out/junit.xml --reporter-json out/resu
 plv run coll --env local --verbose                  # also print script console.* output
 plv run coll --env local --use-keychain             # read secrets saved by the UI/desktop app
 plv run coll --script-timeout-ms 10000 --script-memory-mb 64
+plv run coll --env Dev --delay 7000                  # wait between requests (rate limits)
+plv run coll --env Dev --reporter-html out/report.html   # offline, self-contained HTML
 ```
+
+**Replacing `bru run`.** Existing `bru run` commands work with `plv run` for these flags:
+
+| Bruno flag | In Plover |
+|---|---|
+| `--env`, `--env-var`, `--insecure`, `--verbose`, `--delay`, `--reporter-junit`, `--reporter-json`, `--reporter-html` | Supported, same meaning |
+| `-r` / `--recursive` | Accepted; Plover always runs folders recursively (Bruno without `-r` runs only a folder's direct requests) |
+| `--sandbox safe` | Accepted; Plover always runs scripts like Bruno's safe mode. `--sandbox developer` is rejected. |
+| `--bail`, `--tests-only`, `--tags`, `--exclude-tags`, `--env-file`, `--global-env`, `--csv-file-path`, `--json-file-path`, `--iteration-count`, `--parallel`, `--cacert`, `--client-cert-config`, `--noproxy`, `-o`/`--format`, `--reporter-skip-*`, `--disable-cookies` | Not supported yet: `plv` stops with an "unexpected argument" error (exit 2) rather than ignoring them |
 
 In the web UI and the desktop app, **+** next to the Plover name (`⌘/Ctrl+O`) opens a
 collection: paste a path, pick a recent one, or browse (desktop). **Collections are
