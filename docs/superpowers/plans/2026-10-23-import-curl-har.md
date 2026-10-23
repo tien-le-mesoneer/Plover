@@ -332,6 +332,7 @@ Rebase on `main` first.
     - The write order is fixed: `update_secrets`, then `add_secret_names`, then `create_folder` (if `newFolder`), then `create_request` for each entry.
     - There is no rollback. On the first failure, the handler stops and returns 200 with `failedAt` set and `items` listing what was written. *Plan's call*: 200 rather than 5xx, so the UI can show which files were written.
     - The handler reloads the collection at the end.
+  - `POST /api/collections/{id}/import/har/plan` (*user decision*: the dialog shows the secret variable **names** before import) takes `HarPlanBody { har, entries: number[], env: Option<String> }` and returns `HarPlanDto { env: string, secretNames: string[], requestNames: string[], notices: string[] }`. It runs `parse_har` + `plan_import` against the target environment's existing secrets and the target folder's existing names and writes nothing. `secretNames` are the keys of `new_secrets` (names only, never values); they are the exact names the import will create for the same body.
 
 - [ ] **Step 1: Write the failing tests.**
   - `har_preview_rows_and_hidden_flags`.
@@ -339,6 +340,8 @@ Rebase on `main` first.
   - `har_import_without_env_creates_imported_env`.
   - `har_import_into_new_folder`.
   - `har_over_limit_is_413`.
+  - `har_plan_lists_secret_names_and_writes_nothing`: the plan for a fixture with a bearer token and a cookie returns `secretNames == ["authToken", "cookie"]` (or the names the Task 5 rules give), no fixture secret value appears anywhere in the response, and the collection directory and environment files are byte-identical before and after.
+  - `har_plan_matches_import`: for the same body, `plan.secretNames` equals the import's `secretNames`, and an existing `authToken` with a different value makes both return `authToken2`.
   - `preview_does_not_echo_response_content` (Review Focus 5). A synthetic HAR has 500 entries, each with a 64 KiB `response.content.text`. The preview JSON is under 1 MiB and does not contain the marker string placed in the content.
 
 - [ ] **Step 2: Run the tests and confirm they fail.**
@@ -364,6 +367,7 @@ Rebase on `main` first.
     - `createRequest(id, folder, name, request): Promise<CreatedRequestDto>`
     - `previewHar(id, har): Promise<HarRowDto[]>`
     - `importHar(id, body: HarImportBody): Promise<HarImportResultDto>`
+    - `planHar(id, body: HarPlanBody): Promise<HarPlanDto>`
     - `send` now accepts `item: string | null`.
   - `Tab.item: string | null` (null = scratch); scratch `key` = `` `${collectionId}:scratch:${n}` ``.
   - `TabsState.newScratch(collectionId: string): string` returns the key of a tab named "Untitled" with method `GET` and an empty `saved`.
@@ -491,14 +495,14 @@ Rebase on `main` first.
 - Test: `frontend/src/components/import-har.test.tsx`
 
 **Interfaces:**
-- Consumes: `previewHar` and `importHar` (Task 9). The environments come from `api().environments`.
+- Consumes: `previewHar`, `planHar` and `importHar` (Task 9). The environments come from `api().environments`.
 - Produces: a dialog with a file input (`accept=".har,application/json"`) and these parts:
   - Host chips ordered by request count.
   - A "Show hidden" toggle.
   - A table with checkboxes. Hidden rows are unticked and not shown until the toggle is on. Rows are marked `×N` for duplicates and with a warning icon when `hasSecrets` is true.
   - An "Import into" folder picker, defaulting to the focused folder in the sidebar or the root, with a "new subfolder" name prefilled as `captured-<first host>`.
   - An environment select (default: the selected environment, or "Imported (new)").
-  - A summary of the secret variables to create, by name only. *Plan's call*: the names come from a dry run, which the dialog asks for by calling preview and import planning. To avoid a third endpoint, the client predicts the names from `hasSecrets` rows: it shows "N secret values will move into environment X", and lists the actual names after import from `secretNames`. The spec's "the dialog lists the secret variables it will create" is satisfied after the import, not before. See Ambiguity 1.
+  - A summary of the secret variables to create, **by name, before the import** (*user decision*): the dialog calls `planHar` whenever the ticked rows or the environment change (debounced 300 ms) and shows "These secret variables will be created in <env>: authToken, cookie". Import stays disabled while a plan request is in flight. Names only, never values.
   - After import, a result line with the count of files and secrets, plus `failedAt` if set. The tree refreshes.
 
 - [ ] **Step 1: Write the failing tests.**
@@ -506,6 +510,7 @@ Rebase on `main` first.
   - `domain chip filters rows`.
   - `show hidden reveals rows`.
   - `import sends ticked entries folder newFolder env`.
+  - `secret names shown before import`: ticking a row with a bearer token calls `planHar` and lists `authToken` before Import is clicked; the rendered text never contains the fixture token.
   - `result lists secret names never values`. Assert that the rendered text does not contain the fixture token.
   - `failedAt shown`.
   - `file over 64 MiB rejected client side with message`.
@@ -559,13 +564,13 @@ Rebase on `main` first.
   - Non-goals (no CLI, no proxy): nothing is planned for them.
 - **Type consistency:**
   - `ParsedCurl`, `CurlNotice`, `CurlCommand`, `HarRow`, `ImportPlan` and `ExistingSecrets` are defined once (Tasks 1, 2 and 5) and used by name in later tasks.
-  - The DTO names are `CurlParsedDto`, `CurlNoticeDto`, `CopyCurlBody`, `CurlTextDto`, `CreateRequestBody`, `CreatedRequestDto`, `HarPreviewBody`, `HarRowDto`, `HarImportBody` and `HarImportResultDto`. They are the same in Tasks 6–9 and 13.
+  - The DTO names are `CurlParsedDto`, `CurlNoticeDto`, `CopyCurlBody`, `CurlTextDto`, `CreateRequestBody`, `CreatedRequestDto`, `HarPreviewBody`, `HarRowDto`, `HarImportBody`, `HarImportResultDto`, `HarPlanBody` and `HarPlanDto`. They are the same in Tasks 6–9 and 13.
   - `StoreError::Exists` maps to 409 `exists` (Tasks 3 and 7). The UI's `"exists"` result comes from that code (Task 9).
 - **Proportion:** the plan gives signatures, test names and assertions. It has no function bodies except the exact copy strings the spec fixes.
 
 ## Ambiguities left for the user / reviewer
 
-1. **Secret names in the HAR dialog before import.** The spec says the dialog lists the secret variables it will create. Doing that before the import needs either a dry-run endpoint or planning in the client. This plan shows a count before the import and the names after it (Task 13). If the names must appear before the import, add `POST …/import/har/plan`, which returns `new_secrets` names only, and put it in Task 8.
+1. **Secret names in the HAR dialog before import.** Resolved (user decision): names are shown before import through `POST …/import/har/plan` (Task 8), used by the dialog (Task 13).
 2. **Import HAR on folders.** The spec puts it on the folder context menu, but right-click on a folder already runs it (`Sidebar.tsx` `onContextMenu`). This plan uses the sidebar header entry, defaulting the target folder to the focused folder, rather than adding a context menu. A real folder context menu would change existing behaviour.
 3. **Choices this plan made that the spec leaves open.**
    - Duplicate names become `name 2`, `name 3`.
