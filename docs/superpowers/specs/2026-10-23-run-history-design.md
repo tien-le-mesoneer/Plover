@@ -113,7 +113,9 @@ values with `***`:
    `vars:secret` variable of the selected environment, whatever its source: keychain,
    in-memory value, or `--env-var` with a secret's name. This matches what
    `runner::secret_values` selects. Values shorter than 4 characters are not masked, so
-   `***` does not appear everywhere.
+   `***` does not appear everywhere. Values at both run start and run end are masked, so a
+   script that changes a secret (`bru.setEnvVar`) leaks neither (*Claude's call*, from the
+   builder check).
 3. Values read from `process.env` are not masked.
 
 Masking applies to the live detail in the app too. The app never shows a different
@@ -158,7 +160,9 @@ value than history would store.
 - `plv runs show <ID> [--reporter-json F] [--reporter-html F] [--reporter-junit F]`
   rebuilds the console summary and any reports from a saved run, without sending
   anything.
-  - `<ID>` is looked up across all collections' history folders.
+  - `<ID>` is looked up across all collections' history folders. A run file is
+    self-contained (label, target, collection root and name), so `show` works after the
+    collection moved or was deleted (*Claude's call*, from the builder check).
   - The skip-header and skip-body flags work here too.
 - `plv runs clear [DIR]` deletes that collection's history. It asks for confirmation
   unless `--yes` is given.
