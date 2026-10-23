@@ -97,6 +97,17 @@ impl Printer {
                     println!("    │ {text}");
                 }
             }
+            for r in &outcome.scripted_requests {
+                let result = match (r.status, &r.error) {
+                    (Some(status), _) => status.to_string(),
+                    (None, Some(error)) => format!("error: {error}"),
+                    (None, None) => "no response".to_owned(),
+                };
+                println!(
+                    "    ↳ {} {} {} → {result} ({} ms)",
+                    r.source, r.method, r.url, r.duration_ms
+                );
+            }
         }
     }
 

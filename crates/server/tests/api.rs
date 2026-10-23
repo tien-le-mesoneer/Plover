@@ -212,6 +212,41 @@ async fn send_runs_scripts_and_returns_tests() {
 }
 
 #[tokio::test]
+async fn send_reports_scripted_requests() {
+    let server = MockServer::start().await;
+    Mock::given(path("/main"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    Mock::given(path("/side"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "n": 1 })))
+        .mount(&server)
+        .await;
+    let dir = small_collection(&server.uri());
+    write(
+        dir.path(),
+        "m.bru",
+        "meta {\n  name: m\n  type: http\n  seq: 9\n}\n\nget {\n  url: {{host}}/main\n}\n\nscript:post-response {\n  const r = await bru.sendRequest(bru.getEnvVar('host') + '/side');\n  bru.setVar('n', r.data.n);\n}\n",
+    );
+    let app = app();
+    let id = open(&app, dir.path()).await;
+    let (status, res) = call(
+        &app,
+        "POST",
+        &format!("/api/collections/{id}/send"),
+        Some(json!({ "item": "m.bru", "env": "local" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{res}");
+    let scripted = &res["scriptedRequests"];
+    assert_eq!(scripted.as_array().map(Vec::len), Some(1), "{res}");
+    assert_eq!(scripted[0]["source"], "sendRequest");
+    assert_eq!(scripted[0]["method"], "GET");
+    assert_eq!(scripted[0]["status"], 200);
+    assert!(scripted[0]["url"].as_str().unwrap().ends_with("/side"));
+}
+
+#[tokio::test]
 async fn send_pre_request_script_error_is_reported() {
     let dir = small_collection("http://127.0.0.1:9");
     write(

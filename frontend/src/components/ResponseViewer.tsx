@@ -62,7 +62,10 @@ export function ResponseViewer({ result, sending }: { result?: SendResultDto; se
         )}
       </button>
       <button className={view === "console" ? "active" : ""} onClick={() => setView("console")}>
-        Console{result.console.length > 0 && <sup>{result.console.length}</sup>}
+        Console
+        {result.console.length + result.scriptedRequests.length > 0 && (
+          <sup>{result.console.length + result.scriptedRequests.length}</sup>
+        )}
       </button>
     </nav>
   );
@@ -70,7 +73,7 @@ export function ResponseViewer({ result, sending }: { result?: SendResultDto; se
     view === "tests" ? (
       <TestResults tests={result.tests} asserts={result.asserts} />
     ) : view === "console" ? (
-      <ConsoleOutput lines={result.console} />
+      <ConsoleOutput lines={result.console} requests={result.scriptedRequests} />
     ) : null;
   if (!response) {
     return (
@@ -81,7 +84,7 @@ export function ResponseViewer({ result, sending }: { result?: SendResultDto; se
           {tabs}
         </div>
         {banners}
-        {extra ?? <ConsoleOutput lines={result.console} />}
+        {extra ?? <ConsoleOutput lines={result.console} requests={result.scriptedRequests} />}
       </div>
     );
   }

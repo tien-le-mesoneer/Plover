@@ -191,8 +191,36 @@ pub struct SendResultDto {
     pub asserts: Vec<AssertResultDto>,
     pub console: Vec<ConsoleLineDto>,
     pub script_error: Option<ScriptErrorDto>,
+    /// Requests the scripts sent with `bru.sendRequest` or `axios`.
+    pub scripted_requests: Vec<ScriptedRequestDto>,
     /// Why the request was not sent (`bru.runner.skipRequest()`).
     pub skipped: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ScriptedRequestDto {
+    /// `sendRequest` or `axios`.
+    pub source: String,
+    pub method: String,
+    pub url: String,
+    pub status: Option<u16>,
+    pub error: Option<String>,
+    #[ts(type = "number")]
+    pub duration_ms: u64,
+}
+
+impl From<&brs_core::session_host::ScriptedRequest> for ScriptedRequestDto {
+    fn from(r: &brs_core::session_host::ScriptedRequest) -> Self {
+        ScriptedRequestDto {
+            source: r.source.clone(),
+            method: r.method.clone(),
+            url: r.url.clone(),
+            status: r.status,
+            error: r.error.clone(),
+            duration_ms: r.duration_ms,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -601,6 +629,7 @@ pub fn typescript_bindings() -> String {
         TestResultDto::decl(&cfg),
         AssertResultDto::decl(&cfg),
         ConsoleLineDto::decl(&cfg),
+        ScriptedRequestDto::decl(&cfg),
         ScriptErrorDto::decl(&cfg),
         SendResultDto::decl(&cfg),
         OpenCollectionBody::decl(&cfg),

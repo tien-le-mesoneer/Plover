@@ -77,6 +77,7 @@ pub async fn send(
         asserts,
         console,
         script_error,
+        scripted_requests: sent.outcome.scripted_requests.iter().map(Into::into).collect(),
         skipped: sent.skipped,
     }))
 }

@@ -47,3 +47,19 @@ describe("ConsoleOutput", () => {
     expect(screen.getByText("boom").closest("li")!.className).toContain("error");
   });
 });
+
+describe("ConsoleOutput scripted requests", () => {
+  it("lists requests scripts sent, with failures marked", () => {
+    render(
+      <ConsoleOutput
+        lines={[]}
+        requests={[
+          { source: "sendRequest", method: "GET", url: "http://h/a", status: 200, error: null, durationMs: 3 },
+          { source: "axios", method: "POST", url: "http://h/b", status: null, error: "refused", durationMs: 1 },
+        ]}
+      />,
+    );
+    expect(screen.getByText(/sendRequest GET http:\/\/h\/a → 200/)).toBeTruthy();
+    expect(screen.getByText(/axios POST http:\/\/h\/b → error: refused/).closest("li")!.className).toContain("error");
+  });
+});

@@ -88,6 +88,12 @@ export type ConsoleLineDto = {
  */
 level: string, text: string, };
 
+export type ScriptedRequestDto = { 
+/**
+ * `sendRequest` or `axios`.
+ */
+source: string, method: string, url: string, status: number | null, error: string | null, durationMs: number, };
+
 export type ScriptErrorDto = { 
 /**
  * `pre-request`, `post-response` or `tests`.
@@ -111,6 +117,10 @@ scope: string | null,
 line: number | null, column: number | null, };
 
 export type SendResultDto = { response: ResponseDto | null, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, scriptError: ScriptErrorDto | null, 
+/**
+ * Requests the scripts sent with `bru.sendRequest` or `axios`.
+ */
+scriptedRequests: Array<ScriptedRequestDto>, 
 /**
  * Why the request was not sent (`bru.runner.skipRequest()`).
  */

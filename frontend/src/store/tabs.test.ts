@@ -149,6 +149,7 @@ describe("tabs store", () => {
       asserts: [],
       console: [{ level: "log", text: "hi" }],
       scriptError: null,
+      scriptedRequests: [],
       skipped: null,
     };
     const api = mockApi({ send: vi.fn(async () => result) });
