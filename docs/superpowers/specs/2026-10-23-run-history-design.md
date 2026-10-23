@@ -101,25 +101,53 @@ Each decision says who made it. **User** means the user decided it in conversati
   - **Per-run cap: 50 MiB of stored bodies.** After that, later results keep their
     headers but drop their bodies, with a `bodyOmitted: "run size limit"` marker.
 
-### Masking (Claude's call)
+### Masking
 
 Masking runs once, when a run finishes, before the run is saved or any report is
 written. It is a single function in core, used by both history and reports. It replaces
-values with `***`:
+values with `***` in two passes.
+
+**Pass 1: collect the values to mask.**
 
 1. The values of all headers named `Authorization`, `Proxy-Authorization`, `Cookie` and
-   `Set-Cookie`, in both requests and responses. Names are matched case-insensitively.
-2. Every occurrence of a secret's value in URLs, headers and bodies. A secret is a
-   `vars:secret` variable of the selected environment, whatever its source: keychain,
-   in-memory value, or `--env-var` with a secret's name. This matches what
-   `runner::secret_values` selects. Values shorter than 4 characters are not masked, so
-   `***` does not appear everywhere. Values at both run start and run end are masked, so a
-   script that changes a secret (`bru.setEnvVar`) leaks neither (*Claude's call*, from the
-   builder check).
-3. Values read from `process.env` are not masked.
+   `Set-Cookie`, in every request and response of the run. Names are matched
+   case-insensitively. Each header contributes its whole value and, separately, its
+   credential part: the token after a scheme such as `Bearer ` or `Basic `, and each
+   cookie value (the value of each `name=value` pair, not `Set-Cookie` attributes such
+   as `Path`). This way a bare token in a body still matches. *Claude's call.*
+2. Every secret's value. A secret is a `vars:secret` variable of the selected
+   environment, whatever its source: keychain, in-memory value, or `--env-var` with a
+   secret's name. This matches what `runner::secret_values` selects. Values at both run
+   start and run end are collected, so a script that changes a secret
+   (`bru.setEnvVar`) leaks neither (*Claude's call*, from the builder check).
 
-Masking applies to the live detail in the app too. The app never shows a different
-value than history would store.
+**Pass 2: replace every occurrence** of a collected value with `***`, everywhere in the
+stored record: URLs, header values, request and response bodies, console lines, test
+and assert messages, and script error messages. The headers named in pass 1 are
+replaced whole.
+
+*User decision:* masking is value-based across the whole run. A token that a login
+request returns in its response body (for example `access_token`) is masked there,
+because the same token is later sent in an `Authorization` header.
+
+Limits (*Claude's call*):
+
+- Header-derived values shorter than 8 characters are not collected, so `***` does not
+  spread over short common strings. Secret values keep a 4-character floor, since the
+  user marked them secret on purpose.
+- Longer values are replaced first, so a value that contains another is masked whole.
+- A value that never appears in one of the four headers and is not a secret stays
+  visible. For example, a token that a script sends only in a custom header such as
+  `X-Api-Key` is not masked.
+- Only the exact text is matched, not encoded forms (URL-encoded, base64, JSON-escaped).
+- Bodies stored as base64 (not UTF-8) are not searched.
+- Values read from `process.env` are not masked.
+
+Masking applies to the live detail in the app too. While a run is still going, the
+detail of a finished row is masked with the values collected so far; a token first
+sent in a header by a later request is masked once the run ends, and the app refetches
+an open detail at that point. After the run, the app never shows a different value than
+history stores. *Claude's call.*
 
 ### Run history
 
@@ -210,7 +238,10 @@ value than history would store.
 - The HTML report gets a collapsible `<details>` section per result, with header tables
   and the escaped body in `<pre>`. It stays script-free.
 - The JUnit report does not change.
-- Reports are built from the same masked records as history (see "Masking").
+- Reports are built from the same masked records as history (see "Masking"), and that
+  includes JUnit failure messages. *User decision:* reports are masked even though Bruno
+  writes headers and bodies to its reports raw, because report files from CI get
+  shared. The `--reporter-skip-*` flags still apply on top of the masking.
 - Reports are built from a single shared record shape. `report::Collector` and
   `RequestRecord` (`crates/cli/src/report/mod.rs`) become, or are built from, the core
   "run record" type that history also uses. This way a saved run and a live run render
@@ -228,6 +259,9 @@ value than history would store.
 - Whether `plv runs` output has a `--json` form.
 - Test design. At minimum:
   - masking of each header and of a secret value in a URL, header and body;
+  - a login response body whose `access_token` is later sent as `Bearer <token>`, masked
+    in the earlier response body, and a value under 8 characters left alone;
+  - a JSON, HTML and JUnit report of the same run showing `***`, not the token;
   - the 1 MiB body cap and the 50 MiB run cap;
   - concurrent saves and pruning from two processes;
   - `CI=true` with no flag, with `--history` and with `--no-history`;
@@ -236,15 +270,7 @@ value than history would store.
 
 ## Open questions for the user
 
-Only the user can answer these, and each answer changes what is built.
+None. The user answered both questions from the first review:
 
-1. **Tokens in response bodies.** Masking covers known secrets and auth headers. It does
-   not cover a token that a login request *returns* in its body (for example
-   `access_token`) and a script stores with `bru.setVar`. As designed, those bodies are
-   saved in plain text in the local history (20 runs). Is that acceptable, or should
-   Plover also mask runtime variables that scripts set and later send in auth headers?
-   Or should it not save bodies of selected requests?
-2. **Reports and Bruno parity.** Bruno writes headers and bodies to `--reporter-json` and
-   `--reporter-html` unmasked. As designed, Plover's reports use the same masking as
-   history, which differs from Bruno, so CI artifacts contain `***`. Keep the masking, or
-   match Bruno exactly and rely on the `--reporter-skip-*` flags?
+1. Tokens in response bodies are masked by value-based masking (see "Masking").
+2. Reports are masked like history, unlike Bruno (see "Reports").
