@@ -47,7 +47,8 @@ body:json {
 }
 BRU
 
-"$BIN" serve --no-open --port "$PORT" "$COL" > "$TMP/serve.log" 2>&1 &
+# Own state dir: the check must not add its temp collection to the real recent list.
+PLOVER_STATE_DIR="$TMP/state" "$BIN" serve --no-open --port "$PORT" "$COL" > "$TMP/serve.log" 2>&1 &
 SERVER_PID=$!
 for _ in $(seq 50); do grep -q "listening on" "$TMP/serve.log" 2>/dev/null && break; sleep 0.1; done
 URL=$(sed -n 's/^plv listening on //p' "$TMP/serve.log")

@@ -12,6 +12,7 @@ mod state;
 
 use std::future::{Future, IntoFuture};
 use std::net::{Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::routing::get;
@@ -39,6 +40,9 @@ pub struct ServerConfig {
     pub secrets: Option<Arc<SecretVault>>,
     /// The desktop shell's native features; `None` in web mode.
     pub native: Option<Arc<dyn native::NativeHost>>,
+    /// Where `state.json` lives (open collections, recent list, UI layout); `None`
+    /// remembers nothing. Remembered collections are reopened before serving.
+    pub state_dir: Option<PathBuf>,
 }
 
 pub struct RunningServer {
@@ -110,6 +114,14 @@ pub async fn start(
         state = state.with_native(host);
     }
     let workspace = state.workspace.clone();
+    if let Some(dir) = cfg.state_dir {
+        workspace.set_app_state(Arc::new(plover_core::app_state::AppStateStore::load(&dir)));
+        // Loading collections reads many files; keep it off the async workers.
+        let restoring = workspace.clone();
+        tokio::task::spawn_blocking(move || restoring.restore())
+            .await
+            .map_err(std::io::Error::other)?;
+    }
     let events = state.events.clone();
     let client_ready = state.client_ready.subscribe();
     let router_state = state.clone();

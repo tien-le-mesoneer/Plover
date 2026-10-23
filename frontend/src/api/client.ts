@@ -9,6 +9,7 @@ import type {
   HttpRequestDto,
   KeyValueDto,
   PickedFolderDto,
+  RecentDto,
   RunEventDto,
   SavedRequestDto,
   SecretsResultDto,
@@ -17,6 +18,7 @@ import type {
   SessionTokenDto,
   StoredRequestDto,
   TreeNodeDto,
+  UiStateDto,
 } from "./types";
 
 export class ApiError extends Error {
@@ -50,7 +52,16 @@ export interface ApiClient {
   /** Server → UI notifications (collection opened natively, reload requested). */
   subscribeEvents(onEvent: (e: ServerEvent) => void): { close(): void };
   openCollection(path: string): Promise<CollectionSummaryDto>;
+  /** Open collections, then remembered ones that could not be reopened (`available: false`). */
   listCollections(): Promise<CollectionSummaryDto[]>;
+  /** Closes a collection (or drops an unavailable one); it stays in the recent list. */
+  closeCollection(id: string): Promise<void>;
+  /** Recently opened collections, newest first. */
+  recent(): Promise<RecentDto[]>;
+  removeRecent(root: string): Promise<void>;
+  /** Remembered layout (tabs, expanded folders, environment) per collection ID. */
+  uiState(): Promise<Record<string, UiStateDto>>;
+  saveUiState(id: string, ui: UiStateDto): Promise<void>;
   tree(id: string): Promise<TreeNodeDto>;
   reload(id: string): Promise<TreeNodeDto>;
   readRequest(id: string, item: string): Promise<StoredRequestDto>;
@@ -167,6 +178,11 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     },
     openCollection: (path) => call("POST", "/collections", { path }),
     listCollections: () => call("GET", "/collections"),
+    closeCollection: (id) => call("DELETE", collections(id)),
+    recent: () => call("GET", "/recent"),
+    removeRecent: (root) => call("DELETE", `/recent?root=${enc(root)}`),
+    uiState: () => call("GET", "/ui-state"),
+    saveUiState: (id, ui) => call("PUT", `/ui-state/${enc(id)}`, ui),
     tree: (id) => call("GET", `${collections(id)}/tree`),
     reload: (id) => call("POST", `${collections(id)}/reload`),
     readRequest: (id, item) => call("GET", `${collections(id)}/requests?item=${enc(item)}`),

@@ -65,3 +65,26 @@ export const CopyIcon = () => (
     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
   </Icon>
 );
+export const PlusIcon = () => (
+  <Icon>
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </Icon>
+);
+export const FolderIcon = () => (
+  <Icon size={14}>
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  </Icon>
+);
+export const SearchIcon = () => (
+  <Icon size={14}>
+    <circle cx="11" cy="11" r="7" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </Icon>
+);
+/** The Plover mark: a filled diamond (decorative; the wordmark beside it is the name). */
+export const LogoMark = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M12 2 22 12 12 22 2 12z" fill="currentColor" />
+  </svg>
+);

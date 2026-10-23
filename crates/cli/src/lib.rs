@@ -226,6 +226,8 @@ async fn serve(args: ServeArgs) -> Result<ExitCode, String> {
             exec: ExecOptions::default(),
             secrets: Some(plover_core::secrets::default_store()),
             native: None,
+            // Collections opened here come back on the next `plv serve`.
+            state_dir: plover_core::app_state::default_dir(),
         },
         shutdown,
     )

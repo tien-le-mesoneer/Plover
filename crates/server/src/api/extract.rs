@@ -23,6 +23,7 @@ impl From<JsonRejection> for ApiError {
     fn from(r: JsonRejection) -> Self {
         let code = match r {
             JsonRejection::MissingJsonContentType(_) => "unsupported_media_type",
+            _ if r.status() == StatusCode::PAYLOAD_TOO_LARGE => "payload_too_large",
             _ => "bad_request",
         };
         ApiError::new(r.status(), code, r.body_text())

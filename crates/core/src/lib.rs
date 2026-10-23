@@ -1,5 +1,6 @@
 //! Core domain for Plover: `.bru` files, collections, variables and execution.
 
+pub mod app_state;
 pub mod bru;
 pub mod collection;
 pub mod dotenv;

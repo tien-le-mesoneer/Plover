@@ -1,5 +1,6 @@
 //! REST handlers. Each maps wire DTOs to `plover-core` calls and core errors to `ApiError`s.
 
+mod app_state;
 mod collections;
 pub mod dto;
 mod environments;
@@ -15,7 +16,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::http::StatusCode;
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, post, put};
 use plover_core::collection::LoadError;
 use plover_core::runner::SendError;
 use plover_core::store::StoreError;
@@ -39,6 +40,16 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/collections",
             get(collections::list).post(collections::open),
+        )
+        .route("/collections/{id}", delete(collections::close))
+        .route(
+            "/recent",
+            get(app_state::recent).delete(app_state::remove_recent),
+        )
+        .route("/ui-state", get(app_state::all_ui_state))
+        .route(
+            "/ui-state/{id}",
+            put(app_state::put_ui_state).layer(DefaultBodyLimit::max(app_state::MAX_UI_STATE_BODY)),
         )
         .route("/collections/{id}/tree", get(collections::tree))
         .route("/collections/{id}/reload", post(collections::reload))

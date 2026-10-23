@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use axum::Json;
 use axum::extract::State;
 use plover_core::collection::{Folder, Item};
-use plover_core::workspace::OpenCollection;
+use plover_core::workspace::{OpenCollection, Unavailable};
 
 use super::dto::{CollectionSummaryDto, OpenCollectionBody, TreeNodeDto, TreeNodeKind};
 use super::extract::{ApiJson, ApiPath};
@@ -17,7 +17,24 @@ fn summary(open: &OpenCollection) -> CollectionSummaryDto {
         id: open.id.0.clone(),
         name: collection.config.name.clone(),
         root: collection.root.display().to_string(),
+        available: true,
+        error: None,
     }
+}
+
+fn unavailable_summary(u: &Unavailable) -> CollectionSummaryDto {
+    CollectionSummaryDto {
+        id: u.id.0.clone(),
+        name: u.name.clone(),
+        root: display_path(&u.root),
+        available: false,
+        error: Some(u.reason.clone()),
+    }
+}
+
+/// A canonical root for people: without Windows' `\\?\` verbatim prefix.
+pub fn display_path(root: &str) -> String {
+    root.strip_prefix(r"\\?\").unwrap_or(root).to_owned()
 }
 
 pub async fn open(
@@ -40,8 +57,34 @@ pub async fn open(
     Ok(Json(summary(&open)))
 }
 
+/// Open collections in open order, then remembered ones that could not be reopened.
 pub async fn list(State(state): State<AppState>) -> Json<Vec<CollectionSummaryDto>> {
-    Json(state.workspace.list().iter().map(|o| summary(o)).collect())
+    let mut all: Vec<_> = state.workspace.list().iter().map(|o| summary(o)).collect();
+    all.extend(
+        state
+            .workspace
+            .unavailable()
+            .iter()
+            .map(unavailable_summary),
+    );
+    Json(all)
+}
+
+/// Closes an open collection or drops an unavailable one (it stays in the recent list).
+pub async fn close(
+    State(state): State<AppState>,
+    ApiPath(id): ApiPath<String>,
+) -> Result<axum::http::StatusCode, ApiError> {
+    if state
+        .workspace
+        .close(&plover_core::workspace::CollectionId(id.clone()))
+    {
+        Ok(axum::http::StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::not_found(format!(
+            "collection `{id}` is not open"
+        )))
+    }
 }
 
 pub async fn tree(

@@ -1,44 +1,149 @@
-import { useRef, useState, type KeyboardEvent } from "react";
-import type { TreeNodeDto } from "../api/types";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import type { CollectionSummaryDto, TreeNodeDto } from "../api/types";
 import { useTabs, tabKey } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
-import { AlertIcon, ChevronIcon, PlayIcon, RefreshIcon } from "./icons";
-import { OpenCollectionDialog } from "./OpenCollectionDialog";
+import { AlertIcon, ChevronIcon, CloseIcon, PlayIcon, RefreshIcon, SearchIcon } from "./icons";
+import { Modal } from "./Modal";
 
 interface Props {
   onRun?: (collectionId: string, item: string, label: string) => void;
 }
 
+/**
+ * Keeps requests whose name (or "METHOD name") contains `query`, folders whose name
+ * contains it (with everything inside), and the folders leading to any match.
+ */
+export function filterTree(node: TreeNodeDto, query: string): TreeNodeDto | null {
+  const q = query.trim().toLowerCase();
+  if (!q) return node;
+  const hit = (n: TreeNodeDto) =>
+    n.name.toLowerCase().includes(q) || `${n.method ?? ""} ${n.name}`.toLowerCase().includes(q);
+  const children = (node.children ?? [])
+    .map((child) => (child.kind === "folder" ? (hit(child) ? child : filterTree(child, q)) : hit(child) ? child : null))
+    .filter((c): c is TreeNodeDto => c !== null);
+  return children.length > 0 ? { ...node, children } : null;
+}
+
+function folderIds(node: TreeNodeDto): string[] {
+  return (node.children ?? []).flatMap((c) => (c.kind === "folder" ? [c.id, ...folderIds(c)] : []));
+}
+
 export function Sidebar({ onRun }: Props) {
-  const { collections, trees, reload } = useWorkspace();
+  const { collections, trees, reload, filter, setFilter, close, retry } = useWorkspace();
+  const filterInput = useRef<HTMLInputElement>(null);
+  const [confirmClose, setConfirmClose] = useState<CollectionSummaryDto | null>(null);
+
+  // Cmd/Ctrl+P: jump to the request filter (instead of the browser's print dialog).
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        filterInput.current?.focus();
+        filterInput.current?.select();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const closeCollection = (c: CollectionSummaryDto) => {
+    const { tabs, isDirty } = useTabs.getState();
+    if (tabs.some((t) => t.collectionId === c.id && isDirty(t.key))) setConfirmClose(c);
+    else void doClose(c.id);
+  };
+  const doClose = async (id: string) => {
+    setConfirmClose(null);
+    const { tabs, close: closeTab } = useTabs.getState();
+    tabs.filter((t) => t.collectionId === id).forEach((t) => closeTab(t.key));
+    await close(id);
+  };
+
   return (
     <aside className="sidebar" aria-label="Collections">
-      <OpenCollectionDialog />
-      {collections.map((c) => (
-        <div key={c.id} className="collection">
-          <div className="collection-header" title={c.root}>
-            <strong className="collection-name">{c.name}</strong>
-            <span className="spacer" />
-            {onRun && (
+      {collections.length > 0 && (
+        <div className="filter">
+          <SearchIcon />
+          <input
+            ref={filterInput}
+            type="search"
+            aria-label="Filter requests"
+            aria-keyshortcuts="Meta+P Control+P"
+            placeholder="Filter requests  ⌘P"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && filter) {
+                e.preventDefault();
+                e.stopPropagation();
+                setFilter("");
+              }
+            }}
+          />
+        </div>
+      )}
+      {collections.map((c) =>
+        c.available ? (
+          <div key={c.id} className="collection">
+            <div className="collection-header" title={c.root}>
+              <strong className="collection-name">{c.name}</strong>
+              <span className="spacer" />
+              {onRun && (
+                <button
+                  className="icon"
+                  title="Run collection"
+                  aria-label="Run collection"
+                  onClick={() => onRun(c.id, "", c.name)}>
+                  <PlayIcon />
+                </button>
+              )}
               <button
                 className="icon"
-                title="Run collection"
-                aria-label="Run collection"
-                onClick={() => onRun(c.id, "", c.name)}>
-                <PlayIcon />
+                title="Reload from disk"
+                aria-label="Reload from disk"
+                onClick={() => void reload(c.id)}>
+                <RefreshIcon />
               </button>
+              <button
+                className="icon"
+                title="Close collection (Plover reopens it next time unless closed)"
+                aria-label={`Close collection ${c.name}`}
+                onClick={() => closeCollection(c)}>
+                <CloseIcon />
+              </button>
+            </div>
+            {trees[c.id] && (
+              <CollectionTree collectionId={c.id} name={c.name} root={trees[c.id]!} filter={filter} onRun={onRun} />
             )}
-            <button
-              className="icon"
-              title="Reload from disk"
-              aria-label="Reload from disk"
-              onClick={() => void reload(c.id)}>
-              <RefreshIcon />
+          </div>
+        ) : (
+          <div key={c.id} className="collection unavailable">
+            <div className="collection-header" title={`${c.root}\n${c.error ?? "not available"}`}>
+              <AlertIcon />
+              <span className="collection-name">{c.name}</span>
+              <span className="spacer" />
+              <button type="button" className="text" aria-label={`Retry opening ${c.name}`} onClick={() => void retry(c.id)}>
+                Retry
+              </button>
+              <button type="button" className="text" aria-label={`Remove ${c.name}`} onClick={() => void close(c.id)}>
+                Remove
+              </button>
+            </div>
+            <p className="unavailable-reason">{c.error ?? "Not available"}</p>
+          </div>
+        ),
+      )}
+      {confirmClose && (
+        <Modal title="Close collection" onDismiss={() => setConfirmClose(null)}>
+          <h3>Close {confirmClose.name}?</h3>
+          <p>Some of its requests have unsaved edits. Closing discards them.</p>
+          <div className="actions">
+            <button onClick={() => setConfirmClose(null)}>Cancel</button>
+            <button className="primary" onClick={() => void doClose(confirmClose.id)}>
+              Discard and close
             </button>
           </div>
-          {trees[c.id] && <CollectionTree collectionId={c.id} name={c.name} root={trees[c.id]!} onRun={onRun} />}
-        </div>
-      ))}
+        </Modal>
+      )}
     </aside>
   );
 }
@@ -67,27 +172,33 @@ function CollectionTree({
   collectionId,
   name,
   root,
+  filter,
   onRun,
 }: {
   collectionId: string;
   name: string;
   root: TreeNodeDto;
+  filter: string;
   onRun?: Props["onRun"];
 }) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const saved = useWorkspace((s) => s.expanded[collectionId]);
+  const toggleExpanded = useWorkspace((s) => s.toggleExpanded);
   const [focusId, setFocusId] = useState<string | null>(null);
   const { open: openTab, active } = useTabs();
   const refs = useRef(new Map<string, HTMLLIElement>());
-  const items = visibleItems(root.children ?? [], expanded);
+  const filtering = filter.trim() !== "";
+  const shown = useMemo(() => filterTree(root, filter), [root, filter]);
+  // While filtering every folder on the way to a match is open; otherwise the remembered state.
+  const expanded = useMemo(
+    () => new Set(filtering ? (shown ? folderIds(shown) : []) : (saved ?? [])),
+    [filtering, shown, saved],
+  );
+  const items = visibleItems(shown?.children ?? [], expanded);
   const current = items.some((i) => i.node.id === focusId) ? focusId : (items[0]?.node.id ?? null);
 
-  const toggle = (id: string, open?: boolean) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (open ?? !next.has(id)) next.add(id);
-      else next.delete(id);
-      return next;
-    });
+  const toggle = (id: string, open?: boolean) => {
+    if (!filtering) toggleExpanded(collectionId, id, open);
+  };
   const focus = (id: string | null | undefined) => {
     if (!id) return;
     setFocusId(id);
@@ -139,6 +250,7 @@ function CollectionTree({
     e.stopPropagation();
   };
 
+  if (filtering && items.length === 0) return <p className="muted no-matches">No matching requests</p>;
   return (
     <ul className="tree" role="tree" aria-label={name}>
       {items.map((item, index) => {

@@ -6,10 +6,12 @@ import type {
   CollectionSummaryDto,
   EnvironmentDto,
   KeyValueDto,
+  RecentDto,
   TreeNodeDto,
 } from "../api/types";
 
 export interface WorkspaceState {
+  /** Open collections, then remembered ones that could not be reopened (`available: false`). */
   collections: CollectionSummaryDto[];
   trees: Record<string, TreeNodeDto>;
   environments: Record<string, EnvironmentDto[]>;
@@ -19,9 +21,25 @@ export interface WorkspaceState {
   capabilities: CapabilitiesDto | null;
   /** The collection last opened (here or natively); used when no tab is active. */
   activeCollection: string | null;
+  /** Expanded folder IDs per collection, in the order they were expanded. */
+  expanded: Record<string, string[]>;
+  /** Sidebar request filter (case-insensitive substring). */
+  filter: string;
+  recent: RecentDto[];
+  /** The "Open collection" popover. */
+  pickerOpen: boolean;
   error?: string;
   init(): Promise<void>;
   open(path: string): Promise<void>;
+  /** Closes a collection (or drops an unavailable one); it stays in the recent list. */
+  close(id: string): Promise<void>;
+  /** Tries an unavailable collection's root again. */
+  retry(id: string): Promise<void>;
+  loadRecent(): Promise<void>;
+  removeRecent(root: string): Promise<void>;
+  toggleExpanded(id: string, folder: string, open?: boolean): void;
+  setFilter(filter: string): void;
+  setPickerOpen(open: boolean): void;
   reload(id: string): Promise<void>;
   refreshTree(id: string): Promise<void>;
   selectEnv(id: string, name: string | null): void;
@@ -50,7 +68,7 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => {
     ]);
     set((s) => ({
       collections: s.collections.some((c) => c.id === summary.id)
-        ? s.collections
+        ? s.collections.map((c) => (c.id === summary.id ? summary : c))
         : [...s.collections, summary],
       trees: { ...s.trees, [summary.id]: tree },
       environments: { ...s.environments, [summary.id]: environments },
@@ -68,6 +86,10 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => {
     activeEnv: {},
     capabilities: null,
     activeCollection: null,
+    expanded: {},
+    filter: "",
+    recent: [],
+    pickerOpen: false,
 
     async init() {
       try {
@@ -76,10 +98,79 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => {
         set({ error: message(e) });
       }
       try {
-        for (const summary of await api().listCollections()) await load(summary);
+        for (const summary of await api().listCollections()) {
+          if (summary.available) await load(summary);
+          else
+            set((s) => ({
+              collections: s.collections.some((c) => c.id === summary.id)
+                ? s.collections
+                : [...s.collections, summary],
+            }));
+        }
       } catch (e) {
         set({ error: message(e) });
       }
+      await get().loadRecent();
+    },
+
+    async close(id) {
+      try {
+        await api().closeCollection(id);
+      } catch (e) {
+        set({ error: message(e) });
+        return;
+      }
+      set((s) => {
+        const without = <T,>(r: Record<string, T>) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== id));
+        return {
+          collections: s.collections.filter((c) => c.id !== id),
+          trees: without(s.trees),
+          environments: without(s.environments),
+          activeEnv: without(s.activeEnv),
+          expanded: without(s.expanded),
+          activeCollection: s.activeCollection === id ? null : s.activeCollection,
+        };
+      });
+      await get().loadRecent();
+    },
+
+    async retry(id) {
+      const entry = get().collections.find((c) => c.id === id);
+      if (entry) await get().open(entry.root);
+    },
+
+    async loadRecent() {
+      try {
+        set({ recent: await api().recent() });
+      } catch {
+        // The recent list is a convenience; ignore failures.
+      }
+    },
+
+    async removeRecent(root) {
+      try {
+        await api().removeRecent(root);
+      } catch (e) {
+        set({ error: message(e) });
+      }
+      await get().loadRecent();
+    },
+
+    toggleExpanded(id, folder, open) {
+      set((s) => {
+        const current = s.expanded[id] ?? [];
+        const isOpen = current.includes(folder);
+        const next = (open ?? !isOpen) ? (isOpen ? current : [...current, folder]) : current.filter((f) => f !== folder);
+        return next === current ? s : { expanded: { ...s.expanded, [id]: next } };
+      });
+    },
+
+    setFilter(filter) {
+      set({ filter });
+    },
+
+    setPickerOpen(pickerOpen) {
+      set({ pickerOpen });
     },
 
     async openInBrowser() {
@@ -107,6 +198,7 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => {
         const summary = await api().openCollection(path);
         await load(summary);
         set({ activeCollection: summary.id });
+        void get().loadRecent();
       } catch (e) {
         set({ error: message(e) });
       }

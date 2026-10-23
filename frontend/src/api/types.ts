@@ -35,7 +35,47 @@ otherBodies: Array<BodyDto>, auth: AuthDto, varsPre: Array<KeyValueDto>, varsPos
  */
 asserts: Array<KeyValueDto>, settings: RequestSettingsDto, };
 
-export type CollectionSummaryDto = { id: string, name: string, root: string, };
+export type CollectionSummaryDto = { id: string, name: string, root: string, 
+/**
+ * `false` for a remembered collection that could not be reopened (moved, deleted).
+ */
+available: boolean, 
+/**
+ * Why an unavailable collection could not be opened.
+ */
+error: string | null, };
+
+export type RecentDto = { 
+/**
+ * Identifies the entry (`DELETE /api/recent?root=`).
+ */
+root: string, 
+/**
+ * For display and for reopening (`POST /api/collections`).
+ */
+path: string, name: string, 
+/**
+ * Unix milliseconds.
+ */
+lastOpened: number, 
+/**
+ * Currently open.
+ */
+open: boolean, };
+
+export type UiStateDto = { 
+/**
+ * Item IDs of the open request tabs, in order.
+ */
+tabs: Array<string>, active: string | null, 
+/**
+ * Item IDs of expanded folders.
+ */
+expanded: Array<string>, 
+/**
+ * Selected environment.
+ */
+env: string | null, };
 
 export type TreeNodeKind = "folder" | "request" | "invalid";
 

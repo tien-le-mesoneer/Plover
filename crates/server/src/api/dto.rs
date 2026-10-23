@@ -125,6 +125,61 @@ pub struct CollectionSummaryDto {
     pub id: String,
     pub name: String,
     pub root: String,
+    /// `false` for a remembered collection that could not be reopened (moved, deleted).
+    pub available: bool,
+    /// Why an unavailable collection could not be opened.
+    pub error: Option<String>,
+}
+
+/// A recently opened collection.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentDto {
+    /// Identifies the entry (`DELETE /api/recent?root=`).
+    pub root: String,
+    /// For display and for reopening (`POST /api/collections`).
+    pub path: String,
+    pub name: String,
+    /// Unix milliseconds.
+    #[ts(type = "number")]
+    pub last_opened: u64,
+    /// Currently open.
+    pub open: bool,
+}
+
+/// One collection's layout in the UI, remembered between starts. Unsaved drafts are not.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UiStateDto {
+    /// Item IDs of the open request tabs, in order.
+    pub tabs: Vec<String>,
+    pub active: Option<String>,
+    /// Item IDs of expanded folders.
+    pub expanded: Vec<String>,
+    /// Selected environment.
+    pub env: Option<String>,
+}
+
+impl From<plover_core::app_state::UiState> for UiStateDto {
+    fn from(u: plover_core::app_state::UiState) -> Self {
+        UiStateDto {
+            tabs: u.tabs,
+            active: u.active,
+            expanded: u.expanded,
+            env: u.env,
+        }
+    }
+}
+
+impl From<UiStateDto> for plover_core::app_state::UiState {
+    fn from(u: UiStateDto) -> Self {
+        plover_core::app_state::UiState {
+            tabs: u.tabs,
+            active: u.active,
+            expanded: u.expanded,
+            env: u.env,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -681,6 +736,8 @@ pub fn typescript_bindings() -> String {
         RequestSettingsDto::decl(&cfg),
         HttpRequestDto::decl(&cfg),
         CollectionSummaryDto::decl(&cfg),
+        RecentDto::decl(&cfg),
+        UiStateDto::decl(&cfg),
         TreeNodeKind::decl(&cfg),
         TreeNodeDto::decl(&cfg),
         EnvironmentDto::decl(&cfg),

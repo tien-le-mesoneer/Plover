@@ -44,7 +44,9 @@ const req = (name: string, method = "GET") => ({ name, method }) as HttpRequestD
 
 beforeEach(() => {
   useWorkspace.setState({
-    collections: [{ id: "c1", name: "ui-check", root: "/x" }],
+    collections: [{ id: "c1", name: "ui-check", root: "/x", available: true, error: null }],
+    expanded: {},
+    filter: "",
     trees: { c1: tree },
     environments: {},
     activeEnv: {},
@@ -280,11 +282,10 @@ describe("run panel (quick win)", () => {
 
 describe("empty state (quick win)", () => {
   it("offers a primary open action when nothing is open", () => {
-    useWorkspace.setState({ collections: [] });
-    const onOpen = vi.fn();
-    render(<EmptyState onOpen={onOpen} />);
-    fireEvent.click(screen.getByRole("button", { name: "Open collection…" }));
-    expect(onOpen).toHaveBeenCalled();
+    useWorkspace.setState({ collections: [], pickerOpen: false });
+    render(<EmptyState />);
+    fireEvent.click(screen.getByRole("button", { name: /^Open collection…/ }));
+    expect(useWorkspace.getState().pickerOpen).toBe(true);
   });
 });
 

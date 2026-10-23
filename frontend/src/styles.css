@@ -1,4 +1,5 @@
 :root {
+  --sidebar-w: clamp(220px, 24vw, 300px);
   --bg: #ffffff;
   --bg-2: #f6f7f9;
   --bg-3: #eceef2;
@@ -80,14 +81,49 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1
 
 .app { display: flex; flex-direction: column; height: 100%; }
 .topbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--bg-2); }
-.logo { font-weight: 700; }
+.logo { font-weight: 700; display: inline-flex; align-items: center; gap: 6px; letter-spacing: .01em; }
+.logo svg { color: var(--accent); }
+/* The brand column lines up with the sidebar below it; "+" sits on its right edge. */
+.brand { position: relative; display: flex; align-items: center; gap: 6px; width: calc(var(--sidebar-w) - 12px - 4px); flex: none; }
 .layout { display: flex; flex: 1; min-height: 0; }
-.sidebar { width: clamp(200px, 24vw, 280px); flex: none; overflow: auto; border-right: 1px solid var(--border); background: var(--bg-2); padding-bottom: 12px; }
+.sidebar { width: var(--sidebar-w); flex: none; overflow: auto; border-right: 1px solid var(--border); background: var(--bg-2); padding-bottom: 12px; }
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .empty { max-width: 520px; margin: 20vh auto; text-align: center; }
 
-.open-collection { display: flex; gap: 4px; padding: 8px; }
-.open-collection input { flex: 1; }
+.filter { display: flex; align-items: center; gap: 6px; margin: 8px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); color: var(--muted); }
+.filter:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
+.filter input { flex: 1; border: none; background: none; padding: 5px 0; outline: none; }
+.filter input::placeholder { font-style: normal; }
+.no-matches { margin: 2px 12px 8px; font-size: 12px; }
+
+.popover {
+  position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 40;
+  min-width: 300px; padding: 10px; display: flex; flex-direction: column; gap: 6px;
+  background: var(--bg); border: 1px solid var(--border-strong); border-radius: 8px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / .18);
+}
+.popover-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-top: 4px; }
+button.wide { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; }
+.path-form { display: flex; gap: 4px; }
+.path-form input { flex: 1; min-height: 30px; }
+.recent-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.recent-list li { display: flex; align-items: center; gap: 2px; border-radius: 6px; }
+.recent-list li:hover { background: var(--bg-2); }
+.recent-item {
+  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; text-align: left;
+  border: none; background: none; padding: 6px 8px; min-height: 32px;
+}
+.recent-name { font-weight: 600; white-space: nowrap; }
+.recent-path { color: var(--muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.recent-tag { font-size: 11px; color: var(--ok); border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; flex: none; }
+
+button.text { border: none; background: none; padding: 2px 6px; min-height: 24px; color: var(--fg); text-decoration: underline; text-underline-offset: 2px; }
+button.text:hover { background: var(--bg-3); }
+.collection.unavailable .collection-header { color: var(--muted); }
+.collection.unavailable .collection-header svg { color: var(--warn); flex: none; }
+.unavailable-reason { margin: 0 12px 8px 28px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.empty-state .actions { justify-content: flex-start; flex-wrap: wrap; }
+.empty-state .actions button { display: inline-flex; align-items: center; gap: 6px; }
 .collection-header { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-top: 1px solid var(--border); }
 .collection-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree { list-style: none; margin: 0; padding: 0; }

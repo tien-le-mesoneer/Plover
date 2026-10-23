@@ -88,6 +88,8 @@ fn setup(app: &AppHandle<Wry>, args: &[OsString]) {
     let cfg = ServerConfig {
         secrets: Some(plover_core::secrets::default_store()),
         native: Some(Arc::new(DesktopHost { app: app.clone() })),
+        // Collections opened in the app come back on the next launch.
+        state_dir: plover_core::app_state::default_dir(),
         ..ServerConfig::default()
     };
     let (server, running) = match lifecycle::launch(cfg) {

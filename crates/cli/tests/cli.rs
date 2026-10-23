@@ -164,62 +164,111 @@ async fn broken_file_exit_zero() {
     assert!(stdout.contains("1 passed, 0 failed, 1 skipped"), "{stdout}");
 }
 
-#[test]
-fn serve_prints_url_and_opens_collection() {
-    use std::io::{BufRead, BufReader, Read, Write};
-    use std::process::{Command as StdCommand, Stdio};
+/// A running `plv serve` with its own state dir (tests never touch the real one).
+struct Served {
+    child: std::process::Child,
+    addr: String,
+    token: String,
+}
 
-    let dir = collection("http://127.0.0.1:9");
-    write(dir.path(), "a.bru", &request("a", "/a"));
-    let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("plv"))
-        .args(["serve", "--no-open", "--port", "0"])
-        .arg(dir.path())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let mut line = String::new();
-    BufReader::new(child.stdout.take().unwrap())
-        .read_line(&mut line)
-        .unwrap();
-    let url = line
-        .trim()
-        .strip_prefix("plv listening on ")
-        .unwrap_or_else(|| panic!("unexpected first line: {line}"))
-        .to_owned();
-    let (base, token) = url.split_once("/#token=").unwrap();
-    let addr = base.strip_prefix("http://").unwrap();
-    assert!(addr.starts_with("127.0.0.1:"));
-    assert_eq!(token.len(), 64);
+impl Served {
+    fn start(state_dir: &Path, path: Option<&Path>) -> Served {
+        use std::io::{BufRead, BufReader};
+        use std::process::{Command as StdCommand, Stdio};
 
-    let get = |path: &str| {
-        let mut stream = std::net::TcpStream::connect(addr).unwrap();
+        let mut cmd = StdCommand::new(assert_cmd::cargo::cargo_bin("plv"));
+        cmd.args(["serve", "--no-open", "--port", "0"])
+            .env("PLOVER_STATE_DIR", state_dir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        if let Some(path) = path {
+            cmd.arg(path);
+        }
+        let mut child = cmd.spawn().unwrap();
+        let mut line = String::new();
+        BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        let url = line
+            .trim()
+            .strip_prefix("plv listening on ")
+            .unwrap_or_else(|| panic!("unexpected first line: {line}"))
+            .to_owned();
+        let (base, token) = url.split_once("/#token=").unwrap();
+        let addr = base.strip_prefix("http://").unwrap().to_owned();
+        Served {
+            child,
+            addr,
+            token: token.to_owned(),
+        }
+    }
+
+    fn get(&self, path: &str) -> String {
+        use std::io::{Read, Write};
+        let mut stream = std::net::TcpStream::connect(&self.addr).unwrap();
         write!(
             stream,
-            "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
+            "GET {path} HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer {}\r\nConnection: close\r\n\r\n",
+            self.addr, self.token
         )
         .unwrap();
         let mut response = String::new();
         stream.read_to_string(&mut response).unwrap();
         response
-    };
-    let collections = get("/api/collections");
-    assert!(collections.starts_with("HTTP/1.1 200"), "{collections}");
-    let body = collections.split("\r\n\r\n").nth(1).unwrap();
-    let list: serde_json::Value = serde_json::from_str(body).unwrap();
+    }
+
+    fn json(&self, path: &str) -> serde_json::Value {
+        let response = self.get(path);
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        serde_json::from_str(response.split("\r\n\r\n").nth(1).unwrap()).unwrap()
+    }
+}
+
+impl Drop for Served {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[test]
+fn serve_prints_url_and_opens_collection() {
+    let dir = collection("http://127.0.0.1:9");
+    write(dir.path(), "a.bru", &request("a", "/a"));
+    let state = tempfile::tempdir().unwrap();
+    let served = Served::start(state.path(), Some(dir.path()));
+    assert!(served.addr.starts_with("127.0.0.1:"));
+    assert_eq!(served.token.len(), 64);
+    let list = served.json("/api/collections");
     let id = list[0]["id"].as_str().unwrap();
-    let tree = get(&format!("/api/collections/{id}/tree"));
+    let tree = served.get(&format!("/api/collections/{id}/tree"));
     assert!(tree.starts_with("HTTP/1.1 200"), "{tree}");
     assert!(tree.contains(r#""id":"a.bru""#), "{tree}");
-    child.kill().unwrap();
-    child.wait().unwrap();
+}
+
+#[test]
+fn serve_reopens_collections_from_the_last_run() {
+    let dir = collection("http://127.0.0.1:9");
+    let state = tempfile::tempdir().unwrap();
+    let first = Served::start(state.path(), Some(dir.path()));
+    let id = first.json("/api/collections")[0]["id"].clone();
+    drop(first);
+    assert!(state.path().join("state.json").is_file());
+
+    let second = Served::start(state.path(), None);
+    let list = second.json("/api/collections");
+    assert_eq!(list.as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list[0]["id"], id);
+    assert_eq!(list[0]["available"], true);
 }
 
 #[test]
 fn serve_bad_collection_path_exits_2() {
     let dir = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
     bru_rs()
         .args(["serve", "--no-open", "--port", "0"])
+        .env("PLOVER_STATE_DIR", state.path())
         .arg(dir.path())
         .assert()
         .code(2);
@@ -229,42 +278,11 @@ fn serve_bad_collection_path_exits_2() {
 #[cfg(not(feature = "embed-ui"))]
 #[test]
 fn cli_only_build_serves_api_without_ui() {
-    use std::io::{BufRead, BufReader, Read, Write};
-    use std::process::{Command as StdCommand, Stdio};
-
-    let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("plv"))
-        .args(["serve", "--no-open", "--port", "0"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let mut line = String::new();
-    BufReader::new(child.stdout.take().unwrap())
-        .read_line(&mut line)
-        .unwrap();
-    let url = line
-        .trim()
-        .strip_prefix("plv listening on ")
-        .unwrap()
-        .to_owned();
-    let (base, token) = url.split_once("/#token=").unwrap();
-    let addr = base.strip_prefix("http://").unwrap().to_owned();
-    let get = |path: &str| {
-        let mut stream = std::net::TcpStream::connect(&addr).unwrap();
-        write!(
-            stream,
-            "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
-        )
-        .unwrap();
-        let mut response = String::new();
-        stream.read_to_string(&mut response).unwrap();
-        response
-    };
-    let index = get("/");
+    let state = tempfile::tempdir().unwrap();
+    let served = Served::start(state.path(), None);
+    let index = served.get("/");
     assert!(index.contains("CLI-only build"), "{index}");
-    assert!(get("/api/health").starts_with("HTTP/1.1 200"));
-    child.kill().unwrap();
-    child.wait().unwrap();
+    assert!(served.get("/api/health").starts_with("HTTP/1.1 200"));
 }
 
 #[test]

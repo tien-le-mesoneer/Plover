@@ -216,7 +216,7 @@ fn not_found_as(e: StoreError, item_id: &str) -> StoreError {
 
 /// Writes to a temp file in the same directory, then renames it over `path`,
 /// keeping the original file's permissions.
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<ContentHash, StoreError> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<ContentHash, StoreError> {
     let dir = path
         .parent()
         .ok_or_else(|| StoreError::NotFound(path.display().to_string()))?;

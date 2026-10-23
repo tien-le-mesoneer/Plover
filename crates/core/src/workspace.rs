@@ -5,8 +5,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 
+use crate::app_state::AppStateStore;
 use crate::collection::{Collection, LoadError};
 use crate::executor::{ExecError, ExecOptions, Session};
 use crate::secrets::{SecretBackend, SecretError, SecretKey, SecretVault};
@@ -24,10 +25,24 @@ impl CollectionId {
             path: root.to_path_buf(),
             source,
         })?;
-        Ok(CollectionId(
-            ContentHash::of(canonical.to_string_lossy().as_bytes()).0[..16].to_owned(),
-        ))
+        Ok(CollectionId::of_canonical(&canonical.to_string_lossy()))
     }
+
+    /// The ID for an already canonical root string, e.g. a remembered root that no
+    /// longer exists (it keeps the ID it had).
+    pub fn of_canonical(root: &str) -> CollectionId {
+        CollectionId(ContentHash::of(root.as_bytes()).0[..16].to_owned())
+    }
+}
+
+/// A remembered collection that could not be reopened (moved, deleted, unreadable).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unavailable {
+    pub id: CollectionId,
+    /// The canonical root it had.
+    pub root: String,
+    pub name: String,
+    pub reason: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -40,6 +55,8 @@ pub enum WorkspaceError {
 
 pub struct OpenCollection {
     pub id: CollectionId,
+    /// The canonical root at open time: the key for remembered state.
+    pub canonical_root: String,
     collection: RwLock<Arc<Collection>>,
     pub session: Session,
     runtime: Mutex<ValueMap>,
@@ -234,6 +251,9 @@ pub struct Workspace {
     /// Each entry keeps its open sequence number so `list` returns open order.
     collections: RwLock<HashMap<CollectionId, (u64, Arc<OpenCollection>)>>,
     next_seq: AtomicU64,
+    /// Where open/close is remembered between starts; `None` remembers nothing.
+    app_state: OnceLock<Arc<AppStateStore>>,
+    unavailable: Mutex<Vec<Unavailable>>,
 }
 
 impl Workspace {
@@ -248,7 +268,110 @@ impl Workspace {
             secrets,
             collections: RwLock::default(),
             next_seq: AtomicU64::new(0),
+            app_state: OnceLock::new(),
+            unavailable: Mutex::default(),
         }
+    }
+
+    /// Remembers opened and closed collections (and serves UI state) through `store`.
+    pub fn with_app_state(self, store: Arc<AppStateStore>) -> Workspace {
+        self.set_app_state(store);
+        self
+    }
+
+    /// Attaches the store once (e.g. after the workspace is shared); later calls are
+    /// ignored and return `false`.
+    pub fn set_app_state(&self, store: Arc<AppStateStore>) -> bool {
+        self.app_state.set(store).is_ok()
+    }
+
+    pub fn app_state(&self) -> Option<&Arc<AppStateStore>> {
+        self.app_state.get()
+    }
+
+    /// Reopens the remembered collections in their saved order. Those that fail to load
+    /// become [`Unavailable`] entries instead of errors.
+    pub fn restore(&self) {
+        let Some(store) = self.app_state.get() else {
+            return;
+        };
+        let saved = store.snapshot();
+        for entry in &saved.open {
+            if let Err(e) = self.open_inner(Path::new(&entry.root), false) {
+                let name = saved
+                    .recent
+                    .iter()
+                    .find(|r| r.root == entry.root)
+                    .map(|r| r.name.clone())
+                    .or_else(|| {
+                        Path::new(&entry.root)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                    })
+                    .unwrap_or_else(|| entry.root.clone());
+                let mut missing = self
+                    .unavailable
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                if !missing.iter().any(|u| u.root == entry.root) {
+                    missing.push(Unavailable {
+                        id: CollectionId::of_canonical(&entry.root),
+                        root: entry.root.clone(),
+                        name,
+                        reason: e.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Remembered collections that could not be reopened, in saved order.
+    pub fn unavailable(&self) -> Vec<Unavailable> {
+        self.unavailable
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Closes an open collection, or drops an unavailable one; either way it is not
+    /// reopened on the next start (it stays in the recent list). `false` if unknown.
+    pub fn close(&self, id: &CollectionId) -> bool {
+        let closed = self
+            .collections
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(id)
+            .map(|(_, open)| open.canonical_root.clone());
+        let root = closed.or_else(|| {
+            let mut missing = self
+                .unavailable
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            let index = missing.iter().position(|u| &u.id == id)?;
+            Some(missing.remove(index).root)
+        });
+        match root {
+            Some(root) => {
+                if let Some(store) = self.app_state.get() {
+                    store.record_close(&root);
+                }
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The canonical root of an open or unavailable collection.
+    pub fn canonical_root(&self, id: &CollectionId) -> Option<String> {
+        if let Some(open) = self.get(id) {
+            return Some(open.canonical_root.clone());
+        }
+        self.unavailable
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .find(|u| &u.id == id)
+            .map(|u| u.root.clone())
     }
 
     pub fn secret_backend(&self) -> SecretBackend {
@@ -258,14 +381,29 @@ impl Workspace {
     /// Opens the collection containing `path` (its root, a folder or a file).
     /// Opening an already open collection returns its existing ID.
     pub fn open(&self, path: &Path) -> Result<CollectionId, WorkspaceError> {
+        self.open_inner(path, true)
+    }
+
+    /// `remember: false` (restoring) keeps the recent list's order as it was.
+    fn open_inner(&self, path: &Path, remember: bool) -> Result<CollectionId, WorkspaceError> {
         let root = Collection::find_root(path)?;
-        let id = CollectionId::for_root(&root)?;
+        let canonical = root
+            .canonicalize()
+            .map_err(|source| LoadError::Io {
+                path: root.clone(),
+                source,
+            })?
+            .to_string_lossy()
+            .into_owned();
+        let id = CollectionId::of_canonical(&canonical);
         if self.get(&id).is_some() {
             return Ok(id);
         }
         let collection = Collection::load(&root)?;
+        let name = collection.config.name.clone();
         let open = Arc::new(OpenCollection {
             id: id.clone(),
+            canonical_root: canonical.clone(),
             collection: RwLock::new(Arc::new(collection)),
             session: Session::new(self.exec.clone())?,
             runtime: Mutex::default(),
@@ -278,6 +416,13 @@ impl Workspace {
             .unwrap_or_else(PoisonError::into_inner)
             .entry(id.clone())
             .or_insert_with(|| (self.next_seq.fetch_add(1, Ordering::Relaxed), open));
+        self.unavailable
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|u| u.root != canonical);
+        if remember && let Some(store) = self.app_state.get() {
+            store.record_open(&canonical, &name);
+        }
         Ok(id)
     }
 

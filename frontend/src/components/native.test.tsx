@@ -5,7 +5,7 @@ import { setApi } from "../api/instance";
 import type { CapabilitiesDto, EnvironmentDto } from "../api/types";
 import { useWorkspace } from "../store/workspace";
 import { EnvEditor } from "./EnvEditor";
-import { OpenCollectionDialog } from "./OpenCollectionDialog";
+import { SidebarHeader } from "./SidebarHeader";
 
 const web: CapabilitiesDto = { desktop: false, nativePicker: false, openExternal: false, secretBackend: "memory" };
 const desktop: CapabilitiesDto = { desktop: true, nativePicker: true, openExternal: true, secretBackend: "keychain" };
@@ -23,39 +23,45 @@ let openCollection: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   pickFolder = vi.fn();
-  openCollection = vi.fn(async () => ({ id: "c1", name: "c", root: "/picked" }));
+  openCollection = vi.fn(async () => ({ id: "c1", name: "c", root: "/picked", available: true, error: null }));
   setApi({
     pickFolder,
     openCollection,
+    recent: vi.fn(async () => []),
     tree: vi.fn(async () => ({ kind: "folder", id: "", name: "c", method: null, seq: null, error: null, children: [] })),
     environments: vi.fn(async () => []),
   } as unknown as ApiClient);
-  useWorkspace.setState({ collections: [], trees: {}, environments: { c1: [env] }, activeEnv: {}, capabilities: web });
+  useWorkspace.setState({ collections: [], trees: {}, environments: { c1: [env] }, activeEnv: {}, capabilities: web, recent: [], pickerOpen: false });
 });
 
 afterEach(cleanup);
 
 describe("native folder picker", () => {
+  const openPopover = () => fireEvent.click(screen.getByRole("button", { name: "Open collection" }));
+
   it("is hidden in web mode", () => {
-    render(<OpenCollectionDialog />);
-    expect(screen.queryByRole("button", { name: "Browse…" })).toBeNull();
+    render(<SidebarHeader />);
+    openPopover();
+    expect(screen.queryByRole("button", { name: "Browse for folder…" })).toBeNull();
   });
 
   it("opens the picked folder", async () => {
     useWorkspace.setState({ capabilities: desktop });
     pickFolder.mockResolvedValue("/picked");
-    render(<OpenCollectionDialog />);
-    fireEvent.click(screen.getByRole("button", { name: "Browse…" }));
+    render(<SidebarHeader />);
+    openPopover();
+    fireEvent.click(screen.getByRole("button", { name: "Browse for folder…" }));
     await vi.waitFor(() => expect(openCollection).toHaveBeenCalledWith("/picked"));
   });
 
   it("cancel keeps the typed path and opens nothing", async () => {
     useWorkspace.setState({ capabilities: desktop });
     pickFolder.mockResolvedValue(null);
-    render(<OpenCollectionDialog />);
+    render(<SidebarHeader />);
+    openPopover();
     const input = screen.getByRole("textbox", { name: "Collection path" });
     fireEvent.change(input, { target: { value: "/typed" } });
-    fireEvent.click(screen.getByRole("button", { name: "Browse…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Browse for folder…" }));
     await vi.waitFor(() => expect(pickFolder).toHaveBeenCalled());
     expect(openCollection).not.toHaveBeenCalled();
     expect((input as HTMLInputElement).value).toBe("/typed");

@@ -11,8 +11,10 @@ import { RequestEditor } from "./components/request/RequestEditor";
 import { RequestTabs } from "./components/RequestTabs";
 import { RunPanel } from "./components/RunPanel";
 import { Sidebar } from "./components/Sidebar";
+import { SidebarHeader } from "./components/SidebarHeader";
 import { useRuns } from "./store/runs";
 import { useTabs } from "./store/tabs";
+import { restoreUiState, startUiPersistence } from "./store/uiState";
 import { useWorkspace } from "./store/workspace";
 
 export default function App({ hasToken }: { hasToken: boolean }) {
@@ -28,7 +30,16 @@ export default function App({ hasToken }: { hasToken: boolean }) {
 
   useEffect(() => {
     if (!hasToken) return;
-    void init().then(() => api().clientReady().catch(() => undefined));
+    let stopPersisting: (() => void) | undefined;
+    let cancelled = false;
+    void init()
+      .then(restoreUiState)
+      .then(() => {
+        // Save layout changes only after the remembered layout is back, so a restart
+        // never overwrites it with an empty one.
+        if (!cancelled) stopPersisting = startUiPersistence();
+        return api().clientReady().catch(() => undefined);
+      });
     const events = api().subscribeEvents((event) =>
       handleServerEvent(event, {
         anyDirty: () => {
@@ -40,7 +51,11 @@ export default function App({ hasToken }: { hasToken: boolean }) {
         openedElsewhere: (id) => useWorkspace.getState().openedElsewhere(id),
       }),
     );
-    return () => events.close();
+    return () => {
+      cancelled = true;
+      stopPersisting?.();
+      events.close();
+    };
   }, [hasToken, init]);
 
   // Closing or reloading the page (browser tab, window) asks first when edits are unsaved.
@@ -85,18 +100,6 @@ export default function App({ hasToken }: { hasToken: boolean }) {
     };
   }, [active, save, send]);
 
-  const focusOpen = () => {
-    if (capabilities?.nativePicker) {
-      void api()
-        .pickFolder()
-        .then((picked) => {
-          if (picked) void useWorkspace.getState().open(picked);
-        });
-    } else {
-      document.querySelector<HTMLInputElement>('input[aria-label="Collection path"]')?.focus();
-    }
-  };
-
   if (!hasToken) {
     return (
       <main className="empty">
@@ -109,7 +112,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
   return (
     <div className="app">
       <header className="topbar">
-        <span className="logo">Plover</span>
+        <SidebarHeader />
         <span className="spacer" />
         {capabilities?.desktop && (
           <button type="button" onClick={() => void openInBrowser()}>
@@ -152,7 +155,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
         />
         <main className="main">
           <RequestTabs />
-          {tab ? <RequestEditor key={tab.key} tab={tab} /> : <EmptyState onOpen={focusOpen} />}
+          {tab ? <RequestEditor key={tab.key} tab={tab} /> : <EmptyState />}
           {showRun && <RunPanel onClose={() => setShowRun(false)} />}
         </main>
       </div>

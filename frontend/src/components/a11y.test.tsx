@@ -21,7 +21,9 @@ const request = { name: "list users", method: "GET" } as HttpRequestDto;
 
 beforeEach(() => {
   useWorkspace.setState({
-    collections: [{ id: "c1", name: "ui-check", root: "/x" }],
+    collections: [{ id: "c1", name: "ui-check", root: "/x", available: true, error: null }],
+    expanded: {},
+    filter: "",
     trees: { c1: tree },
     environments: {},
     activeEnv: {},
