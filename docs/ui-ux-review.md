@@ -260,3 +260,60 @@ button.icon { min-width: 24px; min-height: 24px; display: inline-grid; place-ite
   - The env editor explains where secrets live, with per-secret keychain or memory badges (`shots/10`).
 - **Already accessible:** icon buttons have `aria-label`s, banners use `role="alert"`/`"status"`, and Enter in the URL field sends.
 - **Readable error text:** the script error names the phase, scope and line (`shots/12`). Only a jump-to-line action is missing (A10).
+
+---
+
+## After (2026-10-23)
+
+**Tóm tắt**
+1. Đã sửa cả 6 lỗi nặng (A1–A6), lỗi trung bình A9, cùng các quick win ở mục B. Thêm phần sửa A8 (viền ô nhập), A10 (nút "Open script") và A15 (tablist có tên đọc rõ).
+2. Ở cửa sổ 960×700 không còn cuộn ngang (`scrollWidth` 960/960), và hai pane xếp dọc khi cửa sổ hẹp hơn 1100 px.
+3. Dùng được hoàn toàn bằng bàn phím: Tab vào cây collection, phím mũi tên để đi, Enter để mở, ⌘/Ctrl+Enter để gửi. Modal giữ focus bên trong, đóng bằng Esc và trả focus về chỗ cũ.
+4. Độ tương phản: nút Send ở light mode đạt 5.02:1, viền ô nhập 3.30:1 (light) và 3.84:1 (dark). Editor đổi theme ngay khi hệ thống đổi sáng/tối.
+5. Mục C (tính năng lớn, ngang Bruno/Postman) để làm sau.
+
+Commits: `872a10c` (core: collection order), `492c56e` (frontend). Verified with the release `plv` on the same scratch collections and localhost mocks, using agent-browser at 1440×900 and 960×700 in light and dark, plus a keyboard-only walkthrough. After-shots are in `/private/tmp/claude-501/-Users-tienle-projects-rea/1bb5dcfd-43a5-447b-a541-d24ed1b9cd89/scratchpad/uiux/after/` (referred to as `after/`). Gate: 284 Rust and 81 frontend tests pass; clippy, typecheck, lint and `check:no-cdn` are clean; `check:console` reports no page errors.
+
+| Item | Status | Evidence |
+|---|---|---|
+| A1 layout at narrow widths | Fixed (`492c56e`) | At 960×700, `scrollWidth` is 960/960 (was 1018). Below 1100 px the panes stack, sub-tab strips scroll, the response meta wraps, and the sidebar is `clamp(200px, 24vw, 280px)`. Before: `shots/13-narrow-960.png`. After: `after/13-narrow-960-light.png`, `after/13-narrow-960-dark.png`. |
+| A2 keyboard access | Fixed | The sidebar is a `role="tree"` per collection with one tab stop. ↑↓ move, →← expand, collapse or go to child/parent, Enter opens or toggles, Ctrl/Cmd+Enter runs a folder, and a visible ▶ appears on hover/focus. Request tabs use a roving tab stop: ←→ switch, Delete closes. The live walk reached the tree by Tab, opened `login` and sent it with ⌘↵ without the mouse (`after/02-login-sent-light-1440.png`). |
+| A3 modal focus | Fixed | A shared `Modal` with `aria-modal`. Focus moves to the first control; after 12 presses of Tab it was still inside the dialog. Escape closes and focus returns to "Edit". The environment editor confirms before discarding edits on Escape, a backdrop click or Cancel (`after/09-env-editor-dark-1440.png`). |
+| A4 Monaco theme | Fixed | `plover-light` and `plover-dark` themes use the app tokens, and one `matchMedia` listener calls `setTheme`. A live toggle read the editor background as `#ffffff`, then `rgb(27,29,34)`, which is `--bg` (`after/03-body-dark-live-switch-960.png`). |
+| A5 Send contrast | Fixed | `--accent: #b45309`: white on it is **5.02:1** (was 3.19). The underline and unsaved-changes dot are also 5.02:1. Dark mode is unchanged at 7.85:1. |
+| A6 key/value labels | Fixed | Name/Value column headers; every input is labelled ("Name of accept", "New name"); styled placeholders. The Assert tab uses Assertion/Expected headers and an example hint instead of fake placeholder rows. |
+| A7 icon targets | Fixed | Icon buttons are at least 24×24 and use inline SVG icons (`components/icons.tsx`) instead of font glyphs. |
+| A8 control borders | Fixed | `--border-strong` is **3.30:1 / 3.08:1** in light (on bg / bg-2) and **3.84:1 / 3.50:1** in dark. `--border` stays for dividers. |
+| A9 outcome signal | Fixed | A chip before the status ("✗ Script error", "✗ 1 of 1 checks failed", "✓ 2 checks passed"); the status shows "200 OK"; the Tests tab opens automatically when checks fail. |
+| A10 script error action | Fixed | The banner has an "Open script" button that switches to the Script section. Revealing the exact line is still open. |
+| A15 tab semantics | Fixed | Request and response sections are `role="tablist"` with arrow keys and full names ("Tests, 0 of 1 passed"). |
+| B1 shortcuts | Fixed | ⌘/Ctrl+Enter sends from anywhere, including inside Monaco (`addCommand`) and on a focused tree request. ⌘/Ctrl+W closes the active tab in the desktop app; browsers keep ⌘W for closing the window, so there it is not delivered to the page. |
+| B2 collection order | Fixed (`872a10c`) | `Workspace::list` returns open order; covered by the test `list_keeps_open_order`. |
+| B3–B10 | Fixed | 24 px icons, Name/Value headers, modal Escape and autofocus, reason phrase, Copy (body or headers, "Copied" for 1.5 s), an empty state with a primary "Open collection…" (`after/01-empty-no-collection-light-1440.png`), live Monaco theme, run-panel column headers with failures in `--err` (`after/08-run-panel-dark-1440.png`). |
+
+**Contrast after** (WCAG 2.x formula):
+
+| Pair | Ratio |
+|---|---|
+| Light: white on `--accent` (Send) | 5.02 |
+| Light: `--muted` on `--bg` | 5.78 |
+| Light: `--muted` on `--bg-3` | 4.97 |
+| Light: `--placeholder` | 4.83 |
+| Light: focus ring | 5.17 |
+| Light: error chip | 6.47 |
+| Light: OK chip | 5.02 |
+| Dark: Send | 7.85 |
+| Dark: `--placeholder` | 5.38 |
+| Dark: focus ring | 6.63 |
+| Dark: error chip | 6.10 |
+| Dark: OK chip | 9.68 |
+| Dark: `--muted` | 6.64 |
+
+**Still open:**
+- A11: the environment selector doesn't name its collection.
+- A12: no Cancel and no dimmed previous response while sending.
+- A13: tabs and expanded folders aren't persisted across reloads; the collection order is fixed.
+- A14: the type scale is only partly done (badges are 11 px).
+- A10: jumping to the exact script line.
+- All of section C (request search, response tools, resizable panes, history, run-row linking, recent collections, command palette, tree context menu, copy as cURL, bundled fonts and a theme toggle).
+- The Modal and the key handling were verified in Chromium; WKWebView (the desktop app) has not been checked visually.
