@@ -196,6 +196,8 @@ async fn serve(args: ServeArgs) -> Result<ExitCode, String> {
             port: args.port,
             dev_origins: args.dev_origins,
             exec: ExecOptions::default(),
+            secrets: Some(plover_core::secrets::default_store()),
+            native: None,
         },
         shutdown,
     )

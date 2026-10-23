@@ -610,6 +610,26 @@ fn body_from_dto(body: BodyDto) -> Body {
 }
 
 /// All DTO declarations as one TypeScript module.
+/// What this server can do beyond the web API (`GET /api/capabilities`).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilitiesDto {
+    /// Running inside the desktop app.
+    pub desktop: bool,
+    pub native_picker: bool,
+    pub open_external: bool,
+    /// Where secrets are kept: `"keychain"` or `"memory"`.
+    #[ts(type = "\"keychain\" | \"memory\"")]
+    pub secret_backend: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PickedFolderDto {
+    /// `null` when the user cancelled.
+    pub path: Option<String>,
+}
+
 pub fn typescript_bindings() -> String {
     use ts_rs::Config;
     let cfg = Config::default();
@@ -645,6 +665,8 @@ pub fn typescript_bindings() -> String {
         RunReportDto::decl(&cfg),
         super::runs::RunEventDto::decl(&cfg),
         super::runs::ClientMessage::decl(&cfg),
+        CapabilitiesDto::decl(&cfg),
+        PickedFolderDto::decl(&cfg),
     ];
     let mut out = String::from(
         "// Generated from crates/server/src/api by ts-rs. Do not edit.\n\

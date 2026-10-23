@@ -4,6 +4,7 @@ mod collections;
 pub mod dto;
 mod environments;
 mod extract;
+mod native;
 mod requests;
 pub use requests::MAX_INLINE_BODY;
 pub mod runs;
@@ -47,6 +48,9 @@ pub fn routes() -> Router<AppState> {
             "/collections/{id}/environments/{name}/secrets",
             put(environments::set_secrets),
         )
+        .route("/capabilities", get(native::capabilities))
+        .route("/native/pick-folder", post(native::pick_folder))
+        .route("/native/open-browser", post(native::open_browser))
         .route("/ws", get(runs::upgrade))
         .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY))
 }

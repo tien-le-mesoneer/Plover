@@ -163,3 +163,19 @@ export type RunReportDto = { passed: number, failed: number, skipped: number, te
 export type RunEventDto = { "type": "started", runId: string, item: string, name: string, method: string, url: string, } | { "type": "passed", runId: string, item: string, status: number, elapsedMs: number, size: number, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, } | { "type": "failed", runId: string, item: string, error: string, status: number | null, elapsedMs: number | null, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, scriptError: ScriptErrorDto | null, } | { "type": "skipped", runId: string, item: string, reason: string, } | { "type": "finished", runId: string, report: RunReportDto, } | { "type": "cancelled", runId: string, } | { "type": "error", runId: string | null, error: string, message: string, };
 
 export type ClientMessage = { "type": "start", runId: string, collectionId: string, item: string, env: string | null, } | { "type": "cancel", runId: string, };
+
+export type CapabilitiesDto = { 
+/**
+ * Running inside the desktop app.
+ */
+desktop: boolean, nativePicker: boolean, openExternal: boolean, 
+/**
+ * Where secrets are kept: `"keychain"` or `"memory"`.
+ */
+secretBackend: "keychain" | "memory", };
+
+export type PickedFolderDto = { 
+/**
+ * `null` when the user cancelled.
+ */
+path: string | null, };

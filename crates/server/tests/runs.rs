@@ -21,6 +21,7 @@ async fn server() -> RunningServer {
             port: 0,
             dev_origins: Vec::new(),
             exec: ExecOptions::default(),
+            ..ServerConfig::default()
         },
         std::future::pending(),
     )
