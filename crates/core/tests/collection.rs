@@ -27,11 +27,14 @@ fn names(c: &Collection, target: &Path) -> Vec<String> {
     c.requests_under(target)
         .iter()
         .map(|r| {
+            // '/'-joined components, so the expectations hold on Windows too.
             r.path
                 .strip_prefix(&c.root)
                 .unwrap()
-                .to_string_lossy()
-                .into_owned()
+                .components()
+                .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/")
         })
         .collect()
 }

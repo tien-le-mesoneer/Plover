@@ -1,0 +1,15 @@
+# Check out text as LF everywhere (also Windows with core.autocrlf=true): .bru
+# round-trip tests, generated bundles (crates/core/js/dist) and TS bindings compare
+# exact bytes. CRLF handling is tested with inline strings, not fixture files.
+* text=auto eol=lf
+
+*.png binary
+*.icns binary
+*.ico binary
+*.jpg binary
+*.gif binary
+*.pdf binary
+*.zip binary
+*.wasm binary
+*.key -text
+*.pub -text
