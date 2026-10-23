@@ -121,3 +121,9 @@ python3 scripts/phase3-mock.py 18090 &
 plv run fixtures/phase3-chain --env local      # 3 passed · Tests 5/5 · Asserts 2/2
 ```
 
+## Remembered collections
+
+`plv serve` and the desktop app keep open collections, the recent list and per-collection
+layout in `state.json` (see the README for its location). Set `PLOVER_STATE_DIR` to a
+temp directory when you start them from tests or scripts so they don't touch your real
+list; the CLI tests, `npm run check:console` and the CI smoke step already do.

@@ -4,6 +4,7 @@ import { useTabs, tabKey } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
 import { AlertIcon, ChevronIcon, CloseIcon, PlayIcon, RefreshIcon, SearchIcon } from "./icons";
 import { Modal } from "./Modal";
+import { shortPath } from "./OpenCollectionPopover";
 
 interface Props {
   onRun?: (collectionId: string, item: string, label: string) => void;
@@ -128,7 +129,9 @@ export function Sidebar({ onRun }: Props) {
                 Remove
               </button>
             </div>
-            <p className="unavailable-reason">{c.error ?? "Not available"}</p>
+            <p className="unavailable-reason" title={c.error ?? undefined}>
+              Not found at <span className="mono">{shortPath(c.root)}</span> — moved or deleted?
+            </p>
           </div>
         ),
       )}

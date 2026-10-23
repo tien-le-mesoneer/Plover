@@ -58,15 +58,27 @@ plv run coll --env local --use-keychain             # read secrets saved by the 
 plv run coll --script-timeout-ms 10000 --script-memory-mb 64
 ```
 
-Web UI shortcuts: `⌘/Ctrl+Enter` send, `⌘/Ctrl+S` save, arrow keys in the sidebar
-tree and tab strips, `Esc` closes dialogs. `⌘/Ctrl+W` closes a request tab in the
-desktop app (browsers keep that shortcut for closing the window).
+In the web UI and the desktop app, **+** next to the Plover name (`⌘/Ctrl+O`) opens a
+collection: paste a path, pick a recent one, or browse (desktop). **Collections are
+remembered**: the next `plv serve` or app launch reopens them with their open tabs,
+expanded folders and selected environment (unsaved edits are not kept). A collection
+whose folder moved or was deleted shows as unavailable with Retry and Remove; × on a
+collection closes it (it stays under Recent). This state lives in `state.json` in
+`~/Library/Application Support/Plover` (macOS), `%APPDATA%\Plover` (Windows) or
+`~/.config/plover` (Linux), or in `PLOVER_STATE_DIR`; it holds paths and layout only,
+never secrets. `plv run` does not use it.
+
+Shortcuts: `⌘/Ctrl+O` open collection, `⌘/Ctrl+P` filter requests (`Esc` clears),
+`⌘/Ctrl+Enter` send, `⌘/Ctrl+S` save, arrow keys in the sidebar tree and tab strips,
+`Esc` closes dialogs. `⌘/Ctrl+W` closes a request tab in the desktop app (browsers
+keep that shortcut for closing the window).
 
 ## Desktop app
 
 The desktop app starts the same local server and UI inside a native window.
 
-- **File → Open Collection…** (`⌘/Ctrl+O`) uses the native folder picker.
+- **File → Open Collection…** (`⌘/Ctrl+O`) and **Browse for folder…** under **+**
+  use the native folder picker. Opened collections come back on the next launch.
 - **Secrets** (`vars:secret` values) are stored in the OS keychain. If the
   keychain is unavailable or access is denied, that secret stays in memory and
   the UI says so. Secrets are never written to `.bru` files.

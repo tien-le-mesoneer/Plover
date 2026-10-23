@@ -121,7 +121,8 @@ button.text { border: none; background: none; padding: 2px 6px; min-height: 24px
 button.text:hover { background: var(--bg-3); }
 .collection.unavailable .collection-header { color: var(--muted); }
 .collection.unavailable .collection-header svg { color: var(--warn); flex: none; }
-.unavailable-reason { margin: 0 12px 8px 28px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.unavailable-reason { margin: 0 12px 8px 28px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; cursor: help; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .empty-state .actions { justify-content: flex-start; flex-wrap: wrap; }
 .empty-state .actions button { display: inline-flex; align-items: center; gap: 6px; }
 .collection-header { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-top: 1px solid var(--border); }
