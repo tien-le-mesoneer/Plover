@@ -182,7 +182,16 @@ async fn connection_refused_is_transport_error() {
         .send(&req(Method::Get, "http://127.0.0.1:9".into()))
         .await
         .unwrap_err();
-    assert!(matches!(err, ExecError::Transport(_)), "{err}");
+    assert!(
+        matches!(
+            err,
+            ExecError::Transport {
+                kind: plover_core::executor::TransportKind::ConnectionRefused,
+                ..
+            }
+        ),
+        "{err:?}"
+    );
 }
 
 async fn received_headers(server: &MockServer, name: &str) -> Vec<String> {

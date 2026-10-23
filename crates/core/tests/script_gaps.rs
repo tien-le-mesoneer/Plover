@@ -193,8 +193,12 @@ test('nanoid', () => {
 });
 test('path', () => {
   const path = require('path');
-  expect(path.resolve('/a/b', '../c', './d')).to.equal('/a/c/d');
-  expect(path.resolve('lib/x.js')).to.equal(bru.cwd() + '/lib/x.js');
+  // Windows collections get path.win32 results, like Node on Windows.
+  const win = /^[A-Za-z]:[\\/]/.test(bru.cwd());
+  const sep = win ? '\\' : '/';
+  const root = win ? bru.cwd().slice(0, 2) : '';
+  expect(path.resolve('/a/b', '../c', './d')).to.equal(root + sep + ['a', 'c', 'd'].join(sep));
+  expect(path.resolve('lib/x.js')).to.equal(bru.cwd() + sep + 'lib' + sep + 'x.js');
   expect(Object.keys(path)).to.eql(['resolve']);
 });
 test('other modules still forbidden', () => {

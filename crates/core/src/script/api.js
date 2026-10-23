@@ -299,23 +299,36 @@
 
   // ---- path: Bruno safe mode offers only resolve (shims/lib/path.js); relative paths start
   // at the collection root (Bruno: the host process's working directory).
+  // A collection on a drive letter means Windows, where Node's path is path.win32: `\`
+  // separators, drive-qualified results, and `/x` rooted on the collection's drive.
+  // UNC roots (\\server\share) are not handled.
+  const drive = /^[A-Za-z]:[\\/]/.test(info.collectionPath || '') ? info.collectionPath.slice(0, 2) : null;
+  const sep = drive ? '\\' : '/';
+  const splitter = drive ? /[\\/]/ : /\//;
   const resolvePath = (...segments) => {
     let resolved = '';
     let absolute = false;
+    let root = drive;
     for (let i = segments.length - 1; i >= -1 && !absolute; i--) {
       const part = i >= 0 ? segments[i] : info.collectionPath || '/';
       if (typeof part !== 'string') throw new TypeError('The "paths[' + i + ']" argument must be of type string');
       if (!part) continue;
-      resolved = part + '/' + resolved;
-      absolute = part.charAt(0) === '/';
+      if (drive && /^[A-Za-z]:[\\/]/.test(part)) {
+        root = part.slice(0, 2);
+        resolved = part.slice(2) + sep + resolved;
+        absolute = true;
+      } else {
+        resolved = part + sep + resolved;
+        absolute = splitter.test(part.charAt(0));
+      }
     }
     const out = [];
-    for (const piece of resolved.split('/')) {
+    for (const piece of resolved.split(splitter)) {
       if (!piece || piece === '.') continue;
       if (piece === '..') out.pop();
       else out.push(piece);
     }
-    return '/' + out.join('/');
+    return (drive ? root : '') + sep + out.join(sep);
   };
   plv.addModule('path', () => ({ resolve: resolvePath }), 'path');
 

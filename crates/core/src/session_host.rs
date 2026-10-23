@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use url::Url;
 
-use crate::executor::{ExecError, Session};
+use crate::executor::{ExecError, Session, TransportKind};
 use crate::request::{Method, RequestSettings};
 use crate::resolve::{ResolvedBody, ResolvedRequest};
 use crate::script::{HostFuture, ScriptHost};
@@ -89,9 +89,12 @@ struct HttpBody {
 fn error_code(e: &ExecError) -> &'static str {
     match e {
         ExecError::Timeout => "ECONNABORTED",
-        ExecError::Transport(m) if m.contains("onnection refused") => "ECONNREFUSED",
-        ExecError::Transport(m) if m.contains("dns error") => "ENOTFOUND",
-        ExecError::Transport(m) if m.contains("builder error") => "ERR_INVALID_URL",
+        ExecError::Transport { kind, .. } => match kind {
+            TransportKind::ConnectionRefused => "ECONNREFUSED",
+            TransportKind::Dns => "ENOTFOUND",
+            TransportKind::InvalidUrl => "ERR_INVALID_URL",
+            TransportKind::Other => "ERR_NETWORK",
+        },
         ExecError::InvalidMethod(_) | ExecError::InvalidHeader(_) => "ERR_BAD_OPTION_VALUE",
         _ => "ERR_NETWORK",
     }

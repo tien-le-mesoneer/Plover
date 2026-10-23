@@ -66,16 +66,26 @@ fn item_path_rejects_escape() {
     fs::create_dir_all(&outside).unwrap();
     fs::write(outside.join("x.bru"), "get {\n  url: x\n}\n").unwrap();
     #[cfg(unix)]
-    std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
-    for id in [
+    let linked = std::os::unix::fs::symlink(&outside, root.join("link")).is_ok();
+    // Needs admin or Developer Mode (CI runners have it); without a real link the case is
+    // skipped, since a missing `link/` would just be an ordinary path inside the root.
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_dir(&outside, root.join("link")).is_ok();
+    let mut ids = vec![
         "../x.bru",
         "/etc/passwd",
         "a/../../x.bru",
         "",
         "a//b.bru",
         "./ping.bru",
-        "link/x.bru",
-    ] {
+    ];
+    if linked {
+        ids.push("link/x.bru");
+    }
+    if cfg!(windows) {
+        ids.push("C:/Windows/x.bru");
+    }
+    for id in ids {
         let err = store::resolve_item_path(&root, id).unwrap_err();
         assert!(
             matches!(err, StoreError::OutsideRoot(_)),

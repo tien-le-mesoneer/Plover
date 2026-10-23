@@ -445,10 +445,13 @@ impl Worker {
             error = self.drive(&context, deadline, &segments);
         }
 
-        // Collect what the script produced, even after a failure. Give the collector a
-        // fresh, short deadline so a timed-out script can still report its partial state.
-        self.deadline
-            .set(Some(Instant::now() + Duration::from_secs(2)));
+        // Collect what the script produced, even after a failure. Collecting counts toward the
+        // script's own budget (large results can take seconds on a slow machine), with at least
+        // a short grace period so a timed-out script can still report its partial state.
+        self.deadline.set(Some(std::cmp::max(
+            deadline,
+            Instant::now() + Duration::from_secs(2),
+        )));
         let collected: Result<Vec<String>, String> = context.with(|ctx| {
             let f: Function = ctx
                 .globals()

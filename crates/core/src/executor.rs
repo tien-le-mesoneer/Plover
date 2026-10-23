@@ -69,8 +69,21 @@ pub enum ExecError {
     },
     #[error("cannot build HTTP client: {0}")]
     Client(String),
-    #[error("{0}")]
-    Transport(String),
+    #[error("{message}")]
+    Transport {
+        kind: TransportKind,
+        message: String,
+    },
+}
+
+/// What kind of transport failure happened, classified once from the error chain so
+/// consumers never parse OS-specific message text (Windows and Unix word them differently).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransportKind {
+    ConnectionRefused,
+    Dns,
+    InvalidUrl,
+    Other,
 }
 
 /// Shared state for one run: options, the cookie jar, and clients per redirect policy.
@@ -387,11 +400,26 @@ fn transport_error(e: reqwest::Error) -> ExecError {
     if e.is_timeout() {
         return ExecError::Timeout;
     }
+    let mut kind = if e.is_builder() {
+        TransportKind::InvalidUrl
+    } else {
+        TransportKind::Other
+    };
     let mut message = e.to_string();
     let mut source = std::error::Error::source(&e);
     while let Some(s) = source {
+        if let Some(io) = s.downcast_ref::<std::io::Error>()
+            && io.kind() == std::io::ErrorKind::ConnectionRefused
+        {
+            kind = TransportKind::ConnectionRefused;
+        }
         message = format!("{message}: {s}");
         source = s.source();
     }
-    ExecError::Transport(message)
+    // hyper-util names resolver failures "dns error" on every platform; the resolver's own
+    // io::Error kind varies by OS, so this prefix is the stable signal.
+    if kind == TransportKind::Other && message.contains("dns error") {
+        kind = TransportKind::Dns;
+    }
+    ExecError::Transport { kind, message }
 }
