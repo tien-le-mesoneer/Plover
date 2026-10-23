@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use http_body_util::BodyExt;
 use plover_core::executor::ExecOptions;
 use plover_core::workspace::Workspace;
 use plover_server::{AllowList, AppState, ServerConfig, router, start};
-use http_body_util::BodyExt;
 use tower::ServiceExt;
 
 const PORT: u16 = 4321;

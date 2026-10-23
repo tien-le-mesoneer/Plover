@@ -173,7 +173,8 @@ async fn send_one_uses_draft_and_secrets() {
     let ws = Workspace::new(ExecOptions::default());
     let id = ws.open(root).unwrap();
     let open = ws.get(&id).unwrap();
-    open.update_secrets("local", [("host".to_owned(), Some(server.uri()))].into());
+    open.update_secrets("local", [("host".to_owned(), Some(server.uri()))].into())
+        .unwrap();
     let mut draft = store::read_request(&open.root(), "r.bru").unwrap().value;
     draft.url = "{{host}}/draft".into();
     let res = send_one(
@@ -275,8 +276,10 @@ fn secrets_merge_and_clear() {
     let (_dir, root) = fixture_copy();
     let ws = Workspace::new(ExecOptions::default());
     let open = ws.get(&ws.open(&root).unwrap()).unwrap();
-    open.update_secrets("Local", [("a".to_owned(), Some("1".to_owned()))].into());
-    open.update_secrets("Local", [("b".to_owned(), Some("2".to_owned()))].into());
+    open.update_secrets("Local", [("a".to_owned(), Some("1".to_owned()))].into())
+        .unwrap();
+    open.update_secrets("Local", [("b".to_owned(), Some("2".to_owned()))].into())
+        .unwrap();
     assert_eq!(
         open.secrets("Local"),
         [
@@ -286,7 +289,8 @@ fn secrets_merge_and_clear() {
         .into()
     );
     assert_eq!(open.secret_names_set("Local"), ["a", "b"]);
-    open.update_secrets("Local", [("a".to_owned(), None)].into());
+    open.update_secrets("Local", [("a".to_owned(), None)].into())
+        .unwrap();
     assert_eq!(open.secret_names_set("Local"), ["b"]);
     assert!(open.secret_names_set("Prod").is_empty());
 }

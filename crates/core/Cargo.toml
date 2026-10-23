@@ -12,6 +12,7 @@ base64 = "0.23.1"
 cookie_store = { version = "0.22.1", default-features = false }
 getrandom = "0.3"
 jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs", "use_pem"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 pest = "2.9.4"
 pest_derive = "2.9.4"
 regex = "1"

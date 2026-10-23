@@ -1,19 +1,33 @@
 //! Collections opened by a long-lived process (the server): each keeps its
-//! loaded tree, one HTTP session (cookie jar), runtime variables and the
-//! secret environment values entered for it, which are never written to disk.
+//! loaded tree, one HTTP session (cookie jar) and runtime variables. Secret
+//! environment values live in a `SecretStore` (OS keychain or memory), never on disk.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use crate::collection::{Collection, LoadError};
 use crate::executor::{ExecError, ExecOptions, Session};
+use crate::secrets::{MemoryStore, SecretBackend, SecretError, SecretKey, SecretStore};
 use crate::store::ContentHash;
 use crate::vars::{ValueMap, VarMap};
 
 /// First 16 hex characters of the SHA-256 of the canonical collection root.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CollectionId(pub String);
+
+impl CollectionId {
+    /// The ID of the collection whose root is `root` (also the keychain account prefix).
+    pub fn for_root(root: &Path) -> Result<CollectionId, LoadError> {
+        let canonical = root.canonicalize().map_err(|source| LoadError::Io {
+            path: root.to_path_buf(),
+            source,
+        })?;
+        Ok(CollectionId(
+            ContentHash::of(canonical.to_string_lossy().as_bytes()).0[..16].to_owned(),
+        ))
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceError {
@@ -28,7 +42,9 @@ pub struct OpenCollection {
     collection: RwLock<Arc<Collection>>,
     pub session: Session,
     runtime: Mutex<ValueMap>,
-    secrets: Mutex<BTreeMap<String, VarMap>>,
+    secrets: Arc<dyn SecretStore>,
+    /// Secret names set in this session per environment, besides those the env file declares.
+    secret_names: Mutex<BTreeMap<String, BTreeSet<String>>>,
     /// Environment variables scripts set (`bru.setEnvVar`), per environment, in memory only.
     env_changes: Mutex<BTreeMap<String, ValueMap>>,
 }
@@ -109,31 +125,80 @@ impl OpenCollection {
         }
     }
 
-    pub fn secrets(&self, env: &str) -> VarMap {
-        self.secrets
+    fn secret_key(&self, env: &str, name: &str) -> SecretKey {
+        SecretKey {
+            collection: self.id.clone(),
+            env: env.to_owned(),
+            name: name.to_owned(),
+        }
+    }
+
+    /// Secret names for `env`: those its file declares (`vars:secret`) plus any set this session.
+    fn known_secret_names(&self, env: &str) -> BTreeSet<String> {
+        let mut names: BTreeSet<String> = self
+            .collection()
+            .environment(env)
+            .map(|e| e.file.secrets.iter().map(|s| s.name.clone()).collect())
+            .unwrap_or_default();
+        if let Some(extra) = self
+            .secret_names
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(env)
-            .cloned()
-            .unwrap_or_default()
+        {
+            names.extend(extra.iter().cloned());
+        }
+        names
+    }
+
+    /// The stored secret values for `env`. A store error skips that value (logged without it).
+    pub fn secrets(&self, env: &str) -> VarMap {
+        let mut values = VarMap::new();
+        for name in self.known_secret_names(env) {
+            match self.secrets.get(&self.secret_key(env, &name)) {
+                Ok(Some(v)) => {
+                    values.insert(name, v);
+                }
+                Ok(None) => {}
+                Err(e) => tracing::warn!(%name, error = %e, "could not read secret"),
+            }
+        }
+        values
     }
 
     /// Merges secret values for environment `env`: `Some` sets a value, `None` clears it.
     /// Names not mentioned keep their current value.
-    pub fn update_secrets(&self, env: &str, changes: BTreeMap<String, Option<String>>) {
-        let mut secrets = self.secrets.lock().unwrap_or_else(PoisonError::into_inner);
-        let values = secrets.entry(env.to_owned()).or_default();
+    pub fn update_secrets(
+        &self,
+        env: &str,
+        changes: BTreeMap<String, Option<String>>,
+    ) -> Result<(), SecretError> {
         for (name, value) in changes {
+            let key = self.secret_key(env, &name);
             match value {
-                Some(v) => values.insert(name, v),
-                None => values.remove(&name),
-            };
+                Some(v) => {
+                    self.secrets.set(&key, &v)?;
+                    self.secret_names
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .entry(env.to_owned())
+                        .or_default()
+                        .insert(name);
+                }
+                None => self.secrets.delete(&key)?,
+            }
         }
+        Ok(())
     }
 
     /// Names (never values) of the secrets that currently have a value, sorted.
     pub fn secret_names_set(&self, env: &str) -> Vec<String> {
         self.secrets(env).into_keys().collect()
+    }
+
+    /// Where this collection's secrets are kept right now.
+    pub fn secret_backend(&self) -> SecretBackend {
+        self.secrets.kind()
     }
 }
 
@@ -152,28 +217,33 @@ fn apply_changes(target: &mut ValueMap, before: &ValueMap, after: &ValueMap) {
 
 pub struct Workspace {
     exec: ExecOptions,
+    secrets: Arc<dyn SecretStore>,
     collections: RwLock<HashMap<CollectionId, Arc<OpenCollection>>>,
 }
 
 impl Workspace {
+    /// Secrets are kept in memory; see [`Workspace::with_secrets`] for the keychain.
     pub fn new(exec: ExecOptions) -> Workspace {
+        Workspace::with_secrets(exec, Arc::new(MemoryStore::default()))
+    }
+
+    pub fn with_secrets(exec: ExecOptions, secrets: Arc<dyn SecretStore>) -> Workspace {
         Workspace {
             exec,
+            secrets,
             collections: RwLock::default(),
         }
+    }
+
+    pub fn secret_backend(&self) -> SecretBackend {
+        self.secrets.kind()
     }
 
     /// Opens the collection containing `path` (its root, a folder or a file).
     /// Opening an already open collection returns its existing ID.
     pub fn open(&self, path: &Path) -> Result<CollectionId, WorkspaceError> {
         let root = Collection::find_root(path)?;
-        let canonical = root.canonicalize().map_err(|source| LoadError::Io {
-            path: root.clone(),
-            source,
-        })?;
-        let id = CollectionId(
-            ContentHash::of(canonical.to_string_lossy().as_bytes()).0[..16].to_owned(),
-        );
+        let id = CollectionId::for_root(&root)?;
         if self.get(&id).is_some() {
             return Ok(id);
         }
@@ -183,7 +253,8 @@ impl Workspace {
             collection: RwLock::new(Arc::new(collection)),
             session: Session::new(self.exec.clone())?,
             runtime: Mutex::default(),
-            secrets: Mutex::default(),
+            secrets: self.secrets.clone(),
+            secret_names: Mutex::default(),
             env_changes: Mutex::default(),
         });
         self.collections

@@ -2,10 +2,10 @@ mod common;
 
 use std::time::Duration;
 
-use plover_core::executor::ExecOptions;
-use plover_server::{RunningServer, ServerConfig, start};
 use common::{small_collection, write};
 use futures_util::{SinkExt, StreamExt};
+use plover_core::executor::ExecOptions;
+use plover_server::{RunningServer, ServerConfig, start};
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;

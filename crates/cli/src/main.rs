@@ -7,19 +7,15 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
+use clap::{Parser, Subcommand};
 use plover_core::collection::Collection;
 use plover_core::executor::ExecOptions;
 use plover_core::runner::{self, Persist, RunOptions};
 use plover_core::script::ScriptLimits;
 use plover_core::vars::VarMap;
-use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(
-    name = "plv",
-    version,
-    about = "Run Bruno-compatible API collections"
-)]
+#[command(name = "plv", version, about = "Run Bruno-compatible API collections")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -82,6 +78,10 @@ struct RunArgs {
     /// Also print what scripts log with console.*.
     #[arg(long)]
     verbose: bool,
+    /// Read the environment's secret values from the OS keychain (as stored by
+    /// `plv serve` or the desktop app); `--env-var` still wins.
+    #[arg(long)]
+    use_keychain: bool,
 }
 
 const EXIT_FAILED: u8 = 1;
@@ -133,6 +133,14 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
     }
     let root = Collection::find_root(&args.path).map_err(|e| e.to_string())?;
     let collection = Collection::load(&root).map_err(|e| e.to_string())?;
+    let keychain = match (&args.env, args.use_keychain) {
+        (Some(env), true) => plover_core::secrets::env_secrets(
+            &*plover_core::secrets::default_store(),
+            &collection,
+            env,
+        ),
+        _ => VarMap::new(),
+    };
     let opts = RunOptions {
         env: args.env,
         exec: ExecOptions {
@@ -150,6 +158,7 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
         persist: Persist::All,
         ..RunOptions::default()
     }
+    .with_env_vars(&keychain)
     .with_env_vars(&args.env_vars.into_iter().collect::<VarMap>());
     let mut printer = print::Printer::new(&collection.root, args.verbose);
     let mut collector = report::Collector::new(&collection.root);

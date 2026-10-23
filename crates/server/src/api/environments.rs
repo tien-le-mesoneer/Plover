@@ -48,8 +48,8 @@ pub async fn save(
     Ok(Json(HashDto { hash: hash.0 }))
 }
 
-/// Merges secret values (null clears one). They live in server memory only
-/// and are never written to disk or returned.
+/// Merges secret values (null clears one). They live in the OS keychain (or memory
+/// when it is unavailable), are never written to disk and never returned.
 pub async fn set_secrets(
     State(state): State<AppState>,
     ApiPath((id, name)): ApiPath<(String, String)>,
@@ -61,6 +61,12 @@ pub async fn set_secrets(
             "environment `{name}` not found"
         )));
     }
-    open.update_secrets(&name, body.values);
+    open.update_secrets(&name, body.values).map_err(|e| {
+        ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "secret_store_error",
+            e.to_string(),
+        )
+    })?;
     Ok(StatusCode::NO_CONTENT)
 }

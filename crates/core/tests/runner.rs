@@ -29,7 +29,10 @@ fn collection(root: &Path) {
 async fn run_all(
     root: &Path,
     opts: &RunOptions,
-) -> (Result<plover_core::runner::RunReport, RunError>, Vec<RunEvent>) {
+) -> (
+    Result<plover_core::runner::RunReport, RunError>,
+    Vec<RunEvent>,
+) {
     let c = Collection::load(root).unwrap();
     let mut events = Vec::new();
     let report = run(&c, root, opts, &mut |e| events.push(e.clone())).await;
