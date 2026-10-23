@@ -3,6 +3,10 @@
 
 use serde::{Deserialize, Serialize};
 
+use std::future::Future;
+use std::pin::Pin;
+use std::time::Instant;
+
 use super::engine::{ConsoleLine, EngineJob, Main, ScriptEngine, ScriptError, Segment};
 use crate::vars::{InterpolateError, InterpolateLimits, ValueMap, VarStack};
 
@@ -165,13 +169,31 @@ struct Input<'a> {
     post_vars: &'a [(String, String)],
 }
 
+pub type HostFuture<'a> = Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send + 'a>>;
+
+/// Answers what scripts ask of the session (HTTP, cookies). Runs in the caller's async
+/// context while the script waits, bounded by the script phase's deadline.
+pub trait ScriptHost: Sync {
+    fn call<'a>(&'a self, op: &'a str, args: serde_json::Value) -> HostFuture<'a>;
+}
+
 /// Runs script segments (collection, folders, request — in the order given).
 pub async fn run_script(
     engine: &ScriptEngine,
     ctx: &ScriptContext,
     segments: Vec<Segment>,
 ) -> PhaseOutput {
-    run(engine, ctx, Main::Segments(segments), &[], &[]).await
+    run(engine, ctx, Main::Segments(segments), &[], &[], None).await
+}
+
+/// Like `run_script`, with `bru.sendRequest`, `axios` and `bru.cookies` served by `host`.
+pub async fn run_script_with_host(
+    engine: &ScriptEngine,
+    ctx: &ScriptContext,
+    segments: Vec<Segment>,
+    host: &dyn ScriptHost,
+) -> PhaseOutput {
+    run(engine, ctx, Main::Segments(segments), &[], &[], Some(host)).await
 }
 
 /// Evaluates `assert` entries (enabled ones, as `(lhs, "operator rhs")`) like Bruno's
@@ -187,6 +209,7 @@ pub async fn run_asserts(
         Main::Call("__brs.runAsserts()".into()),
         asserts,
         &[],
+        None,
     )
     .await
 }
@@ -204,6 +227,7 @@ pub async fn run_post_response_vars(
         Main::Call("__brs.runPostVars()".into()),
         &[],
         vars,
+        None,
     )
     .await
 }
@@ -214,6 +238,7 @@ async fn run(
     main: Main,
     asserts: &[(String, String)],
     post_vars: &[(String, String)],
+    host: Option<&dyn ScriptHost>,
 ) -> PhaseOutput {
     let input = Input {
         vars: &ctx.vars,
@@ -234,7 +259,27 @@ async fn run(
             };
         }
     };
-    let out = engine.run(EngineJob { input, main }).await;
+    let (tx, mut requests) = tokio::sync::mpsc::unbounded_channel();
+    let job = EngineJob {
+        input,
+        main,
+        host: host.map(|_| tx),
+    };
+    let running = engine.run(job);
+    tokio::pin!(running);
+    let out = loop {
+        tokio::select! {
+            out = &mut running => break out,
+            Some(request) = requests.recv(), if host.is_some() => {
+                let Some(host) = host else { continue };
+                let left = request.deadline.saturating_duration_since(Instant::now());
+                let answer = tokio::time::timeout(left, host.call(&request.op, request.args))
+                    .await
+                    .unwrap_or_else(|_| Err("interrupted".to_owned()));
+                let _ = request.reply.send(answer);
+            }
+        }
+    };
     let reported: Reported =
         serde_json::from_value(serde_json::Value::Object(out.output)).unwrap_or_default();
     PhaseOutput {

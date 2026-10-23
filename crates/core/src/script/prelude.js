@@ -11,7 +11,8 @@
   const input = JSON.parse(g.__brsInputJson || '{}');
   delete g.__brsInputJson;
 
-  const SAFE_MODULES = 'chai, buffer, moment, btoa, atob, crypto-js, tv4, ajv, ajv-formats';
+  const SAFE_MODULES =
+    'chai, buffer, moment, btoa, atob, crypto-js, tv4, ajv, ajv-formats, axios, uuid, nanoid, path, jsonwebtoken';
 
   // ---- well-formed text: results cross into Rust as UTF-8 -------------------------------
   const LONE_SURROGATES = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
@@ -92,8 +93,27 @@
   lazyGlobal('Ajv', () => lib('ajv').Ajv);
   lazyGlobal('addFormats', () => lib('ajv').addFormats);
 
-  // ---- require (Bruno safe mode: bruno-js/src/sandbox/bundle-libraries.js:29-39) --------
+  // Web Crypto's getRandomValues for the uuid and nanoid bundles (crates/core/js/build.mjs).
+  Object.defineProperty(g, '__brsCrypto', {
+    value: {
+      getRandomValues: (array) => {
+        const bytes = JSON.parse(g.__brsHost('random', JSON.stringify({ n: array.byteLength })));
+        new Uint8Array(array.buffer, array.byteOffset, array.byteLength).set(bytes);
+        return array;
+      }
+    }
+  });
+  // shims/lib/{uuid,nanoid,jwt}.js also set these globals.
+  lazyGlobal('uuid', () => lib('uuid'));
+  lazyGlobal('nanoid', () => lib('nanoid'));
+  lazyGlobal('jwt', () => lib('jsonwebtoken'));
+
+  // ---- require (Bruno safe mode: bruno-js/src/sandbox/bundle-libraries.js:29-39 and
+  // shims/lib/*.js) ------------------------------------------------------------------------
   const modules = {
+    uuid: () => lib('uuid'),
+    nanoid: () => lib('nanoid'),
+    jsonwebtoken: () => lib('jsonwebtoken'),
     chai: () => ({ expect: lib('chai').expect, assert: lib('chai').assert }),
     moment: () => lib('moment'),
     buffer: () => ({ Buffer: lib('buffer').Buffer }),
@@ -185,7 +205,12 @@
     // Called with a library's exports right after it loads (e.g. to add chai plugins).
     onLibLoad: (name, hook) => (libHooks[name] = libHooks[name] || []).push(hook),
     // Run before the script is reported done (e.g. waiting for pending test() promises).
-    onFinish: (fn) => finishers.push(fn)
+    onFinish: (fn) => finishers.push(fn),
+    // Modules api.js builds (axios, path): available to require() and as a global.
+    addModule: (name, factory, globalName) => {
+      modules[name] = factory;
+      if (globalName) lazyGlobal(globalName, () => g.require(name));
+    }
   };
 
   g.__brsStart = (main) => {

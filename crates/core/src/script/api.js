@@ -112,7 +112,6 @@
     },
     sleep: (ms) => new Promise((resolve) => g.setTimeout(resolve, ms)),
 
-    sendRequest: unsupported('bru.sendRequest'),
     runRequest: unsupported('bru.runRequest'),
     hasGlobalEnvVar: unsupported('bru.hasGlobalEnvVar'),
     getGlobalEnvVar: unsupported('bru.getGlobalEnvVar'),
@@ -123,7 +122,324 @@
     getOauth2CredentialVar: unsupported('bru.getOauth2CredentialVar'),
     resetOauth2Credential: unsupported('bru.resetOauth2Credential')
   };
-  Object.defineProperty(bru, 'cookies', { get: unsupported('bru.cookies'), enumerable: false });
+  // ---- HTTP from scripts: bru.sendRequest (shims/bru.js:315-333, 512-536) and axios
+  // (shims/lib/axios.js). Requests go through the run's session (TLS options, body cap) via
+  // the host; like Bruno, they don't share the request's cookie jar.
+  const AXIOS_ENCODE = (v) =>
+    encodeURIComponent(v)
+      .replace(/%3A/gi, ':')
+      .replace(/%24/g, '$')
+      .replace(/%2C/gi, ',')
+      .replace(/%20/g, '+')
+      .replace(/%5B/gi, '[')
+      .replace(/%5D/gi, ']');
+  const isBytes = (v) => v !== null && typeof v === 'object' && (v instanceof ArrayBuffer || ArrayBuffer.isView(v));
+  const headerPairs = (headers) => {
+    const out = [];
+    if (!headers || typeof headers !== 'object') return out;
+    for (const name of Object.keys(headers)) {
+      const value = headers[name];
+      if (value === undefined || value === null || value === false) continue;
+      out.push([name, Array.isArray(value) ? value.join(', ') : String(value)]);
+    }
+    return out;
+  };
+  const headersObject = (pairs) => {
+    const out = {};
+    for (const [name, value] of pairs) {
+      const key = name.toLowerCase();
+      if (key === 'set-cookie') (out[key] = out[key] || []).push(value);
+      else out[key] = hasOwn(out, key) ? out[key] + ', ' + value : value;
+    }
+    return out;
+  };
+  const buildUrl = (c) => {
+    let url = String(c.url === undefined || c.url === null ? '' : c.url);
+    if (c.baseURL && !/^([a-z][a-z\d+\-.]*:)?\/\//i.test(url)) {
+      url = String(c.baseURL).replace(/\/+$/, '') + '/' + url.replace(/^\/+/, '');
+    }
+    if (c.params && typeof c.params === 'object') {
+      const parts = [];
+      for (const key of Object.keys(c.params)) {
+        const value = c.params[key];
+        if (value === undefined || value === null) continue;
+        for (const v of Array.isArray(value) ? value : [value]) {
+          const text = v instanceof Date ? v.toISOString() : typeof v === 'object' ? JSON.stringify(v) : String(v);
+          parts.push(AXIOS_ENCODE(key) + (Array.isArray(value) ? '[]' : '') + '=' + AXIOS_ENCODE(text));
+        }
+      }
+      if (parts.length) {
+        const hash = url.indexOf('#');
+        if (hash !== -1) url = url.slice(0, hash);
+        url += (url.indexOf('?') === -1 ? '?' : '&') + parts.join('&');
+      }
+    }
+    return url;
+  };
+  const toHttp = (config, source) => {
+    const c = typeof config === 'string' ? { url: config } : Object.assign({}, config);
+    const headers = headerPairs(c.headers);
+    const hasHeader = (name) => headers.some(([k]) => k.toLowerCase() === name);
+    let body = null;
+    const data = c.data;
+    if (data !== undefined && data !== null) {
+      if (typeof data === 'string') body = { text: data };
+      else if (isBytes(data)) body = { base64: g.Buffer.from(data).toString('base64') };
+      else {
+        body = { text: JSON.stringify(data) };
+        if (!hasHeader('content-type')) headers.push(['Content-Type', 'application/json']);
+      }
+    }
+    if (c.auth && typeof c.auth === 'object') {
+      const user = c.auth.username || '';
+      const pass = c.auth.password || '';
+      for (let i = headers.length - 1; i >= 0; i--) if (headers[i][0].toLowerCase() === 'authorization') headers.splice(i, 1);
+      headers.push(['Authorization', 'Basic ' + g.Buffer.from(user + ':' + pass).toString('base64')]);
+    }
+    return {
+      source,
+      method: String(c.method || 'get').toUpperCase(),
+      url: buildUrl(c),
+      headers,
+      body,
+      timeoutMs: typeof c.timeout === 'number' && c.timeout > 0 ? c.timeout : null,
+      maxRedirects: typeof c.maxRedirects === 'number' ? c.maxRedirects : null
+    };
+  };
+  const parseData = (text) => {
+    if (typeof text !== 'string' || text === '') return text;
+    try {
+      return JSON.parse(text);
+    } catch (_) {
+      return text;
+    }
+  };
+  const statusOk = (config, status) => {
+    const validate = config && typeof config === 'object' && hasOwn(config, 'validateStatus')
+      ? config.validateStatus
+      : (s) => s >= 200 && s < 300;
+    return !validate || validate(status);
+  };
+  const badStatusCode = (status) => (status >= 500 ? 'ERR_BAD_RESPONSE' : 'ERR_BAD_REQUEST');
+  // One HTTP exchange through the host: { req, cfg, r } with r = { ok, status, statusText,
+  // headers, text, durationMs } or { ok: false, error: { message, code } }.
+  const exchange = (config, source) => {
+    const req = toHttp(config, source);
+    const r = JSON.parse(g.__brsHost('http', JSON.stringify(req)));
+    const cfg = {
+      url: req.url,
+      method: req.method.toLowerCase(),
+      headers: headersObject(req.headers),
+      data: config && typeof config === 'object' ? config.data : undefined,
+      timeout: req.timeoutMs || 0
+    };
+    return { req, cfg, r };
+  };
+
+  const sendRequestNow = (config) => {
+    const { req, cfg, r } = exchange(config, 'sendRequest');
+    if (!r.ok) {
+      throw { message: r.error.message, name: 'AxiosError', code: r.error.code, config: cfg, stack: 'AxiosError: ' + r.error.message };
+    }
+    const response = {
+      status: r.status,
+      statusText: r.statusText,
+      headers: headersObject(r.headers),
+      data: parseData(r.text),
+      config: cfg,
+      request: { method: req.method, url: req.url, headers: cfg.headers },
+      responseTime: r.durationMs
+    };
+    if (!statusOk(config, r.status)) {
+      const message = 'Request failed with status code ' + r.status;
+      throw { message, name: 'AxiosError', code: badStatusCode(r.status), config: cfg, status: r.status, stack: 'AxiosError: ' + message };
+    }
+    return response;
+  };
+  bru.sendRequest = async (requestConfig, callback) => {
+    if (!callback) return sendRequestNow(requestConfig);
+    let response;
+    try {
+      response = sendRequestNow(requestConfig);
+    } catch (error) {
+      const errObj = JSON.parse(JSON.stringify(error));
+      if (errObj && errObj.response && typeof errObj.response.status === 'number') errObj.status = errObj.response.status;
+      await callback(errObj, null);
+      return undefined;
+    }
+    await callback(null, response);
+    return response;
+  };
+
+  const axiosRequest = (config) =>
+    Promise.resolve().then(() => {
+      const { cfg, r } = exchange(config, 'axios');
+      if (!r.ok) throw { message: r.error.message, code: r.error.code, isAxiosError: true, config: cfg };
+      const response = { status: r.status, headers: headersObject(r.headers), data: parseData(r.text) };
+      if (!statusOk(config, r.status)) {
+        throw {
+          message: 'Request failed with status code ' + r.status,
+          code: badStatusCode(r.status),
+          isAxiosError: true,
+          response: { status: r.status, statusText: r.statusText, headers: response.headers, data: response.data },
+          config: cfg
+        };
+      }
+      return response;
+    });
+  const axios = (urlOrConfig, config) =>
+    axiosRequest(typeof urlOrConfig === 'string' ? Object.assign({}, config, { url: urlOrConfig }) : urlOrConfig);
+  for (const method of ['get', 'delete']) {
+    axios[method] = (url, config) => axiosRequest(Object.assign({}, config, { url, method }));
+  }
+  for (const method of ['post', 'put', 'patch']) {
+    axios[method] = (url, data, config) => axiosRequest(Object.assign({}, config, { url, method, data }));
+  }
+  brs.addModule('axios', () => axios, 'axios');
+
+  // ---- path: Bruno safe mode offers only resolve (shims/lib/path.js); relative paths start
+  // at the collection root (Bruno: the host process's working directory).
+  const resolvePath = (...segments) => {
+    let resolved = '';
+    let absolute = false;
+    for (let i = segments.length - 1; i >= -1 && !absolute; i--) {
+      const part = i >= 0 ? segments[i] : info.collectionPath || '/';
+      if (typeof part !== 'string') throw new TypeError('The "paths[' + i + ']" argument must be of type string');
+      if (!part) continue;
+      resolved = part + '/' + resolved;
+      absolute = part.charAt(0) === '/';
+    }
+    const out = [];
+    for (const piece of resolved.split('/')) {
+      if (!piece || piece === '.') continue;
+      if (piece === '..') out.pop();
+      else out.push(piece);
+    }
+    return '/' + out.join('/');
+  };
+  brs.addModule('path', () => ({ resolve: resolvePath }), 'path');
+
+  // ---- cookies: bru.cookies (cookie-list.js) over the session's cookie jar ---------------
+  const cookieHost = (op, args) => JSON.parse(g.__brsHost('cookies.' + op, JSON.stringify(args || {})));
+  // tough-cookie's JSON for jar methods; the property list uses cookie-list.js's shape.
+  const expiresText = (c) => (typeof c.expiresMs === 'number' ? new Date(c.expiresMs).toISOString() : undefined);
+  const jarCookie = (c) => {
+    if (!c) return c;
+    const out = { key: c.key, value: c.value, domain: c.domain, path: c.path };
+    if (expiresText(c)) out.expires = expiresText(c);
+    if (c.secure) out.secure = true;
+    out.hostOnly = c.hostOnly;
+    out.httpOnly = c.httpOnly;
+    return out;
+  };
+  const listCookie = (c) => ({
+    key: c.key,
+    value: c.value,
+    domain: c.domain,
+    path: c.path,
+    secure: c.secure,
+    httpOnly: c.httpOnly,
+    expires: expiresText(c) || 'Infinity'
+  });
+  const withCallback = async (fn, callback) => {
+    if (!callback) return fn();
+    let result;
+    try {
+      result = fn();
+    } catch (err) {
+      await callback(err, null);
+      return undefined;
+    }
+    await callback(null, result);
+    return undefined;
+  };
+  const jar = () => ({
+    getCookie: (url, name, cb) =>
+      withCallback(() => {
+        const c = cookieHost('get', { url: interpolate(url), name });
+        return c ? jarCookie(c) : null;
+      }, cb),
+    getCookies: (url, cb) => withCallback(() => cookieHost('list', { url: interpolate(url) }).map(jarCookie), cb),
+    setCookie: (url, nameOrCookie, valueOrCallback, maybeCallback) => {
+      const isCookie = typeof nameOrCookie === 'object' && nameOrCookie !== null;
+      const cb = isCookie
+        ? typeof valueOrCallback === 'function'
+          ? valueOrCallback
+          : undefined
+        : typeof maybeCallback === 'function'
+          ? maybeCallback
+          : typeof valueOrCallback === 'function'
+            ? valueOrCallback
+            : undefined;
+      const cookie = isCookie ? nameOrCookie : { key: nameOrCookie, value: typeof valueOrCallback === 'string' ? valueOrCallback : '' };
+      return withCallback(() => {
+        cookieHost('set', { url: interpolate(url), cookie });
+      }, cb);
+    },
+    setCookies: (url, cookies, cb) =>
+      withCallback(() => {
+        for (const cookie of cookies || []) cookieHost('set', { url: interpolate(url), cookie });
+      }, cb),
+    clear: (cb) =>
+      withCallback(() => {
+        cookieHost('clear');
+      }, cb),
+    deleteCookies: (url, cb) =>
+      withCallback(() => {
+        cookieHost('delete', { url: interpolate(url) });
+      }, cb),
+    deleteCookie: (url, name, cb) =>
+      withCallback(() => {
+        cookieHost('delete', { url: interpolate(url), name });
+      }, cb),
+    hasCookie: (url, name, cb) => withCallback(() => cookieHost('get', { url: interpolate(url), name }) !== null, cb)
+  });
+  const currentUrl = () => interpolate(reqState.url);
+  const items = () => {
+    const url = currentUrl();
+    return url ? cookieHost('list', { url }).map(listCookie) : [];
+  };
+  const cookieList = {
+    get: (name) => {
+      const c = items().find((i) => i.key === name);
+      return c ? c.value : undefined;
+    },
+    one: (name) => items().find((i) => i.key === name),
+    all: () => items(),
+    idx: (index) => items()[index],
+    count: () => items().length,
+    indexOf: (item) => {
+      const key = typeof item === 'string' ? item : item && item.key;
+      return items().findIndex((i) => i.key === key);
+    },
+    has: (name, value) => items().some((i) => i.key === name && (value === undefined || i.value === value)),
+    find: (fn) => items().find(fn),
+    filter: (fn) => items().filter(fn),
+    each: (fn) => items().forEach(fn),
+    map: (fn) => items().map(fn),
+    reduce: (fn, ...rest) => items().reduce(fn, ...rest),
+    toObject: () => {
+      const out = {};
+      for (const i of items()) out[i.key] = i.value;
+      return out;
+    },
+    toString: () => items().map((i) => i.key + '=' + i.value).join('; '),
+    toJSON: () => items(),
+    add: (cookie, cb) => cookieList.upsert(cookie, cb),
+    upsert: (cookie, cb) => {
+      if (!cookie || typeof cookie !== 'object') {
+        const error = new Error('cookieObj must be a non-null object');
+        if (cb) return cb(error);
+        return Promise.reject(error);
+      }
+      return jar().setCookie(reqState.url, cookie, cb);
+    },
+    remove: (name, cb) => jar().deleteCookie(reqState.url, name, cb),
+    delete: (name, cb) => cookieList.remove(name, cb),
+    clear: (cb) => jar().deleteCookies(reqState.url, cb),
+    jar
+  };
+  Object.defineProperty(bru, 'cookies', { value: cookieList, enumerable: false });
   g.bru = bru;
 
   brs.resultParts.vars = () => vars;

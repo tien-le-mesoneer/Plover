@@ -1,0 +1,1 @@
+(()=>{var r=(l=21)=>globalThis.__brsCrypto.getRandomValues(new Uint8Array(l)).reduce((e,t)=>(t&=63,t<36?e+=t.toString(36):t<62?e+=(t-26).toString(36).toUpperCase():t>62?e+="-":e+="_",e),"");globalThis.__brsLibs.nanoid={nanoid:()=>r()};})();

@@ -77,7 +77,8 @@ pub enum ExecError {
 pub struct Session {
     opts: ExecOptions,
     jar: Arc<CookieStoreMutex>,
-    clients: Mutex<HashMap<(bool, u32), reqwest::Client>>,
+    /// Keyed by (follow redirects, max redirects, use the cookie jar).
+    clients: Mutex<HashMap<(bool, u32, bool), reqwest::Client>>,
 }
 
 impl Session {
@@ -87,11 +88,33 @@ impl Session {
             jar: Arc::default(),
             clients: Mutex::default(),
         };
-        session.client(session.opts.follow_redirects, session.opts.max_redirects)?;
+        session.client(session.opts.follow_redirects, session.opts.max_redirects, true)?;
         Ok(session)
     }
 
+    /// The session's cookie jar (`bru.cookies`).
+    pub fn cookie_jar(&self) -> &Arc<CookieStoreMutex> {
+        &self.jar
+    }
+
     pub async fn send(&self, req: &ResolvedRequest) -> Result<ResponseSummary, ExecError> {
+        self.send_with(req, true).await
+    }
+
+    /// Like `send`, but without the cookie jar: no cookies are sent or stored. Scripts'
+    /// `bru.sendRequest` and `axios` requests work this way in Bruno.
+    pub async fn send_without_cookies(
+        &self,
+        req: &ResolvedRequest,
+    ) -> Result<ResponseSummary, ExecError> {
+        self.send_with(req, false).await
+    }
+
+    async fn send_with(
+        &self,
+        req: &ResolvedRequest,
+        cookies: bool,
+    ) -> Result<ResponseSummary, ExecError> {
         let follow = req
             .settings
             .follow_redirects
@@ -100,7 +123,7 @@ impl Session {
             .settings
             .max_redirects
             .unwrap_or(self.opts.max_redirects);
-        let client = self.client(follow, max)?;
+        let client = self.client(follow, max, cookies)?;
         let method = reqwest::Method::from_bytes(req.method.as_str().as_bytes())
             .map_err(|_| ExecError::InvalidMethod(req.method.as_str().to_owned()))?;
         let mut builder = client.request(method, &req.url);
@@ -179,12 +202,12 @@ impl Session {
         })
     }
 
-    fn client(&self, follow: bool, max: u32) -> Result<reqwest::Client, ExecError> {
+    fn client(&self, follow: bool, max: u32, cookies: bool) -> Result<reqwest::Client, ExecError> {
         let mut clients = self
             .clients
             .lock()
             .map_err(|_| ExecError::Client("client cache poisoned".into()))?;
-        if let Some(client) = clients.get(&(follow, max)) {
+        if let Some(client) = clients.get(&(follow, max, cookies)) {
             return Ok(client.clone());
         }
         // axios-instance.js:166-169: once `max` redirects were followed, the next 3xx
@@ -201,13 +224,16 @@ impl Session {
         } else {
             Policy::none()
         };
-        let client = reqwest::Client::builder()
+        let mut builder = reqwest::Client::builder()
             .redirect(policy)
-            .cookie_provider(self.jar.clone())
-            .tls_danger_accept_invalid_certs(!self.opts.verify_tls)
+            .tls_danger_accept_invalid_certs(!self.opts.verify_tls);
+        if cookies {
+            builder = builder.cookie_provider(self.jar.clone());
+        }
+        let client = builder
             .build()
             .map_err(|e| ExecError::Client(e.to_string()))?;
-        clients.insert((follow, max), client.clone());
+        clients.insert((follow, max, cookies), client.clone());
         Ok(client)
     }
 }

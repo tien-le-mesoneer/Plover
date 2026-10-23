@@ -14,6 +14,7 @@ async fn run(engine: &ScriptEngine, src: &str) -> brs_core::script::EngineOutput
     engine
         .run(EngineJob {
             input: serde_json::json!({}),
+            host: None,
             main: Main::Segments(vec![Segment::new("request", src)]),
         })
         .await
@@ -59,7 +60,8 @@ async fn require_safe_set_works() {
 #[tokio::test]
 async fn require_outside_safe_set_fails() {
     let e = engine();
-    for module in ["fs", "axios"] {
+    // axios is a safe-mode module now (shims/lib/axios.js); lodash is not.
+    for module in ["fs", "lodash"] {
         let out = run(&e, &format!("require('{module}');")).await;
         match out.error {
             Some(ScriptError::ForbiddenModule {
@@ -72,6 +74,7 @@ async fn require_outside_safe_set_fails() {
                     "{message}"
                 );
                 assert!(message.contains("chai, buffer, moment"), "{message}");
+                assert!(message.contains("axios, uuid, nanoid, path, jsonwebtoken"), "{message}");
             }
             other => panic!("{module}: expected ForbiddenModule, got {other:?}"),
         }
@@ -188,6 +191,7 @@ async fn throw_reports_scope_and_line() {
     let out = e
         .run(EngineJob {
             input: serde_json::json!({}),
+            host: None,
             main: Main::Segments(vec![
                 Segment::new("collection", "const x = 1;\nconsole.log('c');"),
                 Segment::new("folder users", "\n\nthrow new Error('boom');"),
@@ -217,6 +221,7 @@ async fn segments_have_separate_scopes() {
     let out = e
         .run(EngineJob {
             input: serde_json::json!({}),
+            host: None,
             main: Main::Segments(vec![
                 Segment::new(
                     "collection",

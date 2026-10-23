@@ -137,7 +137,22 @@ pub struct EngineJob {
     /// Available to `api.js` as `__brs.input`.
     pub input: serde_json::Value,
     pub main: Main,
+    /// Where `__brsHost` sends operations the worker can't do itself (HTTP, cookies);
+    /// `None` makes them throw.
+    pub host: Option<HostSender>,
 }
+
+/// A host operation from a script, answered by the runner that owns the session.
+#[derive(Debug)]
+pub struct HostRequest {
+    pub op: String,
+    pub args: serde_json::Value,
+    /// The script phase's deadline; answer before it or the script gives up.
+    pub deadline: Instant,
+    pub reply: mpsc::Sender<Result<serde_json::Value, String>>,
+}
+
+pub type HostSender = tokio::sync::mpsc::UnboundedSender<HostRequest>;
 
 #[derive(Debug, Clone, Default)]
 pub struct EngineOutput {
@@ -354,6 +369,8 @@ impl Worker {
         };
         let (code, segments) = build_main(&job.main);
         let input_json = job.input.to_string();
+        let host = job.host;
+        let cancelled = Arc::clone(&self.cancelled.borrow());
 
         let setup = context.with(|ctx| -> Result<(), ScriptError> {
             let globals = ctx.globals();
@@ -390,6 +407,28 @@ impl Worker {
             globals
                 .set("__brsLoadLib", load_lib)
                 .map_err(internal_err)?;
+            let host_fn = Function::new(
+                ctx.clone(),
+                move |ctx: Ctx<'_>, op: String, args: String| -> rquickjs::Result<String> {
+                    let args = serde_json::from_str(&args).unwrap_or(serde_json::Value::Null);
+                    let result = match super::host::builtin(&op, &args) {
+                        Some(result) => result.map_err(HostFailure::Message),
+                        None => call_host(host.as_ref(), op, args, deadline, &cancelled),
+                    };
+                    match result {
+                        Ok(value) => Ok(value.to_string()),
+                        // `classify` turns this into a timeout once the deadline has passed.
+                        Err(HostFailure::Interrupted) => {
+                            Err(rquickjs::Exception::throw_message(&ctx, "interrupted"))
+                        }
+                        Err(HostFailure::Message(m)) => {
+                            Err(rquickjs::Exception::throw_message(&ctx, &m))
+                        }
+                    }
+                },
+            )
+            .map_err(internal_err)?;
+            globals.set("__brsHost", host_fn).map_err(internal_err)?;
             eval_global(&ctx, PRELUDE_JS, "brs-prelude", true)
                 .map_err(|e| self.classify(&ctx, e, deadline, &[]))?;
             eval_global(&ctx, API_JS, "brs-api", true)
@@ -448,7 +487,16 @@ impl Worker {
                         }
                         "error" => {
                             if !parsed.is_null() && error.is_none() {
-                                error = Some(error_from_js(&parsed, &segments));
+                                error = Some(match error_from_js(&parsed, &segments) {
+                                    // A host call gave up at the deadline and the script let
+                                    // the error through.
+                                    ScriptError::Thrown { message, .. }
+                                        if message == "interrupted" && Instant::now() >= deadline =>
+                                    {
+                                        ScriptError::Timeout(self.limits.timeout)
+                                    }
+                                    other => other,
+                                });
                             }
                         }
                         _ => {
@@ -584,6 +632,49 @@ impl Worker {
                     return ScriptError::Timeout(self.limits.timeout);
                 }
                 error_from_parts("Error".to_owned(), text, None, None, segments)
+            }
+        }
+    }
+}
+
+enum HostFailure {
+    Interrupted,
+    Message(String),
+}
+
+/// Sends `op` to the runner and blocks this worker until it answers, the phase's deadline
+/// passes or the job is cancelled.
+fn call_host(
+    host: Option<&HostSender>,
+    op: String,
+    args: serde_json::Value,
+    deadline: Instant,
+    cancelled: &AtomicBool,
+) -> Result<serde_json::Value, HostFailure> {
+    let Some(host) = host else {
+        return Err(HostFailure::Message(format!(
+            "{op} is not available in this script phase"
+        )));
+    };
+    let (reply, answer) = mpsc::channel();
+    host.send(HostRequest {
+        op,
+        args,
+        deadline,
+        reply,
+    })
+    .map_err(|_| HostFailure::Message("the script host has stopped".to_owned()))?;
+    loop {
+        match answer.recv_timeout(Duration::from_millis(20)) {
+            Ok(Err(message)) if message == "interrupted" => return Err(HostFailure::Interrupted),
+            Ok(result) => return result.map_err(HostFailure::Message),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if cancelled.load(Ordering::Relaxed) || Instant::now() >= deadline {
+                    return Err(HostFailure::Interrupted);
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(HostFailure::Message("the script host has stopped".to_owned()));
             }
         }
     }

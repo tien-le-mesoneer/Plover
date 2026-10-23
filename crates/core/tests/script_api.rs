@@ -248,10 +248,8 @@ async fn sleep_is_async() {
 #[tokio::test]
 async fn unsupported_apis_say_so() {
     for (src, api) in [
-        ("await bru.sendRequest({})", "bru.sendRequest"),
         ("await bru.runRequest('x')", "bru.runRequest"),
         ("bru.getGlobalEnvVar('x')", "bru.getGlobalEnvVar"),
-        ("bru.cookies.jar()", "bru.cookies"),
     ] {
         let out = run_script(&engine(), &context(), vec![Segment::new("request", src)]).await;
         match out.error {

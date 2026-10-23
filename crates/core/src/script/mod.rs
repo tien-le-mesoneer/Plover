@@ -2,15 +2,16 @@
 
 mod api;
 mod engine;
+mod host;
 mod libs;
 
 pub use api::{
-    AssertResult, Flow, NextRequest, PhaseOutput, ScriptBody, ScriptContext, ScriptInfo,
-    ScriptRequest, ScriptResponse, ScriptVars, TestResult, run_asserts, run_post_response_vars,
-    run_script,
+    AssertResult, Flow, HostFuture, NextRequest, PhaseOutput, ScriptBody, ScriptContext,
+    ScriptHost, ScriptInfo, ScriptRequest, ScriptResponse, ScriptVars, TestResult, run_asserts,
+    run_post_response_vars, run_script, run_script_with_host,
 };
 pub use engine::{
-    ConsoleLine, EngineJob, EngineOutput, LogLevel, Main, ScriptEngine, ScriptError, ScriptLimits,
-    Segment,
+    ConsoleLine, EngineJob, EngineOutput, HostRequest, HostSender, LogLevel, Main, ScriptEngine,
+    ScriptError, ScriptLimits, Segment,
 };
 pub use libs::LIBS;

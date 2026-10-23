@@ -9,4 +9,7 @@ pub const LIBS: &[(&str, &str)] = &[
     ("crypto-js", include_str!("../../js/dist/crypto-js.js")),
     ("tv4", include_str!("../../js/dist/tv4.js")),
     ("ajv", include_str!("../../js/dist/ajv.js")),
+    ("uuid", include_str!("../../js/dist/uuid.js")),
+    ("nanoid", include_str!("../../js/dist/nanoid.js")),
+    ("jsonwebtoken", include_str!("../../js/dist/jwt.js")),
 ];

@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crate::session_host::{ScriptedRequest, SessionHost};
 use crate::bru::model::{RequestFile, ScopeFile};
 use crate::collection::{Collection, Environment, Item, RequestRef};
 use crate::executor::{ExecError, ExecOptions, ResponseSummary, Session};
@@ -19,7 +20,7 @@ use crate::resolve::{
 use crate::script::{
     AssertResult, ConsoleLine, Flow, NextRequest, ScriptBody, ScriptContext, ScriptEngine,
     ScriptError, ScriptInfo, ScriptLimits, ScriptRequest, ScriptResponse, ScriptVars, Segment,
-    TestResult, run_asserts, run_post_response_vars, run_script,
+    TestResult, run_asserts, run_post_response_vars, run_script_with_host,
 };
 use crate::store::{self, StoreError};
 use crate::vars::{
@@ -96,6 +97,8 @@ pub struct RequestOutcome {
     pub asserts: Vec<AssertResult>,
     pub console: Vec<ConsoleLine>,
     pub script_error: Option<ScriptFailure>,
+    /// Requests scripts sent with `bru.sendRequest` or `axios`.
+    pub scripted_requests: Vec<ScriptedRequest>,
 }
 
 impl RequestOutcome {
@@ -571,10 +574,11 @@ impl Exec<'_> {
             process_env: self.process_env.clone(),
         };
 
+        let host = SessionHost::new(self.session);
         // Pre-request scripts see the prepared, not yet interpolated request.
         let pre = self.segments(&r, &request.script_pre, |s| &s.script_pre, false);
         if !pre.is_empty() {
-            let out = run_script(
+            let out = run_script_with_host(
                 self.engine,
                 &ScriptContext {
                     vars: vars.clone(),
@@ -583,8 +587,10 @@ impl Exec<'_> {
                     res: None,
                 },
                 pre,
+                &host,
             )
             .await;
+            executed.outcome.scripted_requests.extend(host.take_recorded());
             vars = out.vars;
             apply_script_request(&mut prepared, &out.req);
             merge_flow(&mut executed.flow, &out.flow);
@@ -654,7 +660,8 @@ impl Exec<'_> {
 
         let post = self.segments(&r, &request.script_post, |s| &s.script_post, true);
         if !post.is_empty() {
-            let out = run_script(self.engine, &script_ctx, post).await;
+            let out = run_script_with_host(self.engine, &script_ctx, post, &host).await;
+            executed.outcome.scripted_requests.extend(host.take_recorded());
             script_ctx.vars = out.vars;
             merge_flow(&mut executed.flow, &out.flow);
             executed.outcome.console.extend(out.console);
@@ -680,7 +687,8 @@ impl Exec<'_> {
 
         let tests = self.segments(&r, &request.tests, |s| &s.tests, true);
         if !tests.is_empty() {
-            let out = run_script(self.engine, &script_ctx, tests).await;
+            let out = run_script_with_host(self.engine, &script_ctx, tests, &host).await;
+            executed.outcome.scripted_requests.extend(host.take_recorded());
             script_ctx.vars = out.vars;
             merge_flow(&mut executed.flow, &out.flow);
             executed.outcome.console.extend(out.console);
