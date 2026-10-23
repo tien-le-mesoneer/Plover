@@ -18,16 +18,17 @@ secret variable name.
 ## Goals (user decisions)
 
 1. Paste a `curl …` command into the URL bar and it fills method, URL, query, headers,
-   body, basic auth (`-u`), multipart form (`-F/--form`) and `-k`. Options Plover cannot
-   represent are reported clearly, never dropped silently.
+   body, basic auth (`-u`) and multipart form (`-F/--form`). Options Plover cannot
+   represent, `-k` among them, are reported clearly, never dropped silently.
 2. A scratch tab: "New request" opens an unsaved tab that is not tied to a file. Send
    works at once, with the selected environment. Save asks for a folder in the
    collection, and only then writes a `.bru` file.
 3. "Copy as cURL" from any request, like Bruno's Generate Code.
 4. "Import HAR" in the UI: list the entries, filter by domain, drop images, JS, CSS and
    fonts by default, tick the ones to keep, and import them into a chosen folder as
-   requests. Tokens, cookies and `Authorization` move into environment secret
-   variables instead of being written into the `.bru` files.
+   requests. Tokens, cookies, `Authorization` and credential fields in request bodies
+   move into environment secret variables instead of being written into the `.bru`
+   files.
 5. A docs page (not a skill) on how to have Claude drive a browser through a flow, save
    a HAR file, and import it into Plover.
 
@@ -108,7 +109,7 @@ to test. Every call is to the local server, so the extra round trip does not mat
   | `-u/--user` | `Auth::Basic` |
   | `-I/--head` | method `HEAD` |
   | `--compressed` | accepted, no effect (Plover already decompresses) |
-  | `-k/--insecure` | see open question 1 |
+  | `-k/--insecure` | not applied; notice "`-k` not applied, TLS checking is a global setting" (user decision, Bruno-compatible: a `.bru` file has no per-request TLS setting, and TLS checking is the global `ExecOptions.verify_tls`) |
 
   A `Bearer` token in an `Authorization` header stays a header. It does not become
   `Auth::Bearer`, as in Bruno.
@@ -238,11 +239,23 @@ to test. Every call is to the local server, so the extra round trip does not mat
     same way.
   - The dialog lists the secret variables it will create, with names only, never
     values.
-- **Bodies are imported as they are** (*Claude's call*; see open question 2). A body
-  can contain a password or a token, for example a login form. The dialog marks rows
-  whose request body contains a value that looks like a JWT (`eyJ…`) or a field named
-  `password`, `secret`, `token` or `client_secret`, so the user can untick them or edit
-  them after import.
+- **Credential fields in request bodies move into secrets** (user decision).
+  - A fixed list that the dialog shows (*Claude's call* on the list): `password`,
+    `passwd`, `client_secret`, `secret`, `token`, `access_token`, `refresh_token`,
+    `id_token`, `api_key`, `apikey`, `assertion`, `client_assertion`. Names match
+    case-insensitively and exactly; `newPassword` or `password2` do not match.
+  - Bodies covered: form-urlencoded (`postData.params`, or `text` with
+    `application/x-www-form-urlencoded`), multipart text fields, and JSON. In JSON, a
+    listed key at any depth whose value is a string is replaced; numbers, objects and
+    arrays are left as they are. *Claude's call.*
+  - The value becomes `{{<camelCase field name>}}`, for example `{{password}}`,
+    `{{clientSecret}}`, numbered like the header secrets (`password2`) and reusing a
+    variable with the same value.
+  - In JSON the replacement keeps the quotes: `"password": "{{password}}"`, so the
+    body stays valid JSON.
+  - Other bodies (XML, text) are imported as they are. The dialog still marks rows
+    whose body contains a value that looks like a JWT (`eyJ…`), so the user can untick
+    or edit them. *Claude's call.*
 
 ### New server and core pieces
 
@@ -291,24 +304,18 @@ It covers:
   Check that a tool really writes HAR before naming it.
 - Tests. At minimum:
   - curl: each mapping row; `$'…'` and line continuations; unknown flags turning into
-    notices; `parse(to_curl(r)) == r` for each body mode; single-quote escaping;
+    notices, `-k` among them with its exact text; `parse(to_curl(r)) == r` for each
+    body mode; single-quote escaping;
   - copy: "as written" keeps `{{vars}}`; "filled in" includes folder auth;
   - scratch: send with `item: null` applies collection headers and no folder headers;
     save creates the file, and an existing name gives 409;
   - HAR: filters, de-duplication, the secret mapping and variable reuse, no secret
-    value in any written `.bru` file, Bruno-readable output, a HAR over 64 MiB refused;
+    value in any written `.bru` file (headers, query and form/multipart/JSON body
+    fields, including a nested JSON key and a JSON number left alone), Bruno-readable
+    output, a HAR over 64 MiB refused;
   - UI: paste interception and Undo, the scratch tab close prompt, the import dialog
     defaults.
 
 ## Open questions for the user
 
-1. **`-k/--insecure`.** A `.bru` file has no per-request "skip TLS verification" setting
-   in Bruno, and neither does Plover's `RequestSettings`. TLS verification is a global
-   option (`ExecOptions.verify_tls`). Bruno's own paste quietly ignores `-k`. Options:
-   (a) report `-k` as "not applied, TLS verification is a global setting" (recommended,
-   Bruno-compatible); (b) add a Plover-only per-request setting, which Bruno would not
-   understand; (c) offer to turn off verification globally for the session.
-2. **Passwords and tokens in HAR request bodies.** Section 4 only moves headers, cookies
-   and the listed query parameters into secrets. A login request body
-   (`password=…`, `client_secret=…`) is imported as it is, with a warning mark.
-   Should Plover also move those body fields into secrets automatically?
+None. `-k` and credential fields in bodies were settled by the user (sections 1 and 4).
