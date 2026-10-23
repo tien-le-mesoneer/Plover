@@ -118,7 +118,10 @@ where
         )
         .with_writer(std::io::stderr)
         .try_init();
-    let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
         Ok(runtime) => runtime,
         Err(e) => {
             eprintln!("error: cannot start the async runtime: {e}");
@@ -160,7 +163,7 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
     let collection = Collection::load(&root).map_err(|e| e.to_string())?;
     let keychain = match (&args.env, args.use_keychain) {
         (Some(env), true) => plover_core::secrets::env_secrets(
-            &*plover_core::secrets::default_store(),
+            &plover_core::secrets::default_store(),
             &collection,
             env,
         ),

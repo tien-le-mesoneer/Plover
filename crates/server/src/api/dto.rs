@@ -156,9 +156,35 @@ pub struct EnvironmentDto {
     pub name: String,
     pub vars: Vec<KeyValueDto>,
     pub secret_names: Vec<String>,
-    /// Secret names that have a value in this session (values are never sent).
-    pub secrets_set: Vec<String>,
+    /// Secrets that have a value and where each is kept (values are never sent).
+    pub secrets_set: Vec<SecretStateDto>,
     pub hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretStateDto {
+    pub name: String,
+    /// `"keychain"` or `"memory"` (kept only until Plover quits).
+    #[ts(type = "\"keychain\" | \"memory\"")]
+    pub backend: String,
+}
+
+impl SecretStateDto {
+    pub fn backend_name(backend: plover_core::secrets::SecretBackend) -> String {
+        match backend {
+            plover_core::secrets::SecretBackend::Keychain => "keychain",
+            plover_core::secrets::SecretBackend::Memory => "memory",
+        }
+        .to_owned()
+    }
+}
+
+/// Result of setting secrets: one warning per value kept in memory instead of the keychain.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretsResultDto {
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -660,6 +686,8 @@ pub fn typescript_bindings() -> String {
         SendBody::decl(&cfg),
         SaveEnvironmentBody::decl(&cfg),
         SecretsBody::decl(&cfg),
+        SecretStateDto::decl(&cfg),
+        SecretsResultDto::decl(&cfg),
         ConflictDto::decl(&cfg),
         ApiErrorDto::decl(&cfg),
         RunReportDto::decl(&cfg),

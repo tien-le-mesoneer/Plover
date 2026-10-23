@@ -36,16 +36,26 @@ describe("workspace store", () => {
 });
 
 describe("secrets", () => {
-  it("sends only changed names and refreshes which secrets are set", async () => {
+  it("sends only changed names, returns warnings and refreshes secrets and capabilities", async () => {
+    const secretsSet = [
+      { name: "a", backend: "keychain" },
+      { name: "b", backend: "memory" },
+    ];
     const api = {
-      setSecrets: vi.fn(async () => undefined),
-      environments: vi.fn(async () => [
-        { name: "local", vars: [], secretNames: ["a", "b"], secretsSet: ["a", "b"], hash: "h" },
-      ]),
+      setSecrets: vi.fn(async () => ({ warnings: ["b: keychain refused"] })),
+      environments: vi.fn(async () => [{ name: "local", vars: [], secretNames: ["a", "b"], secretsSet, hash: "h" }]),
+      capabilities: vi.fn(async () => ({
+        desktop: true,
+        nativePicker: true,
+        openExternal: true,
+        secretBackend: "keychain",
+      })),
     } as unknown as ApiClient;
     setApi(api);
-    await useWorkspace.getState().setSecrets("c1", "local", { b: "2", a: null });
+    const warnings = await useWorkspace.getState().setSecrets("c1", "local", { b: "2", a: null });
+    expect(warnings).toEqual(["b: keychain refused"]);
     expect(api.setSecrets).toHaveBeenCalledWith("c1", "local", { b: "2", a: null });
-    expect(useWorkspace.getState().environments.c1![0]!.secretsSet).toEqual(["a", "b"]);
+    expect(api.capabilities).toHaveBeenCalled();
+    expect(useWorkspace.getState().environments.c1![0]!.secretsSet).toEqual(secretsSet);
   });
 });

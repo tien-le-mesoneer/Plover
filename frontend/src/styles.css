@@ -175,3 +175,9 @@ sup.err { color: var(--err, #d0473b); }
 .console-output li pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .console-output li.warn { color: #b7791f; }
 .console-output li.error { color: var(--err, #d0473b); }
+
+/* Where a secret is kept (EnvEditor). */
+.secret .badge.keychain,
+.secret .badge.memory { margin-left: 6px; padding: 0 6px; border-radius: 8px; min-width: 0; }
+.secret .badge.keychain { border: 1px solid var(--ok); color: var(--ok); }
+.secret .badge.memory { border: 1px solid var(--warn); color: var(--warn); }

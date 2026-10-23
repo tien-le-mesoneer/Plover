@@ -242,7 +242,11 @@ fn cli_only_build_serves_api_without_ui() {
     BufReader::new(child.stdout.take().unwrap())
         .read_line(&mut line)
         .unwrap();
-    let url = line.trim().strip_prefix("plv listening on ").unwrap().to_owned();
+    let url = line
+        .trim()
+        .strip_prefix("plv listening on ")
+        .unwrap()
+        .to_owned();
     let (base, token) = url.split_once("/#token=").unwrap();
     let addr = base.strip_prefix("http://").unwrap().to_owned();
     let get = |path: &str| {

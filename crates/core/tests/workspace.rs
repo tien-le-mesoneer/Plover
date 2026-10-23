@@ -288,9 +288,13 @@ fn secrets_merge_and_clear() {
         ]
         .into()
     );
-    assert_eq!(open.secret_names_set("Local"), ["a", "b"]);
+    assert_eq!(names(&open.secret_status("Local")), ["a", "b"]);
     open.update_secrets("Local", [("a".to_owned(), None)].into())
         .unwrap();
-    assert_eq!(open.secret_names_set("Local"), ["b"]);
-    assert!(open.secret_names_set("Prod").is_empty());
+    assert_eq!(names(&open.secret_status("Local")), ["b"]);
+    assert!(open.secret_status("Prod").is_empty());
+}
+
+fn names(status: &[(String, plover_core::secrets::SecretBackend)]) -> Vec<&str> {
+    status.iter().map(|(name, _)| name.as_str()).collect()
 }

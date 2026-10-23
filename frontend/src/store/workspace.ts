@@ -24,8 +24,11 @@ export interface WorkspaceState {
   refreshTree(id: string): Promise<void>;
   selectEnv(id: string, name: string | null): void;
   saveEnvironment(id: string, name: string, vars: KeyValueDto[]): Promise<"saved" | "conflict">;
-  /** Sends only the given names (`null` clears) and refreshes which secrets are set. */
-  setSecrets(id: string, name: string, values: Record<string, string | null>): Promise<void>;
+  /**
+   * Sends only the given names (`null` clears), then refreshes which secrets are set
+   * (and where) and the capabilities. Resolves to warnings for values kept in memory.
+   */
+  setSecrets(id: string, name: string, values: Record<string, string | null>): Promise<string[]>;
   /** Opens this session in the default browser (desktop only). */
   openInBrowser(): Promise<void>;
   clearError(): void;
@@ -135,9 +138,10 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => {
     },
 
     async setSecrets(id, name, values) {
-      await api().setSecrets(id, name, values);
-      const environments = await api().environments(id);
-      set((s) => ({ environments: { ...s.environments, [id]: environments } }));
+      const { warnings } = await api().setSecrets(id, name, values);
+      const [environments, capabilities] = await Promise.all([api().environments(id), api().capabilities()]);
+      set((s) => ({ environments: { ...s.environments, [id]: environments }, capabilities }));
+      return warnings;
     },
 
     clearError() {

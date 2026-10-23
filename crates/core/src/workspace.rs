@@ -1,6 +1,6 @@
 //! Collections opened by a long-lived process (the server): each keeps its
 //! loaded tree, one HTTP session (cookie jar) and runtime variables. Secret
-//! environment values live in a `SecretStore` (OS keychain or memory), never on disk.
+//! environment values live in a `SecretVault` (OS keychain or memory), never on disk.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use crate::collection::{Collection, LoadError};
 use crate::executor::{ExecError, ExecOptions, Session};
-use crate::secrets::{MemoryStore, SecretBackend, SecretError, SecretKey, SecretStore};
+use crate::secrets::{SecretBackend, SecretError, SecretKey, SecretVault};
 use crate::store::ContentHash;
 use crate::vars::{ValueMap, VarMap};
 
@@ -42,7 +42,7 @@ pub struct OpenCollection {
     collection: RwLock<Arc<Collection>>,
     pub session: Session,
     runtime: Mutex<ValueMap>,
-    secrets: Arc<dyn SecretStore>,
+    secrets: Arc<SecretVault>,
     /// Secret names set in this session per environment, besides those the env file declares.
     secret_names: Mutex<BTreeMap<String, BTreeSet<String>>>,
     /// Environment variables scripts set (`bru.setEnvVar`), per environment, in memory only.
@@ -151,33 +151,41 @@ impl OpenCollection {
         names
     }
 
-    /// The stored secret values for `env`. A store error skips that value (logged without it).
+    /// The stored secret values for `env`. An unreadable value is skipped (logged without it).
     pub fn secrets(&self, env: &str) -> VarMap {
-        let mut values = VarMap::new();
+        self.stored_secrets(env)
+            .into_iter()
+            .map(|(name, stored)| (name, stored.value))
+            .collect()
+    }
+
+    fn stored_secrets(&self, env: &str) -> Vec<(String, crate::secrets::StoredSecret)> {
+        let mut out = Vec::new();
         for name in self.known_secret_names(env) {
             match self.secrets.get(&self.secret_key(env, &name)) {
-                Ok(Some(v)) => {
-                    values.insert(name, v);
-                }
+                Ok(Some(stored)) => out.push((name, stored)),
                 Ok(None) => {}
                 Err(e) => tracing::warn!(%name, error = %e, "could not read secret"),
             }
         }
-        values
+        out
     }
 
-    /// Merges secret values for environment `env`: `Some` sets a value, `None` clears it.
-    /// Names not mentioned keep their current value.
+    /// Merges secret values for environment `env`: `Some` sets a value, `None` clears it
+    /// (from memory and the keychain). Names not mentioned keep their current value.
+    /// Returns a warning for each value kept in memory instead of the keychain.
     pub fn update_secrets(
         &self,
         env: &str,
         changes: BTreeMap<String, Option<String>>,
-    ) -> Result<(), SecretError> {
+    ) -> Result<Vec<String>, SecretError> {
+        let mut warnings = Vec::new();
         for (name, value) in changes {
             let key = self.secret_key(env, &name);
             match value {
                 Some(v) => {
-                    self.secrets.set(&key, &v)?;
+                    let outcome = self.secrets.set(&key, &v)?;
+                    warnings.extend(outcome.warning);
                     self.secret_names
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)
@@ -188,17 +196,21 @@ impl OpenCollection {
                 None => self.secrets.delete(&key)?,
             }
         }
-        Ok(())
+        Ok(warnings)
     }
 
-    /// Names (never values) of the secrets that currently have a value, sorted.
-    pub fn secret_names_set(&self, env: &str) -> Vec<String> {
-        self.secrets(env).into_keys().collect()
+    /// Names (never values) of the secrets that currently have a value, sorted, with
+    /// where each is kept.
+    pub fn secret_status(&self, env: &str) -> Vec<(String, SecretBackend)> {
+        self.stored_secrets(env)
+            .into_iter()
+            .map(|(name, stored)| (name, stored.backend))
+            .collect()
     }
 
-    /// Where this collection's secrets are kept right now.
+    /// Where new secret values go right now.
     pub fn secret_backend(&self) -> SecretBackend {
-        self.secrets.kind()
+        self.secrets.availability()
     }
 }
 
@@ -217,17 +229,17 @@ fn apply_changes(target: &mut ValueMap, before: &ValueMap, after: &ValueMap) {
 
 pub struct Workspace {
     exec: ExecOptions,
-    secrets: Arc<dyn SecretStore>,
+    secrets: Arc<SecretVault>,
     collections: RwLock<HashMap<CollectionId, Arc<OpenCollection>>>,
 }
 
 impl Workspace {
     /// Secrets are kept in memory; see [`Workspace::with_secrets`] for the keychain.
     pub fn new(exec: ExecOptions) -> Workspace {
-        Workspace::with_secrets(exec, Arc::new(MemoryStore::default()))
+        Workspace::with_secrets(exec, Arc::new(SecretVault::memory()))
     }
 
-    pub fn with_secrets(exec: ExecOptions, secrets: Arc<dyn SecretStore>) -> Workspace {
+    pub fn with_secrets(exec: ExecOptions, secrets: Arc<SecretVault>) -> Workspace {
         Workspace {
             exec,
             secrets,
@@ -236,7 +248,7 @@ impl Workspace {
     }
 
     pub fn secret_backend(&self) -> SecretBackend {
-        self.secrets.kind()
+        self.secrets.availability()
     }
 
     /// Opens the collection containing `path` (its root, a folder or a file).

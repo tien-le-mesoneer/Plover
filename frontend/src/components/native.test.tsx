@@ -62,6 +62,38 @@ describe("native folder picker", () => {
   });
 });
 
+describe("per-secret storage", () => {
+  it("badges each secret and warns when any is memory-only", () => {
+    useWorkspace.setState({
+      capabilities: desktop,
+      environments: {
+        c1: [{ ...env, secretNames: ["token", "pem"], secretsSet: [
+          { name: "token", backend: "keychain" },
+          { name: "pem", backend: "memory" },
+        ] }],
+      },
+    });
+    render(<EnvEditor collectionId="c1" name="local" onClose={() => {}} />);
+    expect(screen.getByText("keychain")).toBeTruthy();
+    expect(screen.getByText("memory only")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toMatch(/memory only.*lost when Plover quits/i);
+  });
+
+  it("keeps the dialog open and shows warnings after saving", async () => {
+    useWorkspace.setState({
+      capabilities: desktop,
+      setSecrets: vi.fn(async () => ["token: keychain refused: denied; kept in memory until Plover quits"]),
+      saveEnvironment: vi.fn(async () => "saved" as const),
+    });
+    const onClose = vi.fn();
+    render(<EnvEditor collectionId="c1" name="local" onClose={onClose} />);
+    fireEvent.change(screen.getByLabelText("Secret token"), { target: { value: "v" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await vi.waitFor(() => expect(screen.getByText(/keychain refused/)).toBeTruthy());
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
 describe("secret storage status", () => {
   it("says memory only without a keychain", () => {
     render(<EnvEditor collectionId="c1" name="local" onClose={() => {}} />);

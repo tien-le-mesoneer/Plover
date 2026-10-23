@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use plover_core::executor::ExecOptions;
-use plover_core::secrets::{MemoryStore, SecretStore};
+use plover_core::secrets::SecretVault;
 use plover_core::workspace::Workspace;
 
 use crate::api::MAX_INLINE_BODY;
@@ -22,7 +22,7 @@ pub struct AppState {
 impl AppState {
     /// Secrets are kept in memory; see [`AppState::with_secrets`].
     pub fn new(exec: ExecOptions, token: &str, allowed: AllowList) -> AppState {
-        AppState::with_secrets(exec, token, allowed, Arc::new(MemoryStore::default()))
+        AppState::with_secrets(exec, token, allowed, Arc::new(SecretVault::memory()))
     }
 
     /// The server never reads more of a response body than the UI can show:
@@ -31,7 +31,7 @@ impl AppState {
         mut exec: ExecOptions,
         token: &str,
         allowed: AllowList,
-        secrets: Arc<dyn SecretStore>,
+        secrets: Arc<SecretVault>,
     ) -> AppState {
         exec.max_body_bytes.get_or_insert(MAX_INLINE_BODY);
         AppState {

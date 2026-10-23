@@ -11,6 +11,7 @@ import type {
   PickedFolderDto,
   RunEventDto,
   SavedRequestDto,
+  SecretsResultDto,
   SendResultDto,
   StoredRequestDto,
   TreeNodeDto,
@@ -62,8 +63,8 @@ export interface ApiClient {
   ): Promise<SendResultDto>;
   environments(id: string): Promise<EnvironmentDto[]>;
   saveEnvironment(id: string, name: string, vars: KeyValueDto[], hash: string): Promise<HashDto>;
-  /** Merges secret values; `null` clears one. */
-  setSecrets(id: string, name: string, values: Record<string, string | null>): Promise<void>;
+  /** Merges secret values; `null` clears one. Warns for values kept in memory only. */
+  setSecrets(id: string, name: string, values: Record<string, string | null>): Promise<SecretsResultDto>;
   startRun(
     id: string,
     item: string,

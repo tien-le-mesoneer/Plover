@@ -25,11 +25,19 @@ export function EnvEditor({ collectionId, name, onClose }: Props) {
   const [status, setStatus] = useState<string | null>(null);
   if (!env) return null;
 
+  const memoryOnly = env.secretsSet.filter((s) => s.backend === "memory").map((s) => s.name);
+
   const save = async () => {
-    if (Object.keys(edits).length > 0) await setSecrets(collectionId, name, edits);
+    const warnings = Object.keys(edits).length > 0 ? await setSecrets(collectionId, name, edits) : [];
     const result = await saveEnvironment(collectionId, name, vars);
-    if (result === "saved") {
+    if (result === "saved" && warnings.length === 0) {
       onClose();
+      return;
+    }
+    if (result === "saved") {
+      // Stay open so the user sees which values did not reach the keychain.
+      setEdits({});
+      setStatus(warnings.join("\n"));
       return;
     }
     const fresh = useWorkspace.getState().environments[collectionId]?.find((e) => e.name === name);
@@ -51,8 +59,14 @@ export function EnvEditor({ collectionId, name, onClose }: Props) {
                 ? "Stored in the OS keychain; never written to collection files."
                 : "Memory only — values are lost when Plover quits; never written to disk."}
             </p>
+            {memoryOnly.length > 0 && (
+              <Banner kind="warn" role="alert">
+                Memory only: {memoryOnly.join(", ")} — these values are lost when Plover quits.
+              </Banner>
+            )}
             {env.secretNames.map((secret) => {
-              const isSet = env.secretsSet.includes(secret);
+              const stored = env.secretsSet.find((s) => s.name === secret);
+              const isSet = stored !== undefined;
               const edit = edits[secret];
               const state =
                 edit === null ? "will be cleared" : edit !== undefined ? "changed" : isSet ? "set" : "not set";
@@ -60,6 +74,11 @@ export function EnvEditor({ collectionId, name, onClose }: Props) {
                 <label key={secret} className="secret">
                   <span>
                     {secret} <span className="muted">({state})</span>
+                    {stored && (
+                      <span className={`badge ${stored.backend}`}>
+                        {stored.backend === "keychain" ? "keychain" : "memory only"}
+                      </span>
+                    )}
                   </span>
                   <span className="secret-row">
                     <input
@@ -81,7 +100,7 @@ export function EnvEditor({ collectionId, name, onClose }: Props) {
           </>
         )}
         {status && (
-          <Banner kind="warn" role="alert">
+          <Banner kind="warn" role="status">
             {status}
           </Banner>
         )}

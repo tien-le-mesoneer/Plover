@@ -15,7 +15,7 @@ use std::sync::Arc;
 use axum::routing::get;
 use axum::{Json, Router, middleware};
 use plover_core::executor::ExecOptions;
-use plover_core::secrets::{MemoryStore, SecretStore};
+use plover_core::secrets::SecretVault;
 use plover_core::workspace::Workspace;
 
 pub use api::MAX_INLINE_BODY;
@@ -32,7 +32,7 @@ pub struct ServerConfig {
     pub dev_origins: Vec<String>,
     pub exec: ExecOptions,
     /// Where secret values are kept; `None` keeps them in memory.
-    pub secrets: Option<Arc<dyn SecretStore>>,
+    pub secrets: Option<Arc<SecretVault>>,
     /// The desktop shell's native features; `None` in web mode.
     pub native: Option<Arc<dyn native::NativeHost>>,
 }
@@ -83,7 +83,7 @@ pub async fn start(
         &token,
         AllowList::new(addr.port(), &cfg.dev_origins),
         cfg.secrets
-            .unwrap_or_else(|| Arc::new(MemoryStore::default())),
+            .unwrap_or_else(|| Arc::new(SecretVault::memory())),
     )
     .with_session_url(&url);
     if let Some(host) = cfg.native {

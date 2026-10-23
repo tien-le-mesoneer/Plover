@@ -101,7 +101,9 @@ fn install_cli(app: &AppHandle<Wry>) {
     let result = std::env::current_exe()
         .map_err(|e| cli_link::LinkError::Io(e.to_string()))
         .and_then(|exe| {
-            let home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default();
+            let home = std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_default();
             cli_link::install_link(
                 &exe,
                 &cli_link::default_candidates(&home),
@@ -111,26 +113,40 @@ fn install_cli(app: &AppHandle<Wry>) {
     let (kind, message) = match result {
         Ok(installed) if installed.on_path => (
             MessageDialogKind::Info,
-            format!("Installed {}. Run `plv --help` in a new terminal.", installed.path.display()),
+            format!(
+                "Installed {}. Run `plv --help` in a new terminal.",
+                installed.path.display()
+            ),
         ),
         Ok(installed) => (
             MessageDialogKind::Warning,
             format!(
                 "Installed {}, but {} is not on your PATH. Add it to your shell profile to run `plv`.",
                 installed.path.display(),
-                installed.path.parent().map(|p| p.display().to_string()).unwrap_or_default()
+                installed
+                    .path
+                    .parent()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
             ),
         ),
         Err(cli_link::LinkError::ForeignFile(path)) => (
             MessageDialogKind::Error,
-            format!("{} already exists and is not Plover's; it was left unchanged.", path.display()),
+            format!(
+                "{} already exists and is not Plover's; it was left unchanged.",
+                path.display()
+            ),
         ),
         Err(cli_link::LinkError::Io(e)) => (
             MessageDialogKind::Error,
             format!("Could not install the command line tool: {e}"),
         ),
     };
-    app.dialog().message(message).title("Plover").kind(kind).show(|_| {});
+    app.dialog()
+        .message(message)
+        .title("Plover")
+        .kind(kind)
+        .show(|_| {});
 }
 
 fn setup(app: &AppHandle<Wry>) {

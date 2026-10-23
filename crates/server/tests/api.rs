@@ -484,14 +484,19 @@ async fn env_edit_and_secret_memory_only() {
     let after = fs::read_to_string(&env_path).unwrap();
     assert_eq!(changed_lines(&before, &after), (1, 1));
 
-    let (status, _) = call(
+    let (status, set) = call(
         &app,
         "PUT",
         &format!("/api/collections/{id}/environments/local/secrets"),
         Some(json!({ "values": { "token": "s3cr3t-value" } })),
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::OK, "{set}");
+    // The test server has no keychain: the value is kept in memory, and the UI is told.
+    let warnings = set["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].as_str().unwrap().contains("token"));
+    assert!(!set.to_string().contains("s3cr3t-value"));
     let (status, res) = call(
         &app,
         "POST",
@@ -515,7 +520,7 @@ async fn env_edit_and_secret_memory_only() {
         Some(json!({ "values": { "other": "x" } })),
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::OK);
     let (_, envs) = call(
         &app,
         "GET",
@@ -529,7 +534,13 @@ async fn env_edit_and_secret_memory_only() {
         .iter()
         .find(|e| e["name"] == "local")
         .unwrap();
-    assert_eq!(local["secretsSet"], json!(["other", "token"]));
+    assert_eq!(
+        local["secretsSet"],
+        json!([
+            { "name": "other", "backend": "memory" },
+            { "name": "token", "backend": "memory" }
+        ])
+    );
     assert!(!envs.to_string().contains("s3cr3t-value"));
     call(
         &app,
@@ -551,7 +562,10 @@ async fn env_edit_and_secret_memory_only() {
         .iter()
         .find(|e| e["name"] == "local")
         .unwrap();
-    assert_eq!(local["secretsSet"], json!(["token"]));
+    assert_eq!(
+        local["secretsSet"],
+        json!([{ "name": "token", "backend": "memory" }])
+    );
 
     let (status, _) = call(
         &app,

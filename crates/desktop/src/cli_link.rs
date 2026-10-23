@@ -83,9 +83,12 @@ pub fn install_link(
         }
         match symlink(exe, &link) {
             Ok(()) => {
-                let on_path = path_env
-                    .is_some_and(|p| std::env::split_paths(p).any(|entry| entry == *dir));
-                return Ok(Installed { path: link, on_path });
+                let on_path =
+                    path_env.is_some_and(|p| std::env::split_paths(p).any(|entry| entry == *dir));
+                return Ok(Installed {
+                    path: link,
+                    on_path,
+                });
             }
             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && !last => continue,
             Err(e) => return Err(io(e, &link)),
@@ -120,10 +123,19 @@ mod tests {
         assert!(is_cli(&args(&["/usr/local/bin/plv", "--version"]), false));
         assert!(is_cli(&args(&["C:\\Plover\\plv.exe"]), false));
         assert!(is_cli(&args(&["C:\\Plover\\PLV.EXE", "run", "x"]), false));
-        assert!(is_cli(&args(&["/Applications/Plover.app/Contents/MacOS/plover", "run", "c"]), false));
+        assert!(is_cli(
+            &args(&["/Applications/Plover.app/Contents/MacOS/plover", "run", "c"]),
+            false
+        ));
         assert!(is_cli(&args(&["plover", "serve"]), false));
-        assert!(is_cli(&args(&["/usr/bin/plover", "--help"]), true), "PLOVER_AS_CLI");
-        assert!(!is_cli(&args(&["/Applications/Plover.app/Contents/MacOS/plover"]), false));
+        assert!(
+            is_cli(&args(&["/usr/bin/plover", "--help"]), true),
+            "PLOVER_AS_CLI"
+        );
+        assert!(!is_cli(
+            &args(&["/Applications/Plover.app/Contents/MacOS/plover"]),
+            false
+        ));
         assert!(!is_cli(&args(&["plover", "/path/to/collection"]), false));
         assert!(!is_cli(&args(&["plover", "-psn_0_1234"]), false));
     }
@@ -151,7 +163,13 @@ mod tests {
             // Writable first candidate.
             let path_env = OsString::from(format!("/bin:{}", system.display()));
             let got = install_link(&exe, &[system.clone(), user.clone()], Some(&path_env)).unwrap();
-            assert_eq!(got, Installed { path: system.join("plv"), on_path: true });
+            assert_eq!(
+                got,
+                Installed {
+                    path: system.join("plv"),
+                    on_path: true
+                }
+            );
             assert_eq!(std::fs::read_link(system.join("plv")).unwrap(), exe);
 
             // Our own link is replaced (e.g. the app moved).
@@ -165,14 +183,28 @@ mod tests {
                 install_link(&exe, &[system.clone(), user.clone()], None),
                 Err(LinkError::ForeignFile(system.join("plv")))
             );
-            assert_eq!(std::fs::read_to_string(system.join("plv")).unwrap(), "someone else's plv");
+            assert_eq!(
+                std::fs::read_to_string(system.join("plv")).unwrap(),
+                "someone else's plv"
+            );
 
             // Read-only first candidate: fall back to ~/.local/bin (created), not on PATH.
             std::fs::remove_file(system.join("plv")).unwrap();
             std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o555)).unwrap();
-            let got = install_link(&exe, &[system.clone(), user.clone()], Some(OsStr::new("/bin"))).unwrap();
+            let got = install_link(
+                &exe,
+                &[system.clone(), user.clone()],
+                Some(OsStr::new("/bin")),
+            )
+            .unwrap();
             std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o755)).unwrap();
-            assert_eq!(got, Installed { path: user.join("plv"), on_path: false });
+            assert_eq!(
+                got,
+                Installed {
+                    path: user.join("plv"),
+                    on_path: false
+                }
+            );
             assert_eq!(std::fs::read_link(user.join("plv")).unwrap(), exe);
 
             // A missing /usr/local/bin is skipped, never created.
@@ -186,7 +218,10 @@ mod tests {
         fn default_candidates_order() {
             assert_eq!(
                 default_candidates(Path::new("/home/u")),
-                [PathBuf::from("/usr/local/bin"), PathBuf::from("/home/u/.local/bin")]
+                [
+                    PathBuf::from("/usr/local/bin"),
+                    PathBuf::from("/home/u/.local/bin")
+                ]
             );
         }
     }

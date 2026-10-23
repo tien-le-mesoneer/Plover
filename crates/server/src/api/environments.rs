@@ -5,7 +5,10 @@ use plover_core::bru::model::EnvironmentFile;
 use plover_core::request::KeyValue;
 use plover_core::store::{self, ContentHash};
 
-use super::dto::{EnvironmentDto, HashDto, KeyValueDto, SaveEnvironmentBody, SecretsBody};
+use super::dto::{
+    EnvironmentDto, HashDto, KeyValueDto, SaveEnvironmentBody, SecretStateDto, SecretsBody,
+    SecretsResultDto,
+};
 use super::extract::{ApiJson, ApiPath};
 use super::open_collection;
 use crate::error::ApiError;
@@ -29,7 +32,14 @@ pub async fn list(
             name: env.name.clone(),
             vars: file.vars.iter().map(KeyValueDto::from).collect(),
             secret_names: file.secrets.iter().map(|s| s.name.clone()).collect(),
-            secrets_set: open.secret_names_set(&env.name),
+            secrets_set: open
+                .secret_status(&env.name)
+                .into_iter()
+                .map(|(name, backend)| SecretStateDto {
+                    name,
+                    backend: SecretStateDto::backend_name(backend),
+                })
+                .collect(),
             hash: hash.0,
         });
     }
@@ -54,19 +64,19 @@ pub async fn set_secrets(
     State(state): State<AppState>,
     ApiPath((id, name)): ApiPath<(String, String)>,
     ApiJson(body): ApiJson<SecretsBody>,
-) -> Result<StatusCode, ApiError> {
+) -> Result<Json<SecretsResultDto>, ApiError> {
     let open = open_collection(&state, &id)?;
     if open.collection().environment(&name).is_none() {
         return Err(ApiError::not_found(format!(
             "environment `{name}` not found"
         )));
     }
-    open.update_secrets(&name, body.values).map_err(|e| {
+    let warnings = open.update_secrets(&name, body.values).map_err(|e| {
         ApiError::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "secret_store_error",
             e.to_string(),
         )
     })?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(Json(SecretsResultDto { warnings }))
 }

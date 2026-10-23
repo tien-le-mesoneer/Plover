@@ -55,9 +55,9 @@ children: Array<TreeNodeDto> | null, };
 
 export type EnvironmentDto = { name: string, vars: Array<KeyValueDto>, secretNames: Array<string>, 
 /**
- * Secret names that have a value in this session (values are never sent).
+ * Secrets that have a value and where each is kept (values are never sent).
  */
-secretsSet: Array<string>, hash: string, };
+secretsSet: Array<SecretStateDto>, hash: string, };
 
 export type ResponseDto = { status: number, headers: Array<[string, string]>, elapsedMs: number, 
 /**
@@ -149,6 +149,14 @@ export type SecretsBody = {
  * Merged into the current values: a string sets a secret, `null` clears it.
  */
 values: { [key in string]: string | null }, };
+
+export type SecretStateDto = { name: string, 
+/**
+ * `"keychain"` or `"memory"` (kept only until Plover quits).
+ */
+backend: "keychain" | "memory", };
+
+export type SecretsResultDto = { warnings: Array<string>, };
 
 export type ConflictDto = { text: string, hash: string, };
 
