@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { KeyValueDto } from "../api/types";
 import { useWorkspace } from "../store/workspace";
 import { Banner } from "./Banner";
+import { Modal } from "./Modal";
 import { KeyValueTable } from "./request/KeyValueTable";
 
 interface Props {
@@ -26,6 +27,11 @@ export function EnvEditor({ collectionId, name, onClose }: Props) {
   if (!env) return null;
 
   const memoryOnly = env.secretsSet.filter((s) => s.backend === "memory").map((s) => s.name);
+  const dirty = Object.keys(edits).length > 0 || JSON.stringify(vars) !== JSON.stringify(env.vars);
+  // Escape, a backdrop click or Cancel keep unsaved edits unless the user confirms.
+  const dismiss = () => {
+    if (!dirty || window.confirm(`Discard unsaved changes to environment "${name}"?`)) onClose();
+  };
 
   const save = async () => {
     const warnings = Object.keys(edits).length > 0 ? await setSecrets(collectionId, name, edits) : [];
@@ -47,8 +53,7 @@ export function EnvEditor({ collectionId, name, onClose }: Props) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" role="dialog" aria-label={`Environment ${name}`} onClick={(e) => e.stopPropagation()}>
+    <Modal title={`Environment ${name}`} onDismiss={dismiss}>
         <h3>Environment: {name}</h3>
         <KeyValueTable rows={vars} onChange={setVars} />
         {env.secretNames.length > 0 && (
@@ -105,12 +110,11 @@ export function EnvEditor({ collectionId, name, onClose }: Props) {
           </Banner>
         )}
         <div className="actions">
-          <button onClick={onClose}>Cancel</button>
+          <button onClick={dismiss}>Cancel</button>
           <button className="primary" onClick={() => void save()}>
             Save
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

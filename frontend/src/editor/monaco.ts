@@ -13,6 +13,7 @@ import "monaco-editor/languages/features/json/register.js";
 import "monaco-editor/languages/definitions/xml/register.js";
 import "monaco-editor/languages/definitions/html/register.js";
 import "monaco-editor/languages/definitions/javascript/register.js";
+import { themeFor, watchColorScheme, type ThemeName } from "./theme";
 
 // Monaco creates its main editor worker from a `new URL(...)` that is not
 // passed straight to `new Worker`, so Vite inlines it as an unusable data: URL
@@ -23,5 +24,33 @@ self.MonacoEnvironment = {
     return label === "json" ? new JsonWorker() : new EditorWorker();
   },
 };
+
+// Themes matching the app's colour tokens (styles.css), so editors don't stand
+// out as a lighter or darker block.
+monaco.editor.defineTheme("plover-light", {
+  base: "vs",
+  inherit: true,
+  rules: [],
+  colors: { "editor.background": "#ffffff", "editor.lineHighlightBackground": "#f6f7f9" },
+});
+monaco.editor.defineTheme("plover-dark", {
+  base: "vs-dark",
+  inherit: true,
+  rules: [],
+  colors: { "editor.background": "#1b1d22", "editor.lineHighlightBackground": "#22252b" },
+});
+
+const scheme = typeof window !== "undefined" ? window.matchMedia?.("(prefers-color-scheme: dark)") : undefined;
+let current: ThemeName = themeFor(scheme?.matches ?? false);
+// Monaco's theme is global: one listener follows macOS/Windows appearance changes live.
+if (scheme) {
+  watchColorScheme(scheme, (theme) => {
+    current = theme;
+    monaco.editor.setTheme(theme);
+  });
+}
+
+/** The theme for newly created editors. */
+export const currentTheme = (): ThemeName => current;
 
 export { monaco };

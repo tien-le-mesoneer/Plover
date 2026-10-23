@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { api } from "./api/instance";
 import { handleServerEvent } from "./store/events";
 import { Banner } from "./components/Banner";
+import { EmptyState } from "./components/EmptyState";
+import { CloseIcon } from "./components/icons";
+import { Modal } from "./components/Modal";
+import { closeTabWithConfirm } from "./components/RequestTabs";
 import { EnvSelector } from "./components/EnvSelector";
 import { RequestEditor } from "./components/request/RequestEditor";
 import { RequestTabs } from "./components/RequestTabs";
@@ -12,7 +16,7 @@ import { useTabs } from "./store/tabs";
 import { useWorkspace } from "./store/workspace";
 
 export default function App({ hasToken }: { hasToken: boolean }) {
-  const { tabs, active, save } = useTabs();
+  const { tabs, active, save, send } = useTabs();
   const { collections, activeEnv, error, clearError, init, capabilities, openInBrowser, activeCollection } =
     useWorkspace();
   const anyDirty = useTabs((s) => s.tabs.some((t) => s.isDirty(t.key)));
@@ -50,16 +54,48 @@ export default function App({ hasToken }: { hasToken: boolean }) {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [anyDirty]);
 
+  // App shortcuts: Cmd/Ctrl+S save, Cmd/Ctrl+Enter send, Cmd/Ctrl+W close the tab.
+  // Monaco handles Cmd/Ctrl+Enter itself and dispatches "plover:send" (see CodeEditor).
+  // Browsers reserve Cmd/Ctrl+W for closing the window and never deliver it to the
+  // page; it works in the desktop app and in browsers that pass it through.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === "s") {
         e.preventDefault();
         if (active) void save(active);
+      } else if (key === "enter") {
+        if (!active) return;
+        e.preventDefault();
+        void send(active);
+      } else if (key === "w" && active && !e.shiftKey) {
+        e.preventDefault();
+        closeTabWithConfirm(active);
       }
     };
+    const onSend = () => {
+      if (active) void send(active);
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [active, save]);
+    window.addEventListener("plover:send", onSend);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("plover:send", onSend);
+    };
+  }, [active, save, send]);
+
+  const focusOpen = () => {
+    if (capabilities?.nativePicker) {
+      void api()
+        .pickFolder()
+        .then((picked) => {
+          if (picked) void useWorkspace.getState().open(picked);
+        });
+    } else {
+      document.querySelector<HTMLInputElement>('input[aria-label="Collection path"]')?.focus();
+    }
+  };
 
   if (!hasToken) {
     return (
@@ -83,18 +119,16 @@ export default function App({ hasToken }: { hasToken: boolean }) {
         <EnvSelector collectionId={collectionId} />
       </header>
       {confirmReload && (
-        <div className="modal-backdrop">
-          <div className="modal" role="dialog" aria-label="Reload window">
-            <h3>Discard unsaved changes?</h3>
-            <p>Some requests have unsaved edits. Reloading the window discards them.</p>
-            <div className="actions">
-              <button onClick={() => setConfirmReload(false)}>Cancel</button>
-              <button className="primary" onClick={() => window.location.reload()}>
-                Discard and reload
-              </button>
-            </div>
+        <Modal title="Reload window" onDismiss={() => setConfirmReload(false)}>
+          <h3>Discard unsaved changes?</h3>
+          <p>Some requests have unsaved edits. Reloading the window discards them.</p>
+          <div className="actions">
+            <button onClick={() => setConfirmReload(false)}>Cancel</button>
+            <button className="primary" onClick={() => window.location.reload()}>
+              Discard and reload
+            </button>
           </div>
-        </div>
+        </Modal>
       )}
       {error && (
         <Banner
@@ -102,7 +136,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
           role="alert"
           actions={
             <button className="icon" title="Dismiss" aria-label="Dismiss" onClick={clearError}>
-              ×
+              <CloseIcon />
             </button>
           }
         >
@@ -118,13 +152,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
         />
         <main className="main">
           <RequestTabs />
-          {tab ? (
-            <RequestEditor key={tab.key} tab={tab} />
-          ) : (
-            <p className="muted center">
-              {collections.length ? "Pick a request in the sidebar." : "Open a Bruno collection to start."}
-            </p>
-          )}
+          {tab ? <RequestEditor key={tab.key} tab={tab} /> : <EmptyState onOpen={focusOpen} />}
           {showRun && <RunPanel onClose={() => setShowRun(false)} />}
         </main>
       </div>

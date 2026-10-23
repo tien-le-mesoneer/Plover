@@ -37,6 +37,11 @@ export function UrlBar({ draft, dirty, sending, onEdit, onSend, onSave }: Props)
         className="url"
         value={draft.url}
         spellCheck={false}
+        onKeyDown={(e) => {
+          // Cmd/Ctrl+Enter sends through the app-wide shortcut; stop the form's
+          // implicit submission so it is not sent twice.
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.preventDefault();
+        }}
         onChange={(e) => {
           const url = e.target.value;
           onEdit((d) => ({
@@ -47,7 +52,7 @@ export function UrlBar({ draft, dirty, sending, onEdit, onSend, onSave }: Props)
           }));
         }}
       />
-      <button type="submit" className="primary" disabled={sending}>
+      <button type="submit" className="primary" disabled={sending} title="Send (Enter, Ctrl/Cmd+Enter)">
         {sending ? "Sending…" : "Send"}
       </button>
       <button type="button" disabled={!dirty} onClick={onSave} title="Save (Ctrl/Cmd+S)">

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { monaco } from "./monaco";
+import { currentTheme, monaco } from "./monaco";
 
 export interface CodeEditorProps {
   value: string;
@@ -22,7 +22,6 @@ export function CodeEditor({ value, language, readOnly, onChange, height }: Code
 
   useEffect(() => {
     if (!host.current) return;
-    const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
     const instance = monaco.editor.create(host.current, {
       value,
       language,
@@ -32,8 +31,13 @@ export function CodeEditor({ value, language, readOnly, onChange, height }: Code
       scrollBeyondLastLine: false,
       fontSize: 13,
       tabSize: 2,
-      theme: dark ? "vs-dark" : "vs",
+      theme: currentTheme(),
     });
+    // Cmd/Ctrl+Enter sends the request even while typing in an editor (Monaco
+    // otherwise inserts a line); App listens for this event.
+    instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () =>
+      window.dispatchEvent(new Event("plover:send")),
+    );
     const sub = instance.onDidChangeModelContent(() => changeHandler.current?.(instance.getValue()));
     editor.current = instance;
     return () => {

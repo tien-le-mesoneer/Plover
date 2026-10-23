@@ -10,6 +10,7 @@ import { BodyTab } from "./BodyTab";
 import { CodeEditor } from "../../editor/CodeEditor";
 import { ScriptTab } from "./ScriptTab";
 import { KeyValueTable } from "./KeyValueTable";
+import { SubTabs } from "../SubTabs";
 import { UrlBar } from "./UrlBar";
 
 const SECTIONS = ["Params", "Headers", "Auth", "Body", "Script", "Assert", "Tests"] as const;
@@ -71,17 +72,25 @@ export function RequestEditor({ tab }: { tab: Tab }) {
       )}
       <div className="split">
         <section className="pane">
-          <nav className="subtabs">
-            {SECTIONS.map((s) => {
+          <SubTabs
+            label="Request sections"
+            value={section}
+            onChange={setSection}
+            tabs={SECTIONS.map((s) => {
               const n = count(draft, s);
-              return (
-                <button key={s} className={s === section ? "active" : ""} onClick={() => setSection(s)}>
-                  {s}
-                  {n ? <sup>{n}</sup> : hasCode(draft, s) ? <sup>•</sup> : null}
-                </button>
-              );
+              const code = hasCode(draft, s);
+              return {
+                id: s,
+                label: (
+                  <>
+                    {s}
+                    {n ? <sup aria-hidden="true">{n}</sup> : code ? <sup aria-hidden="true">•</sup> : null}
+                  </>
+                ),
+                name: n ? `${s}, ${n}` : code ? `${s}, has code` : s,
+              };
             })}
-          </nav>
+          />
           <div className="pane-body">
             {section === "Params" && (
               <>
@@ -121,8 +130,9 @@ export function RequestEditor({ tab }: { tab: Tab }) {
             {section === "Assert" && (
               <KeyValueTable
                 rows={draft.asserts}
-                namePlaceholder="res.status"
-                valuePlaceholder="eq 200"
+                nameLabel="Assertion"
+                valueLabel="Expected"
+                hint="Example: res.status — eq 200, or res.body.name — isString"
                 onChange={(asserts) => onEdit((d) => ({ ...d, asserts }))}
               />
             )}
@@ -145,7 +155,7 @@ export function RequestEditor({ tab }: { tab: Tab }) {
           </div>
         </section>
         <section className="pane">
-          <ResponseViewer result={tab.result} sending={tab.sending} />
+          <ResponseViewer result={tab.result} sending={tab.sending} onOpenScript={() => setSection("Script")} />
         </section>
       </div>
     </div>
