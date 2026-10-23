@@ -16,8 +16,7 @@ fn app(dev_origins: &[String]) -> axum::Router {
         workspace: Arc::new(Workspace::new(ExecOptions::default())),
         token: Arc::from(TOKEN),
         allowed: Arc::new(AllowList::new(PORT, dev_origins)),
-        native: None,
-        session_url: Arc::from(""),
+        ..AppState::new(ExecOptions::default(), TOKEN, AllowList::new(PORT, &[]))
     })
 }
 

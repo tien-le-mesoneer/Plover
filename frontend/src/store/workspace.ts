@@ -17,6 +17,8 @@ export interface WorkspaceState {
   activeEnv: Record<string, string | null>;
   /** `null` until loaded; web mode has no native features and memory-only secrets. */
   capabilities: CapabilitiesDto | null;
+  /** The collection last opened (here or natively); used when no tab is active. */
+  activeCollection: string | null;
   error?: string;
   init(): Promise<void>;
   open(path: string): Promise<void>;
@@ -31,6 +33,8 @@ export interface WorkspaceState {
   setSecrets(id: string, name: string, values: Record<string, string | null>): Promise<string[]>;
   /** Opens this session in the default browser (desktop only). */
   openInBrowser(): Promise<void>;
+  /** A collection the desktop shell opened: add and select it, keeping tabs and drafts. */
+  openedElsewhere(id: string): Promise<void>;
   clearError(): void;
 }
 
@@ -63,6 +67,7 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => {
     environments: {},
     activeEnv: {},
     capabilities: null,
+    activeCollection: null,
 
     async init() {
       try {
@@ -85,10 +90,23 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => {
       }
     },
 
+    async openedElsewhere(id) {
+      try {
+        const summary = (await api().listCollections()).find((c) => c.id === id);
+        if (!summary) return;
+        await load(summary);
+        set({ activeCollection: id });
+      } catch (e) {
+        set({ error: message(e) });
+      }
+    },
+
     async open(path) {
       try {
         set({ error: undefined });
-        await load(await api().openCollection(path));
+        const summary = await api().openCollection(path);
+        await load(summary);
+        set({ activeCollection: summary.id });
       } catch (e) {
         set({ error: message(e) });
       }

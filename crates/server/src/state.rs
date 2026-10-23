@@ -3,10 +3,13 @@ use std::sync::Arc;
 use plover_core::executor::ExecOptions;
 use plover_core::secrets::SecretVault;
 use plover_core::workspace::Workspace;
+use tokio::sync::watch;
 
 use crate::api::MAX_INLINE_BODY;
+use crate::events::Events;
 use crate::native::NativeHost;
 use crate::security::AllowList;
+use crate::session::SessionCodes;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -15,8 +18,12 @@ pub struct AppState {
     pub allowed: Arc<AllowList>,
     /// The desktop shell's native features; `None` in web mode.
     pub native: Option<Arc<dyn NativeHost>>,
-    /// `http://127.0.0.1:<port>/#token=<token>`, for "Open in browser".
-    pub session_url: Arc<str>,
+    /// `http://127.0.0.1:<port>`, for launch URLs.
+    pub base_url: Arc<str>,
+    pub codes: Arc<SessionCodes>,
+    pub events: Events,
+    /// Becomes `true` once the page has mounted (`POST /api/client-ready`).
+    pub client_ready: Arc<watch::Sender<bool>>,
 }
 
 impl AppState {
@@ -39,7 +46,10 @@ impl AppState {
             token: Arc::from(token),
             allowed: Arc::new(allowed),
             native: None,
-            session_url: Arc::from(""),
+            base_url: Arc::from(""),
+            codes: Arc::new(SessionCodes::default()),
+            events: Events::default(),
+            client_ready: Arc::new(watch::channel(false).0),
         }
     }
 
@@ -48,8 +58,18 @@ impl AppState {
         self
     }
 
-    pub fn with_session_url(mut self, url: &str) -> AppState {
-        self.session_url = Arc::from(url);
+    pub fn with_base_url(mut self, url: &str) -> AppState {
+        self.base_url = Arc::from(url);
         self
+    }
+
+    pub fn with_codes(mut self, codes: SessionCodes) -> AppState {
+        self.codes = Arc::new(codes);
+        self
+    }
+
+    /// `<base>/#code=<fresh single-use code>`.
+    pub fn launch_url(&self) -> String {
+        format!("{}/#code={}", self.base_url, self.codes.mint())
     }
 }

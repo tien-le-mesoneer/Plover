@@ -80,8 +80,8 @@ struct RunArgs {
     #[arg(long)]
     verbose: bool,
     /// Read the environment's secret values from the OS keychain (as stored by
-    /// `plv serve` or the desktop app); `--env-var` still wins.
-    #[arg(long)]
+    /// `plv serve` or the desktop app); `--env-var` still wins. Needs `--env`.
+    #[arg(long, requires = "env")]
     use_keychain: bool,
 }
 
@@ -237,9 +237,11 @@ async fn serve(args: ServeArgs) -> Result<ExitCode, String> {
             .open(path)
             .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
     }
+    // The printed URL carries the token so it can be copied; the browser we open
+    // ourselves gets a single-use launch code instead, keeping the token out of history.
     println!("plv listening on {}", running.url);
     if !args.no_open
-        && let Err(e) = webbrowser::open(&running.url)
+        && let Err(e) = webbrowser::open(&running.launch_url())
     {
         eprintln!("could not open a browser ({e}); open the URL above");
     }

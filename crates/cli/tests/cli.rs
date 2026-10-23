@@ -266,3 +266,15 @@ fn cli_only_build_serves_api_without_ui() {
     child.kill().unwrap();
     child.wait().unwrap();
 }
+
+#[test]
+fn use_keychain_requires_env() {
+    let dir = collection("http://127.0.0.1:9");
+    let out = bru_rs()
+        .args(["run", "--use-keychain"])
+        .arg(dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--env"));
+}

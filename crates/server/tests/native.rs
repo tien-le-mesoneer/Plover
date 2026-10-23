@@ -33,13 +33,13 @@ impl NativeHost for FakeHost {
     }
 }
 
-const SESSION_URL: &str = "http://127.0.0.1:4321/#token=test-token";
+const BASE_URL: &str = "http://127.0.0.1:4321";
 
 fn desktop_app(host: Arc<FakeHost>) -> axum::Router {
     router(
         AppState::new(ExecOptions::default(), TOKEN, AllowList::new(PORT, &[]))
             .with_native(host)
-            .with_session_url(SESSION_URL),
+            .with_base_url(BASE_URL),
     )
 }
 
@@ -91,12 +91,19 @@ async fn pick_folder_returns_path_or_null() {
 }
 
 #[tokio::test]
-async fn open_browser_opens_session_url() {
+async fn open_browser_uses_a_launch_code_not_the_token() {
     let host = Arc::new(FakeHost::default());
     let app = desktop_app(host.clone());
     let (status, _) = call(&app, "POST", "/api/native/open-browser", Some(json!({}))).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    assert_eq!(*host.opened.lock().unwrap(), [SESSION_URL]);
+    let opened = host.opened.lock().unwrap();
+    assert_eq!(opened.len(), 1);
+    assert!(
+        opened[0].starts_with(&format!("{BASE_URL}/#code=")),
+        "{}",
+        opened[0]
+    );
+    assert!(!opened[0].contains(TOKEN));
 }
 
 #[tokio::test]

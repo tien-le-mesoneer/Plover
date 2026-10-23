@@ -3457,9 +3457,11 @@ dependencies = [
 name = "plover-desktop"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "plover-cli",
  "plover-core",
  "plover-server",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -3467,8 +3469,10 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tempfile",
  "tokio",
+ "tokio-tungstenite 0.30.0",
  "tracing",
  "tracing-subscriber",
+ "wiremock",
 ]
 
 [[package]]

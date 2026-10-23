@@ -656,6 +656,19 @@ pub struct PickedFolderDto {
     pub path: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ExchangeBody {
+    /// The single-use launch code from the URL fragment (`#code=…`).
+    pub code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionTokenDto {
+    pub token: String,
+}
+
 pub fn typescript_bindings() -> String {
     use ts_rs::Config;
     let cfg = Config::default();
@@ -695,6 +708,9 @@ pub fn typescript_bindings() -> String {
         super::runs::ClientMessage::decl(&cfg),
         CapabilitiesDto::decl(&cfg),
         PickedFolderDto::decl(&cfg),
+        ExchangeBody::decl(&cfg),
+        SessionTokenDto::decl(&cfg),
+        crate::events::ServerEvent::decl(&cfg),
     ];
     let mut out = String::from(
         "// Generated from crates/server/src/api by ts-rs. Do not edit.\n\

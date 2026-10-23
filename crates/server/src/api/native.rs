@@ -43,10 +43,11 @@ pub async fn pick_folder(State(state): State<AppState>) -> Result<Json<PickedFol
     }))
 }
 
-/// Opens this session's URL (with its token) in the default browser.
+/// Opens this session in the default browser, with a single-use launch code in the URL
+/// (never the token).
 pub async fn open_browser(State(state): State<AppState>) -> Result<StatusCode, ApiError> {
     host(&state)?
-        .open_external(&state.session_url)
+        .open_external(&state.launch_url())
         .await
         .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, "open_failed", e))?;
     Ok(StatusCode::NO_CONTENT)

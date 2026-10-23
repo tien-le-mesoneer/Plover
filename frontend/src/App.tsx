@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { api } from "./api/instance";
+import { handleServerEvent } from "./store/events";
 import { Banner } from "./components/Banner";
 import { EnvSelector } from "./components/EnvSelector";
 import { RequestEditor } from "./components/request/RequestEditor";
@@ -11,15 +13,42 @@ import { useWorkspace } from "./store/workspace";
 
 export default function App({ hasToken }: { hasToken: boolean }) {
   const { tabs, active, save } = useTabs();
-  const { collections, activeEnv, error, clearError, init, capabilities, openInBrowser } = useWorkspace();
+  const { collections, activeEnv, error, clearError, init, capabilities, openInBrowser, activeCollection } =
+    useWorkspace();
+  const anyDirty = useTabs((s) => s.tabs.some((t) => s.isDirty(t.key)));
+  const [confirmReload, setConfirmReload] = useState(false);
   const startRun = useRuns((s) => s.start);
   const [showRun, setShowRun] = useState(false);
   const tab = tabs.find((t) => t.key === active) ?? null;
-  const collectionId = tab?.collectionId ?? collections[0]?.id ?? null;
+  const collectionId = tab?.collectionId ?? activeCollection ?? collections[0]?.id ?? null;
 
   useEffect(() => {
-    if (hasToken) void init();
+    if (!hasToken) return;
+    void init().then(() => api().clientReady().catch(() => undefined));
+    const events = api().subscribeEvents((event) =>
+      handleServerEvent(event, {
+        anyDirty: () => {
+          const { tabs, isDirty } = useTabs.getState();
+          return tabs.some((t) => isDirty(t.key));
+        },
+        reload: () => window.location.reload(),
+        askReload: () => setConfirmReload(true),
+        openedElsewhere: (id) => useWorkspace.getState().openedElsewhere(id),
+      }),
+    );
+    return () => events.close();
   }, [hasToken, init]);
+
+  // Closing or reloading the page (browser tab, window) asks first when edits are unsaved.
+  useEffect(() => {
+    if (!anyDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [anyDirty]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -53,6 +82,20 @@ export default function App({ hasToken }: { hasToken: boolean }) {
         )}
         <EnvSelector collectionId={collectionId} />
       </header>
+      {confirmReload && (
+        <div className="modal-backdrop">
+          <div className="modal" role="dialog" aria-label="Reload window">
+            <h3>Discard unsaved changes?</h3>
+            <p>Some requests have unsaved edits. Reloading the window discards them.</p>
+            <div className="actions">
+              <button onClick={() => setConfirmReload(false)}>Cancel</button>
+              <button className="primary" onClick={() => window.location.reload()}>
+                Discard and reload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {error && (
         <Banner
           kind="error"

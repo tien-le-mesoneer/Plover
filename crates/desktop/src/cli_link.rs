@@ -17,10 +17,34 @@ pub fn is_cli(argv: &[OsString], as_cli_env: bool) -> bool {
         let name = name.to_ascii_lowercase();
         name == "plv" || name == "plv.exe"
     });
+    // Version and help are CLI questions; answering them in the GUI (or a running
+    // instance swallowing them) would print nothing.
     invoked_as_plv
-        || argv
-            .get(1)
-            .is_some_and(|first| first == "run" || first == "serve")
+        || argv.get(1).is_some_and(|first| {
+            ["run", "serve", "--version", "-V", "--help", "-h"]
+                .iter()
+                .any(|cli| first == cli)
+        })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum LinkTargetError {
+    /// macOS runs the app from a temporary location (App Translocation or the mounted
+    /// disk image); a link there would break.
+    MoveToApplications,
+}
+
+/// What `plv` should point at: the AppImage file itself (not its temporary mount) on
+/// Linux, the app's executable elsewhere; refuses locations that won't last.
+pub fn link_target(exe: &Path, appimage: Option<&OsStr>) -> Result<PathBuf, LinkTargetError> {
+    if let Some(image) = appimage.filter(|a| !a.is_empty()) {
+        return Ok(PathBuf::from(image));
+    }
+    let path = exe.to_string_lossy();
+    if path.contains("/AppTranslocation/") || path.starts_with("/Volumes/") {
+        return Err(LinkTargetError::MoveToApplications);
+    }
+    Ok(exe.to_path_buf())
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -138,6 +162,48 @@ mod tests {
         ));
         assert!(!is_cli(&args(&["plover", "/path/to/collection"]), false));
         assert!(!is_cli(&args(&["plover", "-psn_0_1234"]), false));
+        // Version and help go to the CLI (before single-instance can swallow them).
+        for flag in ["--version", "-V", "--help", "-h"] {
+            assert!(
+                is_cli(
+                    &args(&["/Applications/Plover.app/Contents/MacOS/plover", flag]),
+                    false
+                ),
+                "{flag}"
+            );
+        }
+    }
+
+    #[test]
+    fn link_target_rules() {
+        let exe = |p: &str| PathBuf::from(p);
+        // AppImage: link the image file, not the temporary mount.
+        assert_eq!(
+            link_target(
+                &exe("/tmp/.mount_PloverAbC/usr/bin/plover"),
+                Some(OsStr::new("/home/u/Apps/Plover.AppImage"))
+            ),
+            Ok(exe("/home/u/Apps/Plover.AppImage"))
+        );
+        // macOS: translocated or running from the disk image → move it first.
+        for p in [
+            "/private/var/folders/x/T/AppTranslocation/1234/d/Plover.app/Contents/MacOS/plover",
+            "/Volumes/Plover/Plover.app/Contents/MacOS/plover",
+        ] {
+            assert_eq!(
+                link_target(&exe(p), None),
+                Err(LinkTargetError::MoveToApplications),
+                "{p}"
+            );
+        }
+        assert_eq!(
+            link_target(&exe("/Applications/Plover.app/Contents/MacOS/plover"), None),
+            Ok(exe("/Applications/Plover.app/Contents/MacOS/plover"))
+        );
+        assert_eq!(
+            link_target(&exe("/usr/bin/plover"), None),
+            Ok(exe("/usr/bin/plover"))
+        );
     }
 
     #[cfg(unix)]

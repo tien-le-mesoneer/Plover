@@ -6,6 +6,7 @@ mod environments;
 mod extract;
 mod native;
 mod requests;
+mod session;
 pub use requests::MAX_INLINE_BODY;
 pub mod runs;
 
@@ -26,8 +27,15 @@ use crate::state::AppState;
 /// Request bodies carry whole requests (including large JSON bodies).
 const MAX_REQUEST_BODY: usize = 64 * 1024 * 1024;
 
+/// Routes that need no session token (Host/Origin checks still apply).
+pub fn public_routes() -> Router<AppState> {
+    Router::new().route("/session/exchange", post(session::exchange))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/client-ready", post(session::client_ready))
+        .route("/events", get(session::events))
         .route(
             "/collections",
             get(collections::list).post(collections::open),

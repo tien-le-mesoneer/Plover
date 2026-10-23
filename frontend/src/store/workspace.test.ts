@@ -59,3 +59,19 @@ describe("secrets", () => {
     expect(useWorkspace.getState().environments.c1![0]!.secretsSet).toEqual(secretsSet);
   });
 });
+
+describe("collections opened outside the page", () => {
+  it("are added and selected; open tabs are untouched", async () => {
+    const summary = { id: "c2", name: "other", root: "/o" };
+    const api = {
+      listCollections: vi.fn(async () => [summary]),
+      tree: vi.fn(async () => ({ kind: "folder", id: "", name: "other", method: null, seq: null, error: null, children: [] })),
+      environments: vi.fn(async () => []),
+    } as unknown as ApiClient;
+    setApi(api);
+    useWorkspace.setState({ collections: [], trees: {}, environments: {}, activeCollection: null });
+    await useWorkspace.getState().openedElsewhere("c2");
+    expect(useWorkspace.getState().collections).toEqual([summary]);
+    expect(useWorkspace.getState().activeCollection).toBe("c2");
+  });
+});

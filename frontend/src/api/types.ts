@@ -187,3 +187,13 @@ export type PickedFolderDto = {
  * `null` when the user cancelled.
  */
 path: string | null, };
+
+export type ExchangeBody = { 
+/**
+ * The single-use launch code from the URL fragment (`#code=…`).
+ */
+code: string, };
+
+export type SessionTokenDto = { token: string, };
+
+export type ServerEvent = { "type": "collection_opened", id: string, } | { "type": "reload_requested" };

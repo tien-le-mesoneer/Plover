@@ -4,8 +4,10 @@
 mod api;
 mod assets;
 mod error;
+mod events;
 pub mod native;
 mod security;
+mod session;
 mod state;
 
 use std::future::{Future, IntoFuture};
@@ -21,7 +23,9 @@ use plover_core::workspace::Workspace;
 pub use api::MAX_INLINE_BODY;
 pub use api::dto::typescript_bindings;
 pub use error::ApiError;
+pub use events::{Events, ServerEvent};
 pub use security::AllowList;
+pub use session::SessionCodes;
 pub use state::AppState;
 
 #[derive(Default)]
@@ -42,12 +46,26 @@ pub struct RunningServer {
     /// The server's workspace, e.g. to open a collection given on the command line.
     pub workspace: Arc<Workspace>,
     pub token: String,
-    /// `http://127.0.0.1:<port>/#token=<token>`; the fragment never reaches the server.
+    /// `http://127.0.0.1:<port>/#token=<token>`, printed by `plv serve` for copying.
+    /// URLs the app opens itself use [`RunningServer::launch_url`] instead.
     pub url: String,
+    /// Notifies connected pages (collection opened, reload requested).
+    pub events: Events,
+    /// Becomes `true` once a page has mounted.
+    pub client_ready: tokio::sync::watch::Receiver<bool>,
+    state: AppState,
+}
+
+impl RunningServer {
+    /// `http://127.0.0.1:<port>/#code=<single-use code>`: what the app opens itself, so
+    /// the token never appears in a URL or browser history.
+    pub fn launch_url(&self) -> String {
+        self.state.launch_url()
+    }
 }
 
 pub fn router(state: AppState) -> Router {
-    let api = Router::new()
+    let protected = Router::new()
         .route(
             "/health",
             get(|| async { Json(serde_json::json!({ "ok": true })) }),
@@ -58,6 +76,7 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             security::require_token,
         ));
+    let api = protected.merge(api::public_routes());
     Router::new()
         .nest("/api", api)
         .fallback(assets::serve)
@@ -77,7 +96,8 @@ pub async fn start(
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, cfg.port)).await?;
     let addr = listener.local_addr()?;
     let token = security::new_token();
-    let url = format!("http://{addr}/#token={token}");
+    let base = format!("http://{addr}");
+    let url = format!("{base}/#token={token}");
     let mut state = AppState::with_secrets(
         cfg.exec,
         &token,
@@ -85,12 +105,15 @@ pub async fn start(
         cfg.secrets
             .unwrap_or_else(|| Arc::new(SecretVault::memory())),
     )
-    .with_session_url(&url);
+    .with_base_url(&base);
     if let Some(host) = cfg.native {
         state = state.with_native(host);
     }
     let workspace = state.workspace.clone();
-    let server = axum::serve(listener, router(state))
+    let events = state.events.clone();
+    let client_ready = state.client_ready.subscribe();
+    let router_state = state.clone();
+    let server = axum::serve(listener, router(router_state))
         .with_graceful_shutdown(shutdown)
         .into_future();
     let running = RunningServer {
@@ -98,6 +121,9 @@ pub async fn start(
         url,
         addr,
         token,
+        events,
+        client_ready,
+        state,
     };
     Ok((running, server))
 }

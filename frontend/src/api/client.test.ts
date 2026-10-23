@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError, createApiClient } from "./client";
+import { ApiError, createApiClient, exchangeLaunchCode } from "./client";
 import type { RunEventDto } from "./types";
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -41,7 +41,48 @@ class FakeSocket {
   }
 }
 
+describe("launch codes", () => {
+  it("exchanges a code for the token without sending any token", async () => {
+    const fetch = vi.fn(async () => jsonResponse(200, { token: "tok" }));
+    const token = await exchangeLaunchCode("http://127.0.0.1:4000", "c0de", fetch as unknown as typeof window.fetch);
+    expect(token).toBe("tok");
+    const [url, init] = (fetch.mock.calls as unknown as [string, RequestInit][])[0]!;
+    expect(url).toBe("http://127.0.0.1:4000/api/session/exchange");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ code: "c0de" });
+    expect(new Headers(init.headers).get("authorization")).toBeNull();
+  });
+
+  it("rejects an invalid code", async () => {
+    const fetch = vi.fn(async () => jsonResponse(401, { error: "invalid_code", message: "used" }));
+    await expect(exchangeLaunchCode("", "x", fetch as unknown as typeof window.fetch)).rejects.toMatchObject({
+      code: "invalid_code",
+    });
+  });
+});
+
 describe("ApiClient", () => {
+  it("posts client-ready and subscribes to server events", async () => {
+    const fetch = vi.fn(async () => jsonResponse(204, undefined));
+    const api = createApiClient("http://127.0.0.1:4000", "tok", {
+      fetch: fetch as unknown as typeof window.fetch,
+      WebSocket: FakeSocket as unknown as typeof WebSocket,
+    });
+    await api.clientReady();
+    const [url, init] = (fetch.mock.calls as unknown as [string, RequestInit][])[0]!;
+    expect(`${init.method} ${url}`).toBe("POST http://127.0.0.1:4000/api/client-ready");
+    const events: unknown[] = [];
+    const sub = api.subscribeEvents((e) => events.push(e));
+    const socket = FakeSocket.last!;
+    expect(socket.url).toBe("ws://127.0.0.1:4000/api/events");
+    expect(socket.protocols).toEqual(["plover.token.tok"]);
+    socket.open();
+    socket.emit({ type: "collection_opened", id: "c9" });
+    expect(events).toEqual([{ type: "collection_opened", id: "c9" }]);
+    sub.close();
+    expect(socket.closed).toBe(true);
+  });
+
   it("calls the capabilities and native routes", async () => {
     const fetch = vi.fn(async (url: string) =>
       url.endsWith("/capabilities")

@@ -13,6 +13,8 @@ import type {
   SavedRequestDto,
   SecretsResultDto,
   SendResultDto,
+  ServerEvent,
+  SessionTokenDto,
   StoredRequestDto,
   TreeNodeDto,
 } from "./types";
@@ -43,6 +45,10 @@ export interface ApiClient {
   pickFolder(): Promise<string | null>;
   /** Opens this session in the default browser (desktop only). */
   openInBrowser(): Promise<void>;
+  /** Tells the server the page has mounted (the desktop smoke test waits for it). */
+  clientReady(): Promise<void>;
+  /** Server → UI notifications (collection opened natively, reload requested). */
+  subscribeEvents(onEvent: (e: ServerEvent) => void): { close(): void };
   openCollection(path: string): Promise<CollectionSummaryDto>;
   listCollections(): Promise<CollectionSummaryDto[]>;
   tree(id: string): Promise<TreeNodeDto>;
@@ -78,6 +84,41 @@ interface Deps {
   WebSocket?: typeof WebSocket;
 }
 
+/** Turns a failed response into an `ApiError` (bodies are `{error, message}` JSON, or not). */
+function errorFrom(res: Response, text: string): ApiError {
+  let err: Partial<ApiErrorDto> | undefined;
+  try {
+    err = text ? (JSON.parse(text) as Partial<ApiErrorDto>) : undefined;
+  } catch {
+    err = undefined;
+  }
+  return new ApiError(
+    res.status,
+    err?.error ?? `http_${res.status}`,
+    err ?? text,
+    err?.message ?? (text || `HTTP ${res.status}`),
+  );
+}
+
+/**
+ * Trades the single-use launch code from `#code=…` for the session token. Sends no
+ * token (the page has none yet); the server still checks Host and Origin.
+ */
+export async function exchangeLaunchCode(
+  baseUrl: string,
+  code: string,
+  fetchImpl: typeof fetch = window.fetch.bind(window),
+): Promise<string> {
+  const res = await fetchImpl(`${baseUrl}/api/session/exchange`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  const text = await res.text();
+  if (!res.ok) throw errorFrom(res, text);
+  return (JSON.parse(text) as SessionTokenDto).token;
+}
+
 const TERMINAL: RunEventDto["type"][] = ["finished", "cancelled", "error"];
 
 export function createApiClient(baseUrl: string, token: string, deps: Deps = {}): ApiClient {
@@ -94,21 +135,7 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();
-    if (!res.ok) {
-      // Error bodies are `{error, message}` JSON, but tolerate anything else.
-      let err: Partial<ApiErrorDto> | undefined;
-      try {
-        err = text ? (JSON.parse(text) as Partial<ApiErrorDto>) : undefined;
-      } catch {
-        err = undefined;
-      }
-      throw new ApiError(
-        res.status,
-        err?.error ?? `http_${res.status}`,
-        err ?? text,
-        err?.message ?? (text || `HTTP ${res.status}`),
-      );
-    }
+    if (!res.ok) throw errorFrom(res, text);
     return (text ? JSON.parse(text) : undefined) as T;
   }
 
@@ -124,6 +151,20 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     capabilities: () => call("GET", "/capabilities"),
     pickFolder: async () => (await call<PickedFolderDto>("POST", "/native/pick-folder", {})).path,
     openInBrowser: () => call("POST", "/native/open-browser", {}),
+    clientReady: () => call("POST", "/client-ready", {}),
+    subscribeEvents(onEvent) {
+      const url = new URL("/api/events", baseUrl || window.location.href);
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      const socket = new Socket(url.toString(), [`plover.token.${token}`]);
+      socket.onmessage = (e: MessageEvent<string>) => {
+        try {
+          onEvent(JSON.parse(e.data) as ServerEvent);
+        } catch {
+          // Ignore malformed frames.
+        }
+      };
+      return { close: () => socket.close() };
+    },
     openCollection: (path) => call("POST", "/collections", { path }),
     listCollections: () => call("GET", "/collections"),
     tree: (id) => call("GET", `${collections(id)}/tree`),
