@@ -5,6 +5,7 @@ pub mod bru;
 pub mod collection;
 pub mod credentials;
 pub mod curl;
+pub mod data_file;
 pub mod dotenv;
 pub mod executor;
 pub mod har;
