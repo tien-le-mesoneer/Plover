@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTabs } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
-import { LogoMark, NewRequestIcon, PlusIcon } from "./icons";
+import { ImportIcon, LogoMark, NewRequestIcon, PlusIcon } from "./icons";
+import { ImportHarDialog } from "./ImportHarDialog";
 import { OpenCollectionPopover } from "./OpenCollectionPopover";
 
 /** The collection a new request goes to: the active tab's, else the active collection. */
@@ -23,6 +24,7 @@ export function SidebarHeader() {
   useWorkspace((s) => s.collections);
   useTabs((s) => s.active);
   const target = targetCollection();
+  const [importing, setImporting] = useState<string | null>(null);
   const pickerOpen = useWorkspace((s) => s.pickerOpen);
   const setPickerOpen = useWorkspace((s) => s.setPickerOpen);
   const plus = useRef<HTMLButtonElement>(null);
@@ -56,6 +58,17 @@ export function SidebarHeader() {
         <NewRequestIcon />
       </button>
       <button
+        type="button"
+        className="icon"
+        title={target ? "Import HAR…" : "Open a collection first"}
+        aria-label="Import HAR"
+        aria-haspopup="dialog"
+        disabled={!target}
+        onClick={() => setImporting(target)}
+      >
+        <ImportIcon />
+      </button>
+      <button
         ref={plus}
         type="button"
         className="icon"
@@ -69,6 +82,7 @@ export function SidebarHeader() {
         <PlusIcon />
       </button>
       {pickerOpen && <OpenCollectionPopover anchor={plus} onClose={close} />}
+      {importing && <ImportHarDialog collectionId={importing} onClose={() => setImporting(null)} />}
     </div>
   );
 }

@@ -1,22 +1,8 @@
 import { useId, useState, type FormEvent } from "react";
-import type { TreeNodeDto } from "../api/types";
+import { folderIds } from "../lib/tree";
 import { useTabs } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
 import { Modal } from "./Modal";
-
-/** Folder IDs of a tree, depth first (the root is `""`). */
-function folders(node: TreeNodeDto | undefined): string[] {
-  const out: string[] = [];
-  const walk = (n: TreeNodeDto) => {
-    for (const child of n.children ?? []) {
-      if (child.kind !== "folder") continue;
-      out.push(child.id);
-      walk(child);
-    }
-  };
-  if (node) walk(node);
-  return out;
-}
 
 /** `POST orders` from `POST {{host}}/api/orders?page=2`: the method and the last path segment. */
 export function suggestedName(method: string, url: string): string {
@@ -73,7 +59,7 @@ export function SaveRequestDialog({ tabKey, onClose }: { tabKey: string; onClose
           <span>Folder</span>
           <select value={folder} onChange={(e) => setFolder(e.target.value)}>
             <option value="">{collection?.name ?? "Collection"} (root)</option>
-            {folders(tree).map((id) => (
+            {folderIds(tree).map((id) => (
               <option key={id} value={id}>
                 {id}
               </option>
