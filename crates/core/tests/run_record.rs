@@ -332,3 +332,15 @@ fn record_round_trips_json() {
     let back: RunRecord = serde_json::from_str(&json).unwrap();
     assert_eq!(back, record);
 }
+
+#[test]
+fn run_ids_sort_by_start_time_within_a_second() {
+    let base = UNIX_EPOCH + Duration::from_secs(86_400);
+    let ids: Vec<RunId> = [0, 1, 31, 32, 500, 999]
+        .iter()
+        .map(|ms| RunId::new(base + Duration::from_millis(*ms)))
+        .collect();
+    let mut sorted = ids.clone();
+    sorted.sort();
+    assert_eq!(sorted, ids);
+}

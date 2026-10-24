@@ -138,13 +138,14 @@ async fn streams_events_in_order() {
     assert_eq!(
         types,
         [
-            "started", "passed", "started", "passed", "started", "passed", "finished"
+            "accepted", "started", "passed", "started", "passed", "started", "passed", "finished"
         ]
     );
     assert_eq!(items, ["a.bru", "b.bru", "c.bru"]);
 
     // A run of one folder/request item only runs that item.
     start_run(&mut socket, "r2", &id.0, "b.bru").await;
+    assert_eq!(next_json(&mut socket).await["type"], "accepted");
     assert_eq!(next_json(&mut socket).await["item"], "b.bru");
 }
 
@@ -176,6 +177,7 @@ async fn disconnect_cancels_run() {
     let id = running.workspace.open(dir.path()).unwrap();
     let mut socket = authed(&running).await;
     start_run(&mut socket, "r1", &id.0, "").await;
+    assert_eq!(next_json(&mut socket).await["type"], "accepted");
     assert_eq!(next_json(&mut socket).await["type"], "started");
     socket.close(None).await.unwrap();
     drop(socket);
@@ -196,6 +198,7 @@ async fn cancel_message_stops_run() {
     let id = running.workspace.open(dir.path()).unwrap();
     let mut socket = authed(&running).await;
     start_run(&mut socket, "r1", &id.0, "").await;
+    assert_eq!(next_json(&mut socket).await["type"], "accepted");
     assert_eq!(next_json(&mut socket).await["type"], "started");
     socket
         .send(Message::text(
@@ -303,6 +306,7 @@ async fn concurrent_send_and_run_keep_each_others_runtime_vars() {
     open.set_runtime([("stale".to_owned(), json!(1))].into());
     let mut socket = authed(&running).await;
     start_run(&mut socket, "r1", &id.0, "slow.bru").await;
+    assert_eq!(next_json(&mut socket).await["type"], "accepted");
     assert_eq!(next_json(&mut socket).await["type"], "started");
     // While the run's request is in flight, a send from the UI sets `token`.
     send_one(

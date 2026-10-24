@@ -1,13 +1,18 @@
 //! `GET /api/ws`: collection runs streamed as `RunEventDto`s. One active run
 //! per socket; cancelling or closing the socket drops the run future, which
-//! aborts the request in flight.
+//! aborts the request in flight. Every run is recorded, masked and saved to the run
+//! history when it finishes or is cancelled.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
+use plover_core::masking::secret_strings;
+use plover_core::run_record::{
+    ResultRecord, ResultStatus, RunEnd, RunHeader, RunId, RunRecord, RunRecorder, RunSource,
+};
 use plover_core::runner::{
     Persist, RunEvent, RunOptions, RunReport, RunVars, run_with_state, secret_values,
 };
@@ -23,7 +28,7 @@ use super::dto::{
     AssertResultDto, ConsoleLineDto, RunReportDto, ScriptErrorDto, TestResultDto, outcome_lists,
 };
 use crate::security::TOKEN_PROTOCOL_PREFIX;
-use crate::state::AppState;
+use crate::state::{AppState, LiveRun};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(
@@ -51,6 +56,12 @@ pub enum ClientMessage {
     rename_all_fields = "camelCase"
 )]
 pub enum RunEventDto {
+    /// The first event of every run: `recordId` names it in the run history and in
+    /// `GET /collections/{id}/runs/{recordId}/results/{index}`.
+    Accepted {
+        run_id: String,
+        record_id: String,
+    },
     Started {
         run_id: String,
         item: String,
@@ -60,6 +71,8 @@ pub enum RunEventDto {
     },
     Passed {
         run_id: String,
+        /// The result's position in the run (a request run twice has two).
+        index: u32,
         item: String,
         status: u16,
         #[ts(type = "number")]
@@ -74,6 +87,7 @@ pub enum RunEventDto {
     /// response arrived.
     Failed {
         run_id: String,
+        index: u32,
         item: String,
         error: String,
         status: Option<u16>,
@@ -86,6 +100,7 @@ pub enum RunEventDto {
     },
     Skipped {
         run_id: String,
+        index: u32,
         item: String,
         reason: String,
     },
@@ -112,6 +127,7 @@ pub async fn upgrade(State(state): State<AppState>, ws: WebSocketUpgrade) -> Res
 
 struct ActiveRun {
     id: String,
+    record_id: String,
     task: JoinHandle<()>,
 }
 
@@ -137,6 +153,7 @@ async fn handle(mut socket: WebSocket, state: AppState) {
                     Ok(ClientMessage::Cancel { run_id }) => {
                         if let Some(run) = active.take_if(|a| a.id == run_id) {
                             run.task.abort();
+                            save_cancelled(&state, &run.record_id).await;
                             let _ = tx.send(RunEventDto::Cancelled { run_id });
                         }
                     }
@@ -155,7 +172,47 @@ async fn handle(mut socket: WebSocket, state: AppState) {
     }
     if let Some(run) = active {
         run.task.abort();
+        save_cancelled(&state, &run.record_id).await;
     }
+}
+
+/// Saves an aborted run with the results it had (masked with the secrets it started with
+/// and every credential header seen).
+async fn save_cancelled(state: &AppState, record_id: &str) {
+    let record = {
+        let mut live = state.live.lock().unwrap_or_else(|e| e.into_inner());
+        let record = match live.remove(record_id) {
+            Some(LiveRun::Running(recorder)) => Arc::new(recorder.finish(RunEnd::Cancelled {
+                end_secrets: Vec::new(),
+            })),
+            // The run finished while it was cancelled; save what it finished with.
+            Some(LiveRun::Done(record)) => record,
+            None => return,
+        };
+        live.insert(record_id.to_owned(), LiveRun::Done(record.clone()));
+        record
+    };
+    save(state, record).await;
+    remove_live(state, record_id);
+}
+
+/// Writes a run to history off the async workers. A failure only warns.
+async fn save(state: &AppState, record: Arc<RunRecord>) {
+    let history = state.history.clone();
+    let saved = tokio::task::spawn_blocking(move || history.save(&record)).await;
+    match saved {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => tracing::warn!("cannot save run history: {e}"),
+        Err(e) => tracing::warn!("cannot save run history: {e}"),
+    }
+}
+
+fn remove_live(state: &AppState, record_id: &str) {
+    state
+        .live
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(record_id);
 }
 
 fn error(run_id: Option<String>, code: &str, message: &str) -> RunEventDto {
@@ -195,18 +252,48 @@ fn start(
         }
     };
     let id = run_id.clone();
-    let task = tokio::spawn(run_task(open, root, target, run_id, env, tx));
-    Some(ActiveRun { id, task })
+    let record_id = RunId::new(std::time::SystemTime::now());
+    let task = tokio::spawn(run_task(
+        state.clone(),
+        open,
+        Target {
+            root,
+            path: target,
+            item,
+        },
+        record_id.clone(),
+        run_id,
+        env,
+        tx,
+    ));
+    Some(ActiveRun {
+        id,
+        record_id: record_id.0,
+        task,
+    })
+}
+
+struct Target {
+    root: PathBuf,
+    path: PathBuf,
+    /// The folder or request ID that was started; `""` for the collection.
+    item: String,
 }
 
 async fn run_task(
+    app: AppState,
     open: Arc<OpenCollection>,
-    root: PathBuf,
-    target: PathBuf,
+    target: Target,
+    record_id: RunId,
     run_id: String,
     env: Option<String>,
     tx: mpsc::UnboundedSender<RunEventDto>,
 ) {
+    let Target {
+        root,
+        path: target,
+        item,
+    } = target;
     let collection = open.collection();
     let opts = RunOptions {
         env_overrides: env
@@ -227,10 +314,51 @@ async fn run_task(
         runtime_before.clone(),
     );
     let environment_before = state.environment.clone();
+    let canonical = root.canonicalize().unwrap_or_else(|_| root.clone());
+    let header = RunHeader {
+        id: record_id.clone(),
+        source: RunSource::App,
+        collection_root: canonical.to_string_lossy().into_owned(),
+        collection_name: collection.config.name.clone(),
+        target: if item.is_empty() {
+            ".".to_owned()
+        } else {
+            item
+        },
+        env: opts.env.clone(),
+        started_at_ms: plover_core::time::unix_ms(std::time::SystemTime::now()),
+    };
+    let start_secrets = secret_strings(&secret_values(environment, &state.environment));
+    let record_key = record_id.0.clone();
+    app.live.lock().unwrap_or_else(|e| e.into_inner()).insert(
+        record_key.clone(),
+        LiveRun::Running(Box::new(RunRecorder::new(&root, header, start_secrets))),
+    );
     let events = tx.clone();
     let id = run_id.clone();
+    let live = app.live.clone();
+    let mut accepted = false;
     let mut on_event = move |event: &RunEvent| {
-        let _ = events.send(event_dto(&root, &id, event));
+        if !accepted {
+            accepted = true;
+            let _ = events.send(RunEventDto::Accepted {
+                run_id: id.clone(),
+                record_id: record_key.clone(),
+            });
+        }
+        // `Finished` is sent once the run is masked and saved.
+        if matches!(event, RunEvent::Finished { .. }) {
+            return;
+        }
+        let index = match live
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_mut(&record_key)
+        {
+            Some(LiveRun::Running(recorder)) => recorder.event(event),
+            _ => None,
+        };
+        let _ = events.send(event_dto(&root, &id, index, event));
     };
     let result = run_with_state(
         &collection,
@@ -241,8 +369,31 @@ async fn run_task(
         &mut on_event,
     )
     .await;
+    let end_secrets = secret_strings(&secret_values(environment, &state.environment));
     match result {
-        Ok(_) => {
+        Ok(report) => {
+            let record = {
+                let mut live = app.live.lock().unwrap_or_else(|e| e.into_inner());
+                match live.remove(&record_id.0) {
+                    Some(LiveRun::Running(recorder)) => {
+                        let record = Arc::new(recorder.finish(RunEnd::Finished {
+                            report,
+                            end_secrets,
+                        }));
+                        live.insert(record_id.0.clone(), LiveRun::Done(record.clone()));
+                        Some(record)
+                    }
+                    _ => None,
+                }
+            };
+            if let Some(record) = record {
+                save(&app, record).await;
+            }
+            let _ = tx.send(RunEventDto::Finished {
+                run_id: run_id.clone(),
+                report: report_dto(&report),
+            });
+            remove_live(&app, &record_id.0);
             open.record_runtime_changes(&runtime_before, &state.runtime);
             if let Some(env) = &opts.env {
                 // Other changes are in the environment file now; secrets stay in memory.
@@ -259,13 +410,16 @@ async fn run_task(
             }
         }
         Err(e) => {
+            // Nothing ran (unknown environment or target): nothing to keep.
+            remove_live(&app, &record_id.0);
             let _ = tx.send(error(Some(run_id), "run_failed", &e.to_string()));
         }
     }
 }
 
-fn event_dto(root: &std::path::Path, run_id: &str, event: &RunEvent) -> RunEventDto {
+fn event_dto(root: &Path, run_id: &str, index: Option<usize>, event: &RunEvent) -> RunEventDto {
     let run_id = run_id.to_owned();
+    let index = index.map_or(0, |i| u32::try_from(i).unwrap_or(u32::MAX));
     match event {
         RunEvent::Started {
             path,
@@ -283,6 +437,7 @@ fn event_dto(root: &std::path::Path, run_id: &str, event: &RunEvent) -> RunEvent
             let (tests, asserts, console, _) = outcome_lists(outcome);
             RunEventDto::Passed {
                 run_id,
+                index,
                 item: item_id(root, path),
                 status: outcome.status.unwrap_or_default(),
                 elapsed_ms: millis(&outcome.elapsed),
@@ -301,6 +456,7 @@ fn event_dto(root: &std::path::Path, run_id: &str, event: &RunEvent) -> RunEvent
             let (tests, asserts, console, script_error) = outcome_lists(outcome);
             RunEventDto::Failed {
                 run_id,
+                index,
                 item: item_id(root, path),
                 error: error.clone(),
                 status: outcome.status,
@@ -313,6 +469,7 @@ fn event_dto(root: &std::path::Path, run_id: &str, event: &RunEvent) -> RunEvent
         }
         RunEvent::Skipped { path, reason, .. } => RunEventDto::Skipped {
             run_id,
+            index,
             item: item_id(root, path),
             reason: reason.clone(),
         },
@@ -327,7 +484,58 @@ fn millis(d: &std::time::Duration) -> u64 {
     u64::try_from(d.as_millis()).unwrap_or(u64::MAX)
 }
 
-fn report_dto(r: &RunReport) -> RunReportDto {
+/// A saved result as the events a live run sent for it (`Started` only when it was sent
+/// or failed after starting, as live).
+pub fn result_events(run_id: &str, r: &ResultRecord) -> Vec<RunEventDto> {
+    let run_id = run_id.to_owned();
+    let index = u32::try_from(r.index).unwrap_or(u32::MAX);
+    let o = &r.outcome;
+    let (tests, asserts, console, script_error) = outcome_lists(o);
+    let mut events = Vec::new();
+    if !r.method.is_empty() {
+        events.push(RunEventDto::Started {
+            run_id: run_id.clone(),
+            item: r.file.clone(),
+            name: r.name.clone(),
+            method: r.method.clone(),
+            url: r.url.clone(),
+        });
+    }
+    events.push(match r.status {
+        ResultStatus::Pass => RunEventDto::Passed {
+            run_id,
+            index,
+            item: r.file.clone(),
+            status: o.status.unwrap_or_default(),
+            elapsed_ms: millis(&o.elapsed),
+            size: o.size,
+            tests,
+            asserts,
+            console,
+        },
+        ResultStatus::Fail | ResultStatus::Error => RunEventDto::Failed {
+            run_id,
+            index,
+            item: r.file.clone(),
+            error: r.error.clone().unwrap_or_default(),
+            status: o.status,
+            elapsed_ms: o.status.map(|_| millis(&o.elapsed)),
+            tests,
+            asserts,
+            console,
+            script_error,
+        },
+        ResultStatus::Skipped => RunEventDto::Skipped {
+            run_id,
+            index,
+            item: r.file.clone(),
+            reason: r.skip_reason.clone().unwrap_or_default(),
+        },
+    });
+    events
+}
+
+pub fn report_dto(r: &RunReport) -> RunReportDto {
     let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
     RunReportDto {
         passed: count(r.passed),

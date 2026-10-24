@@ -232,20 +232,32 @@ const RUN_SIZE_LIMIT: &str = "run size limit";
 pub struct RunId(pub String);
 
 impl RunId {
+    /// The first two suffix characters encode the milliseconds, so runs started in the
+    /// same second still sort by start time; the other four are random.
     pub fn new(now: SystemTime) -> RunId {
-        const ALPHABET: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
+        // Base32's characters in ASCII order, so the encoded milliseconds sort.
+        const ALPHABET: &[u8; 32] = b"234567abcdefghijklmnopqrstuvwxyz";
+        let since = now
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default();
         let mut random = [0u8; 4];
         if getrandom::fill(&mut random).is_err() {
             // Uniqueness then rests on the nanoseconds.
-            let nanos = now
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .subsec_nanos();
-            random = nanos.to_le_bytes();
+            random = since.subsec_nanos().to_le_bytes();
         }
+        let millis = since.subsec_millis();
         let bits = u32::from_le_bytes(random);
-        let suffix: String = (0..6)
-            .map(|i| ALPHABET[((bits >> (i * 5)) & 31) as usize] as char)
+        let chars = [
+            millis >> 5,
+            millis & 31,
+            bits & 31,
+            (bits >> 5) & 31,
+            (bits >> 10) & 31,
+            (bits >> 15) & 31,
+        ];
+        let suffix: String = chars
+            .iter()
+            .map(|&c| ALPHABET[c as usize] as char)
             .collect();
         RunId(format!("{}-{suffix}", crate::time::compact_utc(now)))
     }

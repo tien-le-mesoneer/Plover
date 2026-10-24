@@ -3485,6 +3485,7 @@ dependencies = [
  "http-body-util",
  "plover-core",
  "rand 0.10.3",
+ "reqwest",
  "rust-embed",
  "serde",
  "serde_json",

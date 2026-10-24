@@ -26,7 +26,7 @@ describe("runs store", () => {
     expect(id).toBe("r1");
     expect(useRuns.getState().runs.r1!.status).toBe("running");
     emit({ type: "started", runId: "r1", item: "a.bru", name: "a", method: "GET", url: "u" });
-    emit({ type: "passed", runId: "r1", item: "a.bru", status: 200, elapsedMs: 5, size: 2, tests: [], asserts: [], console: [] });
+    emit({ type: "passed", runId: "r1", index: 0, item: "a.bru", status: 200, elapsedMs: 5, size: 2, tests: [], asserts: [], console: [] });
     const report = { passed: 1, failed: 0, skipped: 0, testsPassed: 0, testsFailed: 0, assertsPassed: 0, assertsFailed: 0, elapsedMs: 6 };
     emit({ type: "finished", runId: "r1", report });
     finish();

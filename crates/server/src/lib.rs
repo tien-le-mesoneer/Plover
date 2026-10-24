@@ -114,6 +114,9 @@ pub async fn start(
     if let Some(host) = cfg.native {
         state = state.with_native(host);
     }
+    if let Some(dir) = &cfg.state_dir {
+        state = state.with_history(plover_core::run_history::RunHistory::at(dir));
+    }
     let workspace = state.workspace.clone();
     if let Some(dir) = cfg.state_dir {
         workspace.set_app_state(Arc::new(plover_core::app_state::AppStateStore::load(&dir)));
