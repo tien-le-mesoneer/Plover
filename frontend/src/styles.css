@@ -204,7 +204,10 @@ h4 { margin: 6px 0 2px; font-size: 12px; color: var(--muted); text-transform: up
 .banner.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); }
 .banner.error { background: color-mix(in srgb, var(--err) 15%, transparent); }
 
-.env-selector { display: flex; gap: 4px; }
+.env-selector { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.env-collection { min-width: 0; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.env-sep { color: var(--muted); }
+.env-selector select { min-width: 12ch; }
 .modal-backdrop { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; z-index: 10; }
 .modal { background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 16px; width: min(640px, 92vw); max-height: 85vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
 .modal h3 { margin: 0; }
