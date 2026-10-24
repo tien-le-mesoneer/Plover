@@ -58,16 +58,55 @@ plv run coll --env local --use-keychain             # read secrets saved by the 
 plv run coll --script-timeout-ms 10000 --script-memory-mb 64
 plv run coll --env Dev --delay 7000                  # wait between requests (rate limits)
 plv run coll --env Dev --reporter-html out/report.html   # offline, self-contained HTML
+plv run coll --env Dev --reporter-json r.json --reporter-skip-headers Cookie --reporter-skip-body
 ```
+
+Reports include each request as sent and each response (headers and body), shaped like
+Bruno's JSON report; the HTML report has a collapsible section per request. Secrets are
+masked as `***` first (see **Run history** below), unlike Bruno, which writes them raw.
+
+**Run history.** Every run is saved, from `plv run` and from the app, so you can look at
+what was sent and received afterwards:
+
+```bash
+plv runs coll                                       # newest first: ID, start (UTC), source, env, counts
+plv runs show 20261024T091500Z-4kq2xa --reporter-html out/again.html   # print it and rebuild reports
+plv runs clear coll --yes                           # delete this collection's runs
+plv run coll --no-history                           # do not save this run
+```
+
+In the app, click a row in the run panel to see its Response, Headers, Request, Tests
+and Console; **History** in the run panel lists saved runs (app and `plv`) and opens one.
+
+- Where: `runs/` next to `state.json` (below), never inside the collection, one folder
+  per collection. The 20 newest runs per collection are kept.
+- CI: `plv run` does not save when `CI` is set (to anything but empty, `0` or `false`);
+  `--history` saves anyway, `--no-history` never saves. "Saved run <id>" goes to stderr.
+- Bodies: each request and response body keeps at most 1 MiB, and one run at most
+  50 MiB of bodies; later bodies are marked "not kept". File uploads keep only the
+  file name.
+- Masking, before anything is saved or reported: the values of `Authorization`,
+  `Proxy-Authorization`, `Cookie` and `Set-Cookie` headers (and the token after
+  `Bearer `/`Basic `, and cookie values) and every secret of the environment are
+  replaced with `***` wherever they appear in the run: URLs, headers, bodies, console,
+  test and assert messages. A login token returned in a body is masked there too,
+  because it is later sent as `Authorization`. Limits:
+  - header-derived values shorter than 8 characters, and secrets shorter than 4, are
+    not masked;
+  - a value never sent in one of those headers and not a secret stays visible (for
+    example a token sent only as `X-Api-Key`);
+  - only the exact text is matched, not URL-encoded, base64 or JSON-escaped forms;
+  - binary (non-UTF-8) bodies are not searched; values from `process.env` are not masked.
 
 **Replacing `bru run`.** Existing `bru run` commands work with `plv run` for these flags:
 
 | Bruno flag | In Plover |
 |---|---|
 | `--env`, `--env-var`, `--insecure`, `--verbose`, `--delay`, `--reporter-junit`, `--reporter-json`, `--reporter-html` | Supported, same meaning |
+| `--reporter-skip-all-headers`, `--reporter-skip-headers <NAME>…`, `--reporter-skip-request-body`, `--reporter-skip-response-body`, `--reporter-skip-body` | Supported, same meaning (applied after masking) |
 | `-r` / `--recursive` | Accepted; Plover always runs folders recursively (Bruno without `-r` runs only a folder's direct requests) |
 | `--sandbox safe` | Accepted; Plover always runs scripts like Bruno's safe mode. `--sandbox developer` is rejected. |
-| `--bail`, `--tests-only`, `--tags`, `--exclude-tags`, `--env-file`, `--global-env`, `--csv-file-path`, `--json-file-path`, `--iteration-count`, `--parallel`, `--cacert`, `--client-cert-config`, `--noproxy`, `-o`/`--format`, `--reporter-skip-*`, `--disable-cookies` | Not supported yet: `plv` stops with an "unexpected argument" error (exit 2) rather than ignoring them |
+| `--bail`, `--tests-only`, `--tags`, `--exclude-tags`, `--env-file`, `--global-env`, `--csv-file-path`, `--json-file-path`, `--iteration-count`, `--parallel`, `--cacert`, `--client-cert-config`, `--noproxy`, `-o`/`--format`, `--disable-cookies` | Not supported yet: `plv` stops with an "unexpected argument" error (exit 2) rather than ignoring them |
 
 In the web UI and the desktop app, **+** next to the Plover name (`⌘/Ctrl+O`) opens a
 collection: paste a path, pick a recent one, or browse (desktop). **Collections are
@@ -77,7 +116,7 @@ whose folder moved or was deleted shows as unavailable with Retry and Remove; ×
 collection closes it (it stays under Recent). This state lives in `state.json` in
 `~/Library/Application Support/Plover` (macOS), `%APPDATA%\Plover` (Windows) or
 `~/.config/plover` (Linux), or in `PLOVER_STATE_DIR`; it holds paths and layout only,
-never secrets. `plv run` does not use it.
+never secrets. `plv run` reads and writes only its `runs/` folder.
 
 Shortcuts: `⌘/Ctrl+O` open collection, `⌘/Ctrl+P` filter requests (`Esc` clears),
 `⌘/Ctrl+Enter` send, `⌘/Ctrl+S` save, arrow keys in the sidebar tree and tab strips,
