@@ -9,6 +9,7 @@ pub mod masking;
 pub mod persist;
 pub mod request;
 pub mod resolve;
+pub mod run_history;
 pub mod run_record;
 pub mod runner;
 pub mod script;
