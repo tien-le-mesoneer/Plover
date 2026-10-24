@@ -7,6 +7,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use plover_core::run_history::RunMeta;
 use plover_core::run_record::{ResultStatus, RunRecord};
 use plover_core::runner::{RequestOutcome, RunEvent, RunReport, ScriptPhase};
+use plover_core::vars::ValueMap;
 
 pub struct Printer {
     root: PathBuf,
@@ -59,6 +60,18 @@ impl Printer {
             RunEvent::Finished { .. }
             | RunEvent::IterationStarted { .. }
             | RunEvent::IterationFinished { .. } => {}
+        }
+    }
+
+    /// Bruno's `Iteration: N` header; `--verbose` also prints the (masked) row.
+    pub fn iteration(&mut self, index: usize, _total: usize, data: &ValueMap) {
+        println!("\nIteration: {}\n", index + 1);
+        if self.verbose && !data.is_empty() {
+            let row = serde_json::Value::Object(data.clone().into_iter().collect());
+            println!(
+                "Data:\n{}\n",
+                serde_json::to_string_pretty(&row).unwrap_or_default()
+            );
         }
     }
 
@@ -127,6 +140,9 @@ impl Printer {
 }
 
 pub fn summary(report: &RunReport) {
+    if report.iterations > 1 {
+        println!("Iterations: {}", report.iterations);
+    }
     println!(
         "Requests: {} passed, {} failed, {} skipped · Tests: {}/{} · Asserts: {}/{} ({}ms)",
         report.passed,

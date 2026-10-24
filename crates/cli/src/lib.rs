@@ -11,12 +11,13 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use plover_core::collection::Collection;
+use plover_core::data_file::{self, DataFile, DataFormat};
 use plover_core::executor::{ExecOptions, Session};
 use plover_core::masking::secret_strings;
 use plover_core::report::{self, ReportFilter};
 use plover_core::run_history::{HistoryError, RunHistory};
 use plover_core::run_record::{RunEnd, RunHeader, RunId, RunRecord, RunRecorder, RunSource};
-use plover_core::runner::{self, Persist, RunOptions, RunVars};
+use plover_core::runner::{self, Iterations, Persist, RunEvent, RunOptions, RunVars};
 use plover_core::script::ScriptLimits;
 use plover_core::vars::{ValueMap, VarMap};
 use plover_core::workspace::CollectionId;
@@ -167,6 +168,22 @@ struct RunArgs {
     /// e.g. to stay under a server's rate limit.
     #[arg(long, value_name = "MS")]
     delay: Option<u64>,
+    /// Run once per row of this CSV file (`{{column}}` reads the row).
+    #[arg(
+        long = "csv-file-path",
+        value_name = "FILE",
+        conflicts_with = "json_file_path"
+    )]
+    csv_file_path: Option<PathBuf>,
+    /// Run once per element of this JSON array of objects.
+    #[arg(long = "json-file-path", value_name = "FILE")]
+    json_file_path: Option<PathBuf>,
+    /// Run this many times (a data file sets the count to its rows instead).
+    #[arg(long = "iteration-count", value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
+    iteration_count: Option<u32>,
+    /// Accepted for `bru run` compatibility; iterations still run one after another.
+    #[arg(long)]
+    parallel: bool,
     /// Accepted for `bru run` compatibility: Plover always runs folders recursively.
     #[arg(short = 'r', long = "recursive")]
     _recursive: bool,
@@ -284,6 +301,28 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
         return Err(format!("{} does not exist", args.path.display()));
     }
     args.reports.check_dirs()?;
+    let data = load_data(&args)?;
+    if args.parallel {
+        eprintln!("--parallel is not supported yet; iterations run one after another");
+    }
+    let iterations = match (&data, args.iteration_count) {
+        (Some((name, file)), count) => {
+            if count.is_some() {
+                eprintln!(
+                    "--iteration-count ignored: {name} has {} rows",
+                    file.rows.len()
+                );
+            }
+            Iterations::from_rows(file.rows.clone())
+        }
+        (None, Some(count)) => Iterations::repeat(count as usize),
+        (None, None) => Iterations::default(),
+    };
+    let data_secrets = data
+        .as_ref()
+        .map(|(_, f)| data_file::credential_values(&f.rows))
+        .unwrap_or_default();
+    let show_iterations = data.is_some() || iterations.count > 1;
     let root = Collection::find_root(&args.path).map_err(|e| e.to_string())?;
     let collection = Collection::load(&root).map_err(|e| e.to_string())?;
     let keychain = match (&args.env, args.use_keychain) {
@@ -310,6 +349,7 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
         // Bruno CLI writes script changes to the environment file and collection.bru.
         persist: Persist::All,
         delay: args.delay.map(Duration::from_millis),
+        iterations,
         ..RunOptions::default()
     }
     .with_env_vars(&keychain)
@@ -330,10 +370,12 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
     );
     let secrets =
         |state: &RunVars| secret_strings(&runner::secret_values(environment, &state.environment));
+    let mut start_secrets = secrets(&state);
+    start_secrets.extend(data_secrets);
     let mut recorder = RunRecorder::new(
         &collection.root,
         run_header(&collection, &args.path, opts.env.clone()),
-        secrets(&state),
+        start_secrets,
     );
     let session = Session::new(opts.exec.clone()).map_err(|e| e.to_string())?;
     let mut printer = print::Printer::new(&collection.root, args.verbose);
@@ -344,8 +386,17 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
         &session,
         &mut state,
         &mut |event| {
-            printer.event(event);
             recorder.event(event);
+            match event {
+                RunEvent::IterationStarted { index, total, .. } if show_iterations => {
+                    let data = recorder
+                        .masked_iteration(*index)
+                        .map(|i| i.data)
+                        .unwrap_or_default();
+                    printer.iteration(*index, *total, &data);
+                }
+                _ => printer.event(event),
+            }
         },
     )
     .await
@@ -368,6 +419,30 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
     } else {
         ExitCode::SUCCESS
     })
+}
+
+/// The data file named by `--csv-file-path` / `--json-file-path` (relative to the current
+/// directory, like `bru`), parsed; every way of getting no rows is an error.
+fn load_data(args: &RunArgs) -> Result<Option<(String, DataFile)>, String> {
+    let (path, format) = match (&args.csv_file_path, &args.json_file_path) {
+        (Some(p), _) => (p, DataFormat::Csv),
+        (None, Some(p)) => (p, DataFormat::Json),
+        (None, None) => return Ok(None),
+    };
+    let name = path.display().to_string();
+    let size = std::fs::metadata(path)
+        .map_err(|e| format!("{name}: cannot read the data file: {e}"))?
+        .len();
+    if size > data_file::MAX_DATA_FILE as u64 {
+        return Err(data_file::DataFileError::TooLarge {
+            size: usize::try_from(size).unwrap_or(usize::MAX),
+        }
+        .with_name(&name));
+    }
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("{name}: cannot read the data file: {e}"))?;
+    let file = data_file::parse_file(format, &text).map_err(|e| e.with_name(&name))?;
+    Ok(Some((name, file)))
 }
 
 /// `true` unless `CI` is set to a truthy value; `--history` and `--no-history` win.
