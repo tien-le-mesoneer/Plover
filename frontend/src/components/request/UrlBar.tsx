@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { HttpRequestDto } from "../../api/types";
 import { syncPathParams, syncQueryFromUrl } from "../../lib/url";
 
@@ -12,11 +13,13 @@ interface Props {
   onSave: () => void;
   /** A pasted `curl …` command, instead of pasting it as the URL. */
   onCurl?: (text: string) => void;
+  /** More controls after Save (Copy as cURL). */
+  actions?: ReactNode;
 }
 
 const CURL = /^\s*curl\s/i;
 
-export function UrlBar({ draft, dirty, sending, onEdit, onSend, onSave, onCurl }: Props) {
+export function UrlBar({ draft, dirty, sending, onEdit, onSend, onSave, onCurl, actions }: Props) {
   const methods = METHODS.includes(draft.method) ? METHODS : [...METHODS, draft.method];
   return (
     <form
@@ -68,6 +71,7 @@ export function UrlBar({ draft, dirty, sending, onEdit, onSend, onSave, onCurl }
       <button type="button" disabled={!dirty} onClick={onSave} title="Save (Ctrl/Cmd+S)">
         Save
       </button>
+      {actions}
     </form>
   );
 }

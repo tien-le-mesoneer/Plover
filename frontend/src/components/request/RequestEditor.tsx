@@ -5,6 +5,7 @@ import { switchBodyMode } from "../../lib/body";
 import { urlWithQuery } from "../../lib/url";
 import { useTabs, type Tab } from "../../store/tabs";
 import { useWorkspace } from "../../store/workspace";
+import { CopyCurlMenu } from "./CopyCurlMenu";
 import { CurlBanner, secretMoves } from "./CurlBanner";
 import { Banner } from "../Banner";
 import { ResponseViewer } from "../ResponseViewer";
@@ -94,6 +95,7 @@ export function RequestEditor({ tab }: { tab: Tab }) {
         onSend={() => void send(tab.key)}
         onSave={() => requestSave(tab.key)}
         onCurl={(text) => void onCurl(text)}
+        actions={<CopyCurlMenu tabKey={tab.key} />}
       />
       {pasted && (
         <CurlBanner
