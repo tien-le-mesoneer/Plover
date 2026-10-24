@@ -190,7 +190,11 @@ export type SendBody = {
 /**
  * The request file; `null` sends `draft` as a scratch request (collection scope only).
  */
-item: string | null, draft: HttpRequestDto | null, env: string | null, };
+item: string | null, draft: HttpRequestDto | null, env: string | null, 
+/**
+ * Names this send for `POST …/send/{sendId}/cancel` (`[A-Za-z0-9-]{1,64}`).
+ */
+sendId: string | null, };
 
 export type SaveEnvironmentBody = { vars: Array<KeyValueDto>, hash: string, };
 

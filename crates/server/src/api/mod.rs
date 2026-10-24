@@ -66,6 +66,10 @@ pub fn routes() -> Router<AppState> {
         .route("/collections/{id}/requests/new", post(requests::create))
         .route("/collections/{id}/send", post(requests::send))
         .route(
+            "/collections/{id}/send/{send_id}/cancel",
+            post(requests::cancel),
+        )
+        .route(
             "/collections/{id}/runtime-vars/{name}",
             put(vars::set_runtime_var),
         )

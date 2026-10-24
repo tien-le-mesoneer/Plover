@@ -505,6 +505,9 @@ pub struct SendBody {
     pub draft: Option<HttpRequestDto>,
     #[serde(default)]
     pub env: Option<String>,
+    /// Names this send for `POST …/send/{sendId}/cancel` (`[A-Za-z0-9-]{1,64}`).
+    #[serde(default)]
+    pub send_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

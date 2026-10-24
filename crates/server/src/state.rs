@@ -6,7 +6,7 @@ use plover_core::run_history::RunHistory;
 use plover_core::run_record::{RunRecord, RunRecorder};
 use plover_core::secrets::SecretVault;
 use plover_core::workspace::Workspace;
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 
 use crate::api::MAX_INLINE_BODY;
 use crate::events::Events;
@@ -32,7 +32,13 @@ pub struct AppState {
     pub history: Arc<RunHistory>,
     /// Runs in progress or being saved, by record ID, so their results can be shown.
     pub live: Arc<LiveRuns>,
+    /// Sends from the UI that can be cancelled, by (collection ID, send ID).
+    pub sends: Arc<SendRegistry>,
 }
+
+/// A cancel wakes the send's `Notify`; `notify_one` keeps a permit if the send is not
+/// waiting yet.
+pub type SendRegistry = Mutex<HashMap<(String, String), Arc<Notify>>>;
 
 /// A run the server holds in memory: still recording, or finished and being saved.
 pub enum LiveRun {
@@ -89,6 +95,7 @@ impl AppState {
             client: Arc::new(watch::channel(ClientProgress::default()).0),
             history: Arc::new(RunHistory::in_memory()),
             live: Arc::default(),
+            sends: Arc::default(),
         }
     }
 
