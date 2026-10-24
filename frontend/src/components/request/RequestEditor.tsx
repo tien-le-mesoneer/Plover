@@ -219,7 +219,12 @@ export function RequestEditor({ tab }: { tab: Tab }) {
           </div>
         </section>
         <section className="pane">
-          <ResponseViewer result={tab.result} sending={tab.sending} onOpenScript={() => setSection("Script")} />
+          <ResponseViewer
+            result={tab.result}
+            sending={tab.sending}
+            name={draft.name}
+            onOpenScript={() => setSection("Script")}
+          />
         </section>
       </div>
     </div>

@@ -246,7 +246,7 @@ describe("response header (A9, quick wins)", () => {
         sending={false}
       />,
     );
-    expect(screen.getByText(/1 of 1 checks failed/)).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Checks: 0 of 1 passed" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Tests/, selected: true })).toBeTruthy();
   });
 
@@ -441,7 +441,7 @@ describe("run result detail and history", () => {
       fireEvent.click(row);
     });
     const tabs = within(screen.getByRole("tablist", { name: "Response sections" })).getAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["Response", expect.stringMatching(/^Headers/), "Request", "Tests", "Console"]);
+    expect(tabs.map((t) => t.textContent)).toEqual(["Body", expect.stringMatching(/^Headers/), "Request", "Tests", "Console"]);
     fireEvent.click(screen.getByRole("tab", { name: "Request as sent" }));
     expect(screen.getByText("http://h/a?x=1", { exact: false })).toBeTruthy();
     expect(screen.getByText("x-sent")).toBeTruthy();

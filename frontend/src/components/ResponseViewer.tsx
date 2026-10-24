@@ -1,19 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { BodyDetailDto, RequestDetailDto, ScriptErrorDto, SendResultDto } from "../api/types";
 import { CodeEditor } from "../editor/CodeEditor";
 import { Banner } from "./Banner";
-import { formatDuration, formatSize, prettyBody, statusLine } from "../lib/format";
-import { CheckIcon, CopyIcon, CrossIcon } from "./icons";
+import { downloadBody } from "../lib/download";
+import { formatSize, prettyBody } from "../lib/format";
 import { ConsoleOutput } from "./response/ConsoleOutput";
+import { HeadersTable } from "./response/HeadersTable";
+import { PinnedHeaders } from "./response/PinnedHeaders";
+import { StatusLine } from "./response/StatusLine";
+import { useCopy } from "./response/useCopy";
 import { TestResults, testSummary } from "./response/TestResults";
 import { SubTabs, type SubTab } from "./SubTabs";
-
-function statusClass(status: number): string {
-  if (status >= 500) return "status-5xx";
-  if (status >= 400) return "status-4xx";
-  if (status >= 300) return "status-3xx";
-  return "status-2xx";
-}
 
 export function scriptErrorText(e: ScriptErrorDto): string {
   const where = [e.scope, e.line ? `line ${e.line}` : null].filter(Boolean).join(", ");
@@ -22,15 +19,6 @@ export function scriptErrorText(e: ScriptErrorDto): string {
 }
 
 type View = "body" | "headers" | "request" | "tests" | "console";
-
-/** Whether the request as a whole passed: script errors and failed checks win over the HTTP status. */
-function outcome(result: SendResultDto): { ok: boolean; text: string } | null {
-  if (result.scriptError) return { ok: false, text: "Script error" };
-  const { passed, total } = testSummary(result.tests, result.asserts);
-  if (total === 0) return null;
-  if (passed === total) return { ok: true, text: `${total} ${total === 1 ? "check" : "checks"} passed` };
-  return { ok: false, text: `${total - passed} of ${total} checks failed` };
-}
 
 interface Props {
   result?: SendResultDto;
@@ -41,6 +29,8 @@ interface Props {
   request?: RequestDetailDto | null;
   /** Replaces the truncation notice, e.g. for a body a run kept only in part. */
   bodyNote?: string;
+  /** The request's name, for "Save body to file". */
+  name?: string;
 }
 
 /** A stored request body: text, form or multipart fields, or a note. */
@@ -108,13 +98,12 @@ function RequestView({ request }: { request: RequestDetailDto }) {
   );
 }
 
-export function ResponseViewer({ result, sending, onOpenScript, request, bodyNote }: Props) {
+export function ResponseViewer({ result, sending, onOpenScript, request, bodyNote, name }: Props) {
   const failedChecks = result ? testSummary(result.tests, result.asserts) : { passed: 0, total: 0 };
   const hasFailures = failedChecks.passed < failedChecks.total;
   const [view, setView] = useState<View>(hasFailures ? "tests" : "body");
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [shown, setShown] = useState(result);
+  const { note, copy } = useCopy();
 
   // A new result with failing checks opens the Tests tab, so the failure is not
   // hidden behind a green 200 (state adjusted during render, not in an effect).
@@ -122,7 +111,6 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
     setShown(result);
     if (hasFailures) setView("tests");
   }
-  useEffect(() => () => clearTimeout(timer.current), []);
 
   if (sending) {
     return (
@@ -134,7 +122,6 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
   if (!result) return <p className="muted center">Send the request to see the response.</p>;
   const response = result.response;
   const summary = testSummary(result.tests, result.asserts);
-  const verdict = outcome(result);
   const banners = (
     <>
       {result.scriptError && (
@@ -157,7 +144,7 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
   const tabList: SubTab<View>[] = [
     ...(response
       ? [
-          { id: "body" as const, label: request ? "Response" : "Body", name: "Response body" },
+          { id: "body" as const, label: "Body", name: "Response body" },
           {
             id: "headers" as const,
             label: (
@@ -169,9 +156,7 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
           },
         ]
       : []),
-    ...(request
-      ? [{ id: "request" as const, label: "Request", name: "Request as sent" }]
-      : []),
+    ...(request ? [{ id: "request" as const, label: "Request", name: "Request as sent" }] : []),
     {
       id: "tests",
       label: (
@@ -188,22 +173,12 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
     },
     {
       id: "console",
-      label: (
-        <>
-          Console{consoleCount > 0 && <sup aria-hidden="true">{consoleCount}</sup>}
-        </>
-      ),
+      label: <>Console{consoleCount > 0 && <sup aria-hidden="true">{consoleCount}</sup>}</>,
       name: consoleCount > 0 ? `Console, ${consoleCount} entries` : "Console",
     },
   ];
   const current: View = !response && (view === "body" || view === "headers") ? "console" : view;
   const tabs = <SubTabs tabs={tabList} value={current} onChange={setView} label="Response sections" />;
-  const chip = verdict && (
-    <span className={`outcome ${verdict.ok ? "ok" : "err"}`}>
-      {verdict.ok ? <CheckIcon /> : <CrossIcon />}
-      {verdict.text}
-    </span>
-  );
   const extra =
     current === "tests" ? (
       <TestResults tests={result.tests} asserts={result.asserts} />
@@ -215,11 +190,7 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
   if (!response) {
     return (
       <div className="response">
-        <div className="response-meta">
-          {chip}
-          <span className="muted">No response</span>
-          <span className="spacer" />
-        </div>
+        <StatusLine result={result} note={note} />
         {tabs}
         {banners}
         {extra}
@@ -227,86 +198,44 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
     );
   }
   const body = prettyBody(response);
-  const copyText =
-    current === "headers" ? response.headers.map(([k, v]) => `${k}: ${v}`).join("\n") : body.text;
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(copyText);
-      setCopied(true);
-      clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1500);
-    } catch {
-      setCopied(false);
-    }
-  };
-  const canCopy = (current === "body" && body.language !== "binary") || current === "headers";
+  const textBody = body.language !== "binary";
   return (
     <div className="response">
-      <div className="response-meta">
-        {chip}
-        <span className={`status ${statusClass(response.status)}`}>{statusLine(response.status)}</span>
-        <span className="num" title="Time">
-          {formatDuration(response.elapsedMs)}
-        </span>
-        <span className="num" title={response.sizeComplete ? "Size (decoded)" : "Bytes read before the 10 MB limit"}>
-          {response.sizeComplete ? formatSize(response.size) : `≥ ${formatSize(response.size)}`}
-        </span>
-        <span className="spacer" />
-        {canCopy && (
-          <button
-            type="button"
-            className="copy"
-            aria-label={current === "headers" ? "Copy headers" : "Copy body"}
-            onClick={() => void copy()}
-          >
-            <CopyIcon />
-            <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
-          </button>
-        )}
-      </div>
+      <StatusLine
+        result={result}
+        note={note}
+        onCopyBody={textBody ? () => void copy(response.bodyText ?? "") : undefined}
+        onSaveBody={() => downloadBody(name ?? "response", response)}
+      />
       {tabs}
       {banners}
       {bodyNote ? (
         <Banner kind="warn" role="status">
           {bodyNote}
         </Banner>
-      ) : response.truncated && (
-        <Banner kind="warn" role="status">
-          {response.sizeComplete
-            ? "Showing the first 10 MB of the body."
-            : "Stopped reading after 10 MB; the full size is unknown. Showing the first 10 MB."}
-        </Banner>
+      ) : (
+        response.truncated && (
+          <Banner kind="warn" role="status">
+            {response.sizeComplete
+              ? "Showing the first 10 MB of the body."
+              : "Stopped reading after 10 MB; the full size is unknown. Showing the first 10 MB."}
+          </Banner>
+        )
       )}
       {extra ??
         (current === "body" ? (
-          body.language === "binary" ? (
-            <p className="muted center">{body.text}</p>
-          ) : (
-            <div className="editor-box">
-              <CodeEditor
-                value={body.text}
-                language={body.language === "text" ? "plaintext" : body.language}
-                readOnly
-              />
-            </div>
-          )
+          <>
+            {textBody ? (
+              <div className="editor-box">
+                <CodeEditor value={body.text} language={body.language === "text" ? "plaintext" : body.language} readOnly />
+              </div>
+            ) : (
+              <p className="muted center">{body.text}</p>
+            )}
+            <PinnedHeaders headers={response.headers} onCopy={(v) => void copy(v)} />
+          </>
         ) : (
-          <table className="headers">
-            <thead>
-              <tr>
-                <th scope="col">Header</th>
-                <th scope="col">Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {response.headers.map(([k, v], i) => (
-                <tr key={i}>
-                  <th scope="row">{k}</th>
-                  <td>{v}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <HeadersTable headers={response.headers} onCopy={(v) => void copy(v)} />
         ))}
     </div>
   );
