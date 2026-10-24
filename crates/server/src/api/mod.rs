@@ -98,6 +98,7 @@ impl From<StoreError> for ApiError {
                 ApiError::new(StatusCode::BAD_REQUEST, "bad_item", e.to_string())
             }
             StoreError::NotFound(_) => ApiError::not_found(e.to_string()),
+            StoreError::Exists(_) => ApiError::new(StatusCode::CONFLICT, "exists", e.to_string()),
             StoreError::Parse(_) => ApiError::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "parse_error",
