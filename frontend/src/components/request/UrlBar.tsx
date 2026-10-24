@@ -10,9 +10,13 @@ interface Props {
   onEdit: (f: (d: HttpRequestDto) => HttpRequestDto) => void;
   onSend: () => void;
   onSave: () => void;
+  /** A pasted `curl …` command, instead of pasting it as the URL. */
+  onCurl?: (text: string) => void;
 }
 
-export function UrlBar({ draft, dirty, sending, onEdit, onSend, onSave }: Props) {
+const CURL = /^\s*curl\s/i;
+
+export function UrlBar({ draft, dirty, sending, onEdit, onSend, onSave, onCurl }: Props) {
   const methods = METHODS.includes(draft.method) ? METHODS : [...METHODS, draft.method];
   return (
     <form
@@ -37,6 +41,12 @@ export function UrlBar({ draft, dirty, sending, onEdit, onSend, onSave }: Props)
         className="url"
         value={draft.url}
         spellCheck={false}
+        onPaste={(e) => {
+          const text = e.clipboardData.getData("text");
+          if (!onCurl || !CURL.test(text)) return;
+          e.preventDefault();
+          onCurl(text);
+        }}
         onKeyDown={(e) => {
           // Cmd/Ctrl+Enter sends through the app-wide shortcut; stop the form's
           // implicit submission so it is not sent twice.

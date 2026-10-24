@@ -678,3 +678,29 @@ mod har {
         assert!(!text.contains("MARKER-"));
     }
 }
+
+#[tokio::test]
+async fn declare_secret_adds_name_to_environment_file() {
+    let dir = small_collection("https://api.example.test");
+    let app = app();
+    let id = open(&app, dir.path()).await;
+    let (status, body) = call(
+        &app,
+        "PUT",
+        &format!("/api/collections/{id}/environments/local/secrets"),
+        Some(json!({ "values": { "authorization": "Bearer tok-PASTE-1" }, "declare": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let text = std::fs::read_to_string(dir.path().join("environments/local.bru")).unwrap();
+    assert!(text.contains("authorization"), "{text}");
+    assert!(!text.contains("tok-PASTE-1"), "{text}");
+    let (_, envs) = call(
+        &app,
+        "GET",
+        &format!("/api/collections/{id}/environments"),
+        None,
+    )
+    .await;
+    assert_eq!(envs[0]["secretNames"], json!(["token", "authorization"]));
+}

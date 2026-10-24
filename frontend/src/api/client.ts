@@ -107,8 +107,16 @@ export interface ApiClient {
   importHar(id: string, body: HarImportBody): Promise<HarImportResultDto>;
   environments(id: string): Promise<EnvironmentDto[]>;
   saveEnvironment(id: string, name: string, vars: KeyValueDto[], hash: string): Promise<HashDto>;
-  /** Merges secret values; `null` clears one. Warns for values kept in memory only. */
-  setSecrets(id: string, name: string, values: Record<string, string | null>): Promise<SecretsResultDto>;
+  /**
+   * Merges secret values; `null` clears one. Warns for values kept in memory only. With
+   * `declare`, names that get a value are also added to the environment's `vars:secret`.
+   */
+  setSecrets(
+    id: string,
+    name: string,
+    values: Record<string, string | null>,
+    declare?: boolean,
+  ): Promise<SecretsResultDto>;
   startRun(
     id: string,
     item: string,
@@ -233,8 +241,12 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     environments: (id) => call("GET", `${collections(id)}/environments`),
     saveEnvironment: (id, name, vars, hash) =>
       call("PUT", `${collections(id)}/environments/${enc(name)}`, { vars, hash }),
-    setSecrets: (id, name, values) =>
-      call("PUT", `${collections(id)}/environments/${enc(name)}/secrets`, { values }),
+    setSecrets: (id, name, values, declare) =>
+      call(
+        "PUT",
+        `${collections(id)}/environments/${enc(name)}/secrets`,
+        declare ? { values, declare } : { values },
+      ),
     listRuns: (id) => call("GET", `${collections(id)}/runs`),
     getRun: (id, recordId) => call("GET", `${collections(id)}/runs/${enc(recordId)}`),
     runResult: (id, recordId, index) =>

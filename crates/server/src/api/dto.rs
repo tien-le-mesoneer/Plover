@@ -495,6 +495,11 @@ pub struct SaveEnvironmentBody {
 pub struct SecretsBody {
     /// Merged into the current values: a string sets a secret, `null` clears it.
     pub values: BTreeMap<String, Option<String>>,
+    /// Also add the names that get a value to the file's `vars:secret` block, so they are
+    /// known after a restart ("Move to secret" on a pasted curl).
+    #[serde(default)]
+    #[ts(optional)]
+    pub declare: Option<bool>,
 }
 
 /// The file content found on disk when a save conflicts.
