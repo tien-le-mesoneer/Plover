@@ -46,4 +46,4 @@
 2. Move to secret cannot tell whether an existing secret already holds the same value (the UI never sees values), so it takes the next free name (`authorization2`).
 3. Copy as cURL in the browser was checked by its "Copied" note only (headless Chrome refuses clipboard reads); the copied text was checked through the API.
 4. No folder context-menu entry for Import HAR (right-click already runs a folder).
-5. The synthetic HAR fixtures contain fake tokens and a JWT-shaped string; run gitleaks before pushing and allowlist `crates/core/tests/fixtures/har/` if it flags them. Windows and Linux CI have not run these commits.
+5. Windows and Linux CI have not run these commits. gitleaks flagged only the fake `-u alice:s3cr3t` lines in the curl tests; `.gitleaksignore` lists those two findings.
