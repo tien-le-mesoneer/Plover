@@ -401,7 +401,7 @@ describe("run result detail and history", () => {
       viewing: null,
       history: {},
       runs: {
-        r1: { runId: "r1", collectionId: "c1", item: "", label: "all", status, events, recordId: "rec", source: "live" },
+        r1: { runId: "r1", collectionId: "c1", item: "", label: "all", status, events, recordId: "rec", source: "live", iterations: [], env: null },
       } as never,
     });
 

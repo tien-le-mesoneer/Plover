@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { RunOptions } from "../api/client";
 import { api } from "../api/instance";
 import type { RunEventDto, RunMetaDto, RunReportDto, RunResultDetailDto } from "../api/types";
 
@@ -25,6 +26,16 @@ export interface RunState {
   /** The result index whose detail is shown. */
   selected?: number;
   detail?: RunDetail;
+  /** Iterations of a data-driven or repeated run, with their (masked) rows. */
+  iterations: RunIteration[];
+  /** The environment the run used (for "Run with data…" and re-runs). */
+  env: string | null;
+}
+
+export interface RunIteration {
+  index: number;
+  total: number;
+  data: Record<string, unknown>;
 }
 
 export interface RunsState {
@@ -35,7 +46,7 @@ export interface RunsState {
   viewing: string | null;
   /** Saved runs per collection ID, newest first. */
   history: Record<string, RunMetaDto[]>;
-  start(collectionId: string, item: string, env: string | null, label: string): string;
+  start(collectionId: string, item: string, env: string | null, label: string, options?: RunOptions): string;
   cancel(runId: string): void;
   /** Shows result `index` of a run, fetching its request and response. */
   select(runId: string, index: number): void;
@@ -78,7 +89,7 @@ export const useRuns = create<RunsState>()((set, get) => {
     viewing: null,
     history: {},
 
-    start(collectionId, item, env, label) {
+    start(collectionId, item, env, label, options) {
       let runId = "";
       const handle = api().startRun(collectionId, item, env, (event) => {
         // Events arrive asynchronously, after `runId` is assigned below.
@@ -87,6 +98,11 @@ export const useRuns = create<RunsState>()((set, get) => {
           switch (event.type) {
             case "accepted":
               return { events, recordId: event.recordId };
+            case "iterationStarted":
+              return {
+                events,
+                iterations: [...r.iterations, { index: event.index, total: event.total, data: event.data }],
+              };
             case "finished":
               return { events, status: "done", report: event.report };
             case "cancelled":
@@ -104,13 +120,23 @@ export const useRuns = create<RunsState>()((set, get) => {
           if (selected !== undefined) void fetchDetail(runId, selected);
           void get().loadHistory(collectionId);
         }
-      });
+      }, options);
       runId = handle.runId;
       cancels.set(runId, handle.cancel);
       set((s) => ({
         runs: {
           ...s.runs,
-          [runId]: { runId, collectionId, item, label, events: [], status: "running", source: "live" },
+          [runId]: {
+            runId,
+            collectionId,
+            item,
+            label,
+            events: [],
+            status: "running",
+            source: "live",
+            iterations: [],
+            env,
+          },
         },
         order: [...s.order, runId],
         viewing: null,
@@ -159,6 +185,10 @@ export const useRuns = create<RunsState>()((set, get) => {
             report: run.meta.report,
             recordId,
             source: "history",
+            iterations: run.events.flatMap((e) =>
+              e.type === "iterationStarted" ? [{ index: e.index, total: e.total, data: e.data }] : [],
+            ),
+            env: run.meta.env,
           },
         },
         viewing: recordId,

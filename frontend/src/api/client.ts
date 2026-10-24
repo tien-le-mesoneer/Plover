@@ -8,6 +8,8 @@ import type {
   CreatedRequestDto,
   CurlParsedDto,
   CurlTextDto,
+  DataFileDto,
+  DataPreviewDto,
   EnvironmentDto,
   HarImportBody,
   HarImportResultDto,
@@ -22,6 +24,7 @@ import type {
   RunEventDto,
   RunMetaDto,
   RunResultDetailDto,
+  SavedFileDto,
   SavedRequestDto,
   SecretsResultDto,
   SendResultDto,
@@ -122,7 +125,14 @@ export interface ApiClient {
     item: string,
     env: string | null,
     onEvent: (e: RunEventDto) => void,
+    options?: RunOptions,
   ): RunHandle;
+  /** Row count and column names of a data file (never its values), or a `bad_data` error. */
+  previewDataFile(id: string, file: DataFileDto): Promise<DataPreviewDto>;
+  /** The report of a finished, cancelled or saved run, as a file to download. */
+  downloadReport(id: string, recordId: string, format: ReportFormat): Promise<{ blob: Blob; fileName: string }>;
+  /** Desktop app: saves the report through the native save dialog; `null` when cancelled. */
+  saveReport(id: string, recordId: string, format: ReportFormat): Promise<string | null>;
   /** Saved runs of a collection (app and `plv`), newest first. */
   listRuns(id: string): Promise<RunMetaDto[]>;
   /** A saved run as replayed run events. */
@@ -130,6 +140,14 @@ export interface ApiClient {
   /** One result's request and response, masked; live runs answer from memory. */
   runResult(id: string, recordId: string, index: number): Promise<RunResultDetailDto>;
   clearRuns(id: string): Promise<void>;
+}
+
+export type ReportFormat = "html" | "json" | "junit";
+
+/** A data file (one iteration per row) or a repeat count for a run. */
+export interface RunOptions {
+  data?: DataFileDto;
+  iterationCount?: number;
 }
 
 interface Deps {
@@ -252,14 +270,35 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     runResult: (id, recordId, index) =>
       call("GET", `${collections(id)}/runs/${enc(recordId)}/results/${index}`),
     clearRuns: (id) => call("DELETE", `${collections(id)}/runs`),
-    startRun(id, item, env, onEvent) {
+    previewDataFile: (id, file) => call("POST", `${collections(id)}/data-file/preview`, file),
+    async downloadReport(id, recordId, format) {
+      const res = await doFetch(
+        `${baseUrl}/api${collections(id)}/runs/${enc(recordId)}/report?format=${format}`,
+        { method: "GET", headers: { authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw errorFrom(res, await res.text());
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `${recordId}.${format === "junit" ? "xml" : format}`;
+      return { blob: await res.blob(), fileName };
+    },
+    saveReport: async (id, recordId, format) =>
+      (await call<SavedFileDto>("POST", "/native/save-report", { collectionId: id, runId: recordId, format })).path,
+    startRun(id, item, env, onEvent, options) {
       const runId = crypto.randomUUID();
       const socket = new Socket(wsUrl(), [`plover.token.${token}`]);
       let resolve!: () => void;
       const done = new Promise<void>((r) => (resolve = r));
       const send = (msg: ClientMessage) => socket.send(JSON.stringify(msg));
       socket.onopen = () =>
-        send({ type: "start", runId, collectionId: id, item, env });
+        send({
+          type: "start",
+          runId,
+          collectionId: id,
+          item,
+          env,
+          ...(options?.data ? { data: options.data } : {}),
+          ...(options?.iterationCount ? { iterationCount: options.iterationCount } : {}),
+        });
       socket.onmessage = (e: MessageEvent) => {
         const event = JSON.parse(String(e.data)) as RunEventDto;
         // One run per socket: errors without a runId (e.g. bad_message) belong to it too.

@@ -6,6 +6,7 @@ import { useRuns } from "./runs";
 
 let emit: (e: RunEventDto) => void = () => {};
 let finish: () => void = () => {};
+let lastOptions: unknown;
 const cancel = vi.fn();
 const runResult = vi.fn();
 const listRuns = vi.fn();
@@ -22,8 +23,9 @@ beforeEach(() => {
   clearRuns.mockReset().mockResolvedValue(undefined);
   useRuns.setState({ runs: {}, order: [], viewing: null, history: {} });
   setApi({
-    startRun: vi.fn((_id: string, _item: string, _env: string | null, onEvent: (e: RunEventDto) => void) => {
+    startRun: vi.fn((_id: string, _item: string, _env: string | null, onEvent: (e: RunEventDto) => void, options?: unknown) => {
       emit = onEvent;
+      lastOptions = options;
       const done = new Promise<void>((r) => (finish = r));
       return { runId: "r1", cancel, done };
     }),
@@ -137,5 +139,24 @@ describe("runs store", () => {
     useRuns.getState().start("c1", "", null, "all");
     emit({ type: "error", runId: null, error: "bad_message", message: "bad" });
     expect(useRuns.getState().runs.r1!.status).toBe("error");
+  });
+
+  it("iterationStarted events build the iterations; rows keep their iteration", () => {
+    useRuns.getState().start("c1", "", "local", "all", { data: { format: "csv", text: "user\nu1\nu2\n" } });
+    expect(lastOptions).toEqual({ data: { format: "csv", text: "user\nu1\nu2\n" } });
+    emit({ type: "iterationStarted", runId: "r1", index: 0, total: 2, data: { user: "u1", password: "***" } });
+    emit({ type: "started", runId: "r1", iteration: 0, item: "a.bru", name: "a", method: "GET", url: "u" });
+    emit({ type: "iterationStarted", runId: "r1", index: 1, total: 2, data: { user: "u2" } });
+    const run = useRuns.getState().runs.r1!;
+    expect(run.iterations).toEqual([
+      { index: 0, total: 2, data: { user: "u1", password: "***" } },
+      { index: 1, total: 2, data: { user: "u2" } },
+    ]);
+    expect(run.env).toBe("local");
+  });
+
+  it("an iteration count is passed to the socket", () => {
+    useRuns.getState().start("c1", "", null, "all", { iterationCount: 3 });
+    expect(lastOptions).toEqual({ iterationCount: 3 });
   });
 });

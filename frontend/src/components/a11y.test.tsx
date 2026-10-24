@@ -87,6 +87,8 @@ describe("run panel keyboard access", () => {
           status: "done",
           recordId: "rec",
           source: "live",
+          iterations: [],
+          env: null,
           events: [
             { type: "started", runId: "r1", iteration: 0, item: "a.bru", name: "a", method: "GET", url: "u" },
             { type: "passed", runId: "r1", iteration: 0, index: 0, item: "a.bru", status: 200, elapsedMs: 1, size: 1, tests: [], asserts: [], console: [] },
@@ -115,5 +117,23 @@ describe("run panel keyboard access", () => {
     fireEvent.keyDown(menu, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Run history" })).toBeNull();
     expect(document.activeElement).toBe(button);
+  });
+});
+
+describe("run with data dialog", () => {
+  it("focuses the file input first, keeps Tab inside, and Escape dismisses", async () => {
+    const { RunWithDataDialog } = await import("./RunWithDataDialog");
+    const onClose = vi.fn();
+    render(<RunWithDataDialog collectionId="c1" item="" label="all" env={null} onClose={onClose} />);
+    const dialog = screen.getByRole("dialog", { name: "Run with data" });
+    expect(document.activeElement).toBe(dialog.querySelector('input[type="file"]'));
+    expect(screen.getByLabelText("Data file (CSV or JSON)")).toBeTruthy();
+    const run = within(dialog).getByRole("button", { name: "Run" });
+    // Run is enabled (count 1); Tab from the last control wraps to the first.
+    run.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(dialog.querySelector('input[type="file"]'));
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
   });
 });
