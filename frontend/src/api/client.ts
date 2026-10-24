@@ -36,6 +36,8 @@ import type {
   StoredRequestDto,
   TreeNodeDto,
   UiStateDto,
+  VarsBody,
+  VarsDto,
 } from "./types";
 
 export class ApiError extends Error {
@@ -111,6 +113,8 @@ export interface ApiClient {
   copyCurl(id: string, body: CopyCurlBody): Promise<CurlTextDto>;
   /** The URL Send would use, variables filled in and secret values masked. */
   resolvedUrl(id: string, body: ResolvedUrlBody): Promise<ResolvedUrlDto>;
+  /** Where each variable a send would use comes from; masked, runs nothing. */
+  vars(id: string, body: VarsBody): Promise<VarsDto>;
   /** Sets a runtime variable like `bru.setVar`; the next send sees it. */
   setRuntimeVar(collectionId: string, name: string, value: unknown): Promise<void>;
   /** Shows a request file in the file manager (desktop only). */
@@ -281,6 +285,7 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     copyCurl: (id, body) => call("POST", `${collections(id)}/curl`, body),
     resolvedUrl: (id, body) => call("POST", `${collections(id)}/resolved-url`, body),
     reveal: (collection, item) => call("POST", "/native/reveal", { collection, item }),
+    vars: (id, body) => call("POST", `${collections(id)}/vars`, body),
     setRuntimeVar: (id, name, value) => call("PUT", `${collections(id)}/runtime-vars/${enc(name)}`, { value }),
     createRequest: (id, folder, name, request) =>
       call("POST", `${collections(id)}/requests/new`, { folder, name, request }),

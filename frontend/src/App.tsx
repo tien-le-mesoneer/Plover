@@ -19,6 +19,7 @@ import { useLayout, useSidebarWidth } from "./store/layout";
 import { useRuns } from "./store/runs";
 import { useTabs } from "./store/tabs";
 import { startUp } from "./store/startup";
+import { watchVars } from "./store/vars";
 import { useWorkspace } from "./store/workspace";
 
 /** Open layers that own Escape. */
@@ -52,6 +53,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
       if (cancelled) stop?.();
       else stopPersisting = stop;
     });
+    const stopVars = watchVars();
     const events = api().subscribeEvents((event) =>
       handleServerEvent(event, {
         anyDirty: () => {
@@ -65,6 +67,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
     );
     return () => {
       cancelled = true;
+      stopVars();
       stopPersisting?.();
       events.close();
     };
