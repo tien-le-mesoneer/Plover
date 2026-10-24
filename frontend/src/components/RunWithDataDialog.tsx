@@ -14,6 +14,8 @@ interface Props {
   label: string;
   env: string | null;
   onClose: () => void;
+  /** The new run's ID, so a Run tab can show it. */
+  onStarted?: (runId: string) => void;
 }
 
 function formatOf(name: string): DataFileDto["format"] | null {
@@ -28,7 +30,7 @@ function formatOf(name: string): DataFileDto["format"] | null {
  * the browser and never kept after the dialog closes (it can hold credentials); the
  * preview shows only the row count and column names.
  */
-export function RunWithDataDialog({ collectionId, item, label, env, onClose }: Props) {
+export function RunWithDataDialog({ collectionId, item, label, env, onClose, onStarted }: Props) {
   const start = useRuns((s) => s.start);
   const [file, setFile] = useState<{ name: string; data: DataFileDto }>();
   const [preview, setPreview] = useState<DataPreviewDto>();
@@ -64,7 +66,8 @@ export function RunWithDataDialog({ collectionId, item, label, env, onClose }: P
   const canRun = file ? !!preview : !error && countValid;
   const run = () => {
     if (!canRun) return;
-    start(collectionId, item, env, label, file ? { data: file.data } : { iterationCount: iterations });
+    const runId = start(collectionId, item, env, label, file ? { data: file.data } : { iterationCount: iterations });
+    onStarted?.(runId);
     onClose();
   };
 

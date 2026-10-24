@@ -22,8 +22,21 @@ export interface Tab {
   conflict?: ConflictDto;
 }
 
+/** A collection or folder run shown in its own tab (never remembered across restarts). */
+export interface RunTab {
+  kind: "run";
+  /** `collectionId + ':run:' + n`. */
+  key: string;
+  collectionId: string;
+  /** The run shown (a live run ID or a saved run's record ID); `null` before any run. */
+  runId: string | null;
+  label: string;
+}
+
 export interface TabsState {
   tabs: Tab[];
+  /** Run tabs, after the request tabs in the tab strip; they share `active`. */
+  runTabs: RunTab[];
   active: string | null;
   /** The scratch tab whose "Save request" dialog is open. */
   saveDialog: string | null;
@@ -46,11 +59,16 @@ export interface TabsState {
   applyCurl(key: string, parsed: HttpRequestDto): HttpRequestDto;
   /** Some scratch tab has content that would be lost. */
   hasScratchContent(): boolean;
+  /** Opens a tab showing `runId` (or an empty one for the collection's runs) and focuses it. */
+  openRun(collectionId: string, runId: string | null, label: string): string;
+  /** Shows another run in an existing run tab (Re-run, a previous run). */
+  retargetRun(key: string, runId: string, label?: string): void;
 }
 
 export const tabKey = (collectionId: string, item: string) => `${collectionId}:${item}`;
 
 let scratchCount = 0;
+let runTabCount = 0;
 
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -92,6 +110,7 @@ export const useTabs = create<TabsState>()((set, get) => {
 
   return {
     tabs: [],
+    runTabs: [],
     active: null,
     saveDialog: null,
 
@@ -136,12 +155,16 @@ export const useTabs = create<TabsState>()((set, get) => {
 
     close(key) {
       set((s) => {
-        const index = s.tabs.findIndex((t) => t.key === key);
+        const all = [...s.tabs.map((t) => t.key), ...s.runTabs.map((t) => t.key)];
+        const index = all.indexOf(key);
         if (index < 0) return s;
-        const tabs = s.tabs.filter((t) => t.key !== key);
-        const active =
-          s.active === key ? (tabs[index] ?? tabs[index - 1] ?? null)?.key ?? null : s.active;
-        return { tabs, active };
+        const rest = all.filter((k) => k !== key);
+        const active = s.active === key ? (rest[index] ?? rest[index - 1] ?? null) : s.active;
+        return {
+          tabs: s.tabs.filter((t) => t.key !== key),
+          runTabs: s.runTabs.filter((t) => t.key !== key),
+          active,
+        };
       });
     },
 
@@ -260,6 +283,24 @@ export const useTabs = create<TabsState>()((set, get) => {
 
     hasScratchContent() {
       return get().tabs.some((t) => t.item === null && get().isDirty(t.key));
+    },
+
+    openRun(collectionId, runId, label) {
+      const existing = get().runTabs.find((t) => t.collectionId === collectionId && t.runId === runId);
+      if (existing) {
+        set({ active: existing.key });
+        return existing.key;
+      }
+      runTabCount += 1;
+      const key = `${collectionId}:run:${runTabCount}`;
+      set((s) => ({ runTabs: [...s.runTabs, { kind: "run", key, collectionId, runId, label }], active: key }));
+      return key;
+    },
+
+    retargetRun(key, runId, label) {
+      set((s) => ({
+        runTabs: s.runTabs.map((t) => (t.key === key ? { ...t, runId, label: label ?? t.label } : t)),
+      }));
     },
   };
 });

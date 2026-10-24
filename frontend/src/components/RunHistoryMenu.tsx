@@ -7,14 +7,23 @@ function when(ms: number): string {
   return new Date(ms).toLocaleString();
 }
 
-/** "History": the collection's saved runs (app and `plv`); choosing one opens it read-only. */
-export function RunHistoryMenu({ collectionId }: { collectionId: string }) {
+/**
+ * "Previous runs": the collection's saved runs (app and `plv`); choosing one opens it
+ * read-only, in the caller's tab when `onChoose` is given.
+ */
+export function RunHistoryMenu({
+  collectionId,
+  onChoose,
+}: {
+  collectionId: string;
+  onChoose?: (recordId: string) => void;
+}) {
   const { history, loadHistory, openHistory, clearHistory } = useRuns();
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string>();
-  /** Fixed above the button, so the scrolling run panel does not clip it. */
-  const [place, setPlace] = useState<{ right: number; bottom: number }>({ right: 8, bottom: 48 });
+  /** Fixed below the button, so a scrolling container does not clip it. */
+  const [place, setPlace] = useState<{ right: number; top: number }>({ right: 8, top: 48 });
   const button = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const runs = history[collectionId] ?? [];
@@ -51,6 +60,7 @@ export function RunHistoryMenu({ collectionId }: { collectionId: string }) {
     setOpen(false);
     try {
       await openHistory(collectionId, recordId);
+      onChoose?.(recordId);
       setError(undefined);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -66,11 +76,11 @@ export function RunHistoryMenu({ collectionId }: { collectionId: string }) {
         aria-expanded={open}
         onClick={() => {
           const rect = button.current?.getBoundingClientRect();
-          if (rect) setPlace({ right: Math.max(8, window.innerWidth - rect.right), bottom: window.innerHeight - rect.top + 4 });
+          if (rect) setPlace({ right: Math.max(8, window.innerWidth - rect.right), top: rect.bottom + 4 });
           setOpen((o) => !o);
         }}
       >
-        History
+        Previous runs ▾
       </button>
       {error && <span className="err">{error}</span>}
       {open && (

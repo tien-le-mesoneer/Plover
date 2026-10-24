@@ -9,7 +9,7 @@ import { closeTabWithConfirm } from "./components/RequestTabs";
 import { EnvSelector } from "./components/EnvSelector";
 import { RequestEditor } from "./components/request/RequestEditor";
 import { RequestTabs } from "./components/RequestTabs";
-import { RunPanel } from "./components/RunPanel";
+import { RunTab } from "./components/run/RunTab";
 import { SaveRequestDialog } from "./components/SaveRequestDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SidebarHeader } from "./components/SidebarHeader";
@@ -21,15 +21,21 @@ import { startUp } from "./store/startup";
 import { useWorkspace } from "./store/workspace";
 
 export default function App({ hasToken }: { hasToken: boolean }) {
-  const { tabs, active, requestSave, send, saveDialog, closeSaveDialog } = useTabs();
+  const { tabs, runTabs, active, requestSave, send, saveDialog, closeSaveDialog, openRun } = useTabs();
   const { collections, activeEnv, error, clearError, capabilities, openInBrowser, activeCollection } =
     useWorkspace();
   const anyDirty = useTabs((s) => s.tabs.some((t) => s.isDirty(t.key)));
   const [confirmReload, setConfirmReload] = useState(false);
   const startRun = useRuns((s) => s.start);
-  const [showRun, setShowRun] = useState(false);
   const tab = tabs.find((t) => t.key === active) ?? null;
-  const collectionId = tab?.collectionId ?? activeCollection ?? collections[0]?.id ?? null;
+  const runTab = runTabs.find((t) => t.key === active) ?? null;
+  const collectionId = tab?.collectionId ?? runTab?.collectionId ?? activeCollection ?? collections[0]?.id ?? null;
+  /** "Runs": the collection's newest run in a tab (or an empty one with Previous runs). */
+  const showRuns = (id: string) => {
+    const { runs, order } = useRuns.getState();
+    const latest = [...order].reverse().find((r) => runs[r]?.collectionId === id) ?? null;
+    openRun(id, latest, latest ? (runs[latest]?.label ?? "") : (collections.find((c) => c.id === id)?.name ?? "runs"));
+  };
   const sidebarWidth = useSidebarWidth();
 
   useEffect(() => {
@@ -120,8 +126,8 @@ export default function App({ hasToken }: { hasToken: boolean }) {
             Open in browser
           </button>
         )}
-        {collectionId && !showRun && (
-          <button type="button" onClick={() => setShowRun(true)}>
+        {collectionId && (
+          <button type="button" onClick={() => showRuns(collectionId)}>
             Runs
           </button>
         )}
@@ -156,15 +162,20 @@ export default function App({ hasToken }: { hasToken: boolean }) {
       <div className="layout">
         <Sidebar
           onRun={(id, item, label) => {
-            startRun(id, item, activeEnv[id] ?? null, label);
-            setShowRun(true);
+            const runId = startRun(id, item, activeEnv[id] ?? null, label);
+            openRun(id, runId, label);
           }}
         />
         <SidebarResizer width={sidebarWidth} />
         <main className="main">
           <RequestTabs />
-          {tab ? <RequestEditor key={tab.key} tab={tab} /> : <EmptyState />}
-          {showRun && <RunPanel collectionId={collectionId} onClose={() => setShowRun(false)} />}
+          {runTab ? (
+            <RunTab key={runTab.key} tab={runTab} />
+          ) : tab ? (
+            <RequestEditor key={tab.key} tab={tab} />
+          ) : (
+            <EmptyState />
+          )}
         </main>
       </div>
     </div>

@@ -8,7 +8,7 @@ import { useTabs } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
 import { KeyValueTable } from "./request/KeyValueTable";
 import { RequestTabs } from "./RequestTabs";
-import { RunPanel } from "./RunPanel";
+import { runTabFor } from "./run/harness";
 
 // Monaco needs a real browser; the response body editor is not what these tests check.
 vi.mock("../editor/CodeEditor", () => ({ CodeEditor: () => null }));
@@ -99,15 +99,15 @@ describe("run panel keyboard access", () => {
   });
 
   it("finished rows are focusable and say whether they are selected", () => {
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     const row = within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row")[1]!;
     expect(row.tabIndex).toBe(0);
     expect(row.getAttribute("aria-selected")).toBe("false");
   });
 
   it("the History menu takes focus and Escape returns it to the button", async () => {
-    render(<RunPanel onClose={() => {}} />);
-    const button = screen.getByRole("button", { name: "History" });
+    render(runTabFor());
+    const button = screen.getByRole("button", { name: /Previous runs/ });
     button.focus();
     await act(async () => {
       fireEvent.click(button);

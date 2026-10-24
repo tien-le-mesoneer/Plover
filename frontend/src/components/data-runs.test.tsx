@@ -6,7 +6,7 @@ import { setApi } from "../api/instance";
 import type { RunEventDto } from "../api/types";
 import { useRuns } from "../store/runs";
 import { useWorkspace } from "../store/workspace";
-import { RunPanel } from "./RunPanel";
+import { runTabFor } from "./run/harness";
 import { RunWithDataDialog } from "./RunWithDataDialog";
 
 vi.mock("../editor/CodeEditor", () => ({ CodeEditor: () => null }));
@@ -144,9 +144,9 @@ describe("Run with data", () => {
     expect((screen.getByLabelText("Iterations") as HTMLInputElement).disabled).toBe(false);
   });
 
-  it("opens from the run panel header", () => {
+  it("opens from the run tab header", () => {
     live([started(0), ok(0, 0)]);
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     fireEvent.click(screen.getByRole("button", { name: "Run with data…" }));
     expect(screen.getByRole("dialog", { name: "Run with data" })).toBeTruthy();
   });
@@ -164,7 +164,7 @@ describe("iteration groups", () => {
       ok(1, 1),
       { type: "finished", runId: "r1", report },
     ]);
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     const table = screen.getByRole("table", { name: "Run results" });
     const headers = within(table).getAllByRole("rowheader");
     expect(headers.map((h) => h.textContent?.split(" · ")[0])).toEqual(["Iteration 1 of 2", "Iteration 2 of 2"]);
@@ -177,7 +177,7 @@ describe("iteration groups", () => {
 
   it("a plain run has no iteration header", () => {
     live([started(0), ok(0, 0)]);
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     expect(within(screen.getByRole("table", { name: "Run results" })).queryAllByRole("rowheader")).toEqual([]);
   });
 });
@@ -188,7 +188,7 @@ describe("Export", () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     URL.createObjectURL = vi.fn(() => "blob:x");
     URL.revokeObjectURL = vi.fn();
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
     const items = within(screen.getByRole("menu", { name: "Export report as" })).getAllByRole("menuitem");
     expect(items.map((i) => i.textContent)).toEqual(["HTML", "JSON", "JUnit"]);
@@ -207,7 +207,7 @@ describe("Export", () => {
       capabilities: { desktop: true, nativePicker: true, openExternal: true, nativeSave: true, reveal: true, secretBackend: "keychain" },
     });
     live([started(0), ok(0, 0), { type: "finished", runId: "r1", report }]);
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("menuitem", { name: "HTML" }));
@@ -219,11 +219,11 @@ describe("Export", () => {
 
   it("is disabled while the run is going; Escape closes the menu", () => {
     live([started(0)], "running");
-    const { unmount } = render(<RunPanel onClose={() => {}} />);
+    const { unmount } = render(runTabFor());
     expect((screen.getByRole("button", { name: "Export" }) as HTMLButtonElement).disabled).toBe(true);
     unmount();
     live([started(0), ok(0, 0), { type: "finished", runId: "r1", report }]);
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();

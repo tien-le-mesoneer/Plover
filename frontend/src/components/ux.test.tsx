@@ -20,7 +20,7 @@ import { Modal } from "./Modal";
 import { KeyValueTable } from "./request/KeyValueTable";
 import { RequestTabs } from "./RequestTabs";
 import { ResponseViewer } from "./ResponseViewer";
-import { RunPanel } from "./RunPanel";
+import { runTabFor } from "./run/harness";
 import { Sidebar } from "./Sidebar";
 
 // Monaco needs a real browser; the response body editor is not what these tests check.
@@ -274,7 +274,7 @@ describe("response header (A9, quick wins)", () => {
   });
 });
 
-describe("run panel (quick win)", () => {
+describe("run tab (quick win)", () => {
   it("has column headers", () => {
     useRuns.setState({
       order: ["r1"],
@@ -282,8 +282,8 @@ describe("run panel (quick win)", () => {
         r1: { runId: "r1", label: "users", status: "done", events: [], report: undefined, error: undefined },
       } as never,
     });
-    render(<RunPanel onClose={() => {}} />);
-    for (const name of ["Result", "Method", "Name", "Status", "Time · Size", "Checks", "Message"]) {
+    render(runTabFor());
+    for (const name of ["Result", "Method", "Name", "Status · time"]) {
       expect(screen.getByRole("columnheader", { name })).toBeTruthy();
     }
   });
@@ -435,7 +435,7 @@ describe("run result detail and history", () => {
 
   it("clicking a finished row opens the detail with five tabs, and the Request tab shows what was sent", async () => {
     live([started(), ok(0)]);
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     const row = within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row")[1]!;
     await act(async () => {
       fireEvent.click(row);
@@ -451,7 +451,7 @@ describe("run result detail and history", () => {
 
   it("Enter on a row opens it; a running row is not selectable", async () => {
     live([started(), ok(0), started("b.bru", "b")], "running");
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     const rows = within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row").slice(1);
     expect(rows[1]!.tabIndex).toBe(-1);
     expect(rows[1]!.getAttribute("aria-selected")).toBeNull();
@@ -465,7 +465,7 @@ describe("run result detail and history", () => {
 
   it("the second row of a request run twice asks for index 1", async () => {
     live([started(), ok(0), started(), ok(1)]);
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     const rows = within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row").slice(1);
     await act(async () => {
       fireEvent.click(rows[1]!);
@@ -476,7 +476,7 @@ describe("run result detail and history", () => {
   it("a skipped row shows its reason and no tabs", async () => {
     runResult.mockResolvedValue(detail({ status: "skipped", skipReason: "skipRequest", request: null, responseBody: null }));
     live([{ type: "skipped", runId: "r1", iteration: 0, index: 0, item: "a.bru", reason: "skipRequest" }]);
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     const rows = within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row").slice(1);
     await act(async () => {
       fireEvent.click(rows[0]!);
@@ -492,7 +492,7 @@ describe("run result detail and history", () => {
     });
     runResult.mockResolvedValue(binary);
     live([started(), ok(0)]);
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     await act(async () => {
       fireEvent.click(within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row")[1]!);
     });
@@ -502,7 +502,7 @@ describe("run result detail and history", () => {
     cleanup();
     runResult.mockResolvedValue(detail({ responseBody: body({ kind: "omitted", omitted: "run size limit", size: 9 }) }));
     live([started(), ok(0)]);
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     await act(async () => {
       fireEvent.click(within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row")[1]!);
     });
@@ -511,9 +511,9 @@ describe("run result detail and history", () => {
 
   it("History lists saved runs and opens one read-only", async () => {
     live([started(), ok(0)], "running");
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "History" }));
+      fireEvent.click(screen.getByRole("button", { name: /Previous runs/ }));
     });
     const menu = screen.getByRole("dialog", { name: "Run history" });
     const entry = within(menu).getByRole("button", { name: /plv/ });
@@ -521,18 +521,16 @@ describe("run result detail and history", () => {
     await act(async () => {
       fireEvent.click(entry);
     });
-    expect(screen.getByText("Run: saved-col")).toBeTruthy();
+    expect(screen.getByText("Run · saved-col")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
     expect(within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row")).toHaveLength(2);
-    fireEvent.click(screen.getByRole("button", { name: "Back to latest run" }));
-    expect(screen.getByText("Run: all")).toBeTruthy();
   });
 
   it("Clear history asks first", async () => {
     live([started(), ok(0)]);
-    render(<RunPanel onClose={() => {}} />);
+    render(runTabFor());
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "History" }));
+      fireEvent.click(screen.getByRole("button", { name: /Previous runs/ }));
     });
     fireEvent.click(within(screen.getByRole("dialog", { name: "Run history" })).getByRole("button", { name: "Clear history" }));
     const confirm = screen.getByRole("dialog", { name: "Clear run history" });
@@ -542,9 +540,9 @@ describe("run result detail and history", () => {
     expect(api().clearRuns).toHaveBeenCalledWith("c1");
   });
 
-  it("with no run yet the panel still offers History", () => {
+  it("with no run yet the tab still offers Previous runs", () => {
     useRuns.setState({ order: [], runs: {}, viewing: null, history: {} });
-    render(<RunPanel collectionId="c1" onClose={() => {}} />);
-    expect(screen.getByRole("button", { name: "History" })).toBeTruthy();
+    render(runTabFor(null));
+    expect(screen.getByRole("button", { name: /Previous runs/ })).toBeTruthy();
   });
 });
