@@ -64,7 +64,7 @@ pub async fn send(
     let sent = send_one(
         &open,
         SendInput {
-            item_id: &body.item,
+            item_id: Some(&body.item),
             draft: draft.as_ref(),
             env: body.env.as_deref(),
         },

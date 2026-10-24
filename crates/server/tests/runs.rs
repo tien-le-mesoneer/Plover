@@ -312,7 +312,7 @@ async fn concurrent_send_and_run_keep_each_others_runtime_vars() {
     send_one(
         &open,
         SendInput {
-            item_id: "login.bru",
+            item_id: Some("login.bru"),
             draft: None,
             env: Some("local"),
         },

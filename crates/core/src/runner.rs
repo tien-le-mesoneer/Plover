@@ -937,8 +937,9 @@ fn replace_body(response: &mut ResponseSummary, ctx: &mut ScriptContext, body: &
 }
 
 pub struct SendInput<'a> {
-    /// `/`-separated path of the request file relative to the collection root.
-    pub item_id: &'a str,
+    /// `/`-separated path of the request file relative to the collection root. `None` is a
+    /// scratch request: `draft` sent with the collection's scope only (no folder applies).
+    pub item_id: Option<&'a str>,
     /// Unsaved edits to send instead of the file's request, with the file's scopes.
     pub draft: Option<&'a HttpRequest>,
     pub env: Option<&'a str>,
@@ -972,6 +973,9 @@ pub enum SendError {
 /// Sends one request of an open collection with its session, runtime variables,
 /// in-memory secrets and remembered script changes to the environment. A pre-request
 /// script error is an `Ok` outcome without a response (`outcome.script_error`).
+/// The stand-in file name of a scratch request (see [`SendInput::item_id`]).
+pub const SCRATCH_FILE: &str = ".plover-scratch.bru";
+
 pub async fn send_one(
     open: &OpenCollection,
     input: SendInput<'_>,
@@ -993,12 +997,38 @@ pub async fn send_one_with(
         ),
         None => None,
     };
-    let path = store::resolve_item_path(&collection.root, input.item_id)?;
-    let found = collection
-        .requests_under(&path)
-        .into_iter()
-        .find(|r| r.path == path)
-        .ok_or_else(|| SendError::NotFound(input.item_id.to_owned()))?;
+    let scratch;
+    let found = match input.item_id {
+        Some(item_id) => {
+            let path = store::resolve_item_path(&collection.root, item_id)?;
+            collection
+                .requests_under(&path)
+                .into_iter()
+                .find(|r| r.path == path)
+                .ok_or_else(|| SendError::NotFound(item_id.to_owned()))?
+        }
+        None => {
+            let draft = input
+                .draft
+                .ok_or_else(|| SendError::NotFound("scratch request needs a draft".into()))?;
+            // Never written: only a stand-in path for scripts and the resolver.
+            scratch = Item::Request {
+                path: collection.root.join(SCRATCH_FILE),
+                file: Box::new(RequestFile {
+                    doc: crate::bru::syntax::BruDocument::new(),
+                    request: draft.clone(),
+                }),
+            };
+            let Item::Request { path, .. } = &scratch else {
+                unreachable!("scratch is a request item")
+            };
+            RequestRef {
+                path,
+                item: &scratch,
+                folders: Vec::new(),
+            }
+        }
+    };
     if let Err(not_runnable) = check_runnable(&found) {
         return Err(match not_runnable {
             NotRunnable::Skip(reason) => SendError::Unsupported(reason),

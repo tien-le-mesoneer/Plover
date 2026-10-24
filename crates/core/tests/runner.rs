@@ -518,3 +518,89 @@ mod detail {
         assert!(!format!("{body:?}").contains("FILE-BYTES"));
     }
 }
+
+// ---- scratch sends (no file behind the request)
+
+mod scratch {
+    use super::*;
+    use plover_core::executor::ExecOptions;
+    use plover_core::request::{HttpRequest, KeyValue};
+    use plover_core::runner::{SendError, SendInput, send_one};
+    use plover_core::workspace::Workspace;
+    use wiremock::matchers::header;
+
+    fn scoped_collection(root: &Path, server: &str) {
+        collection(root);
+        write(
+            root,
+            "collection.bru",
+            "headers {\n  x-col: 1\n}\n\nscript:pre-request {\n  req.setHeader(\"x-pre\", \"yes\");\n}\n",
+        );
+        write(root, "f/folder.bru", "headers {\n  x-folder: 1\n}\n");
+        write(root, "f/r.bru", &request("r", 1));
+        write(
+            root,
+            "environments/local.bru",
+            &format!("vars {{\n  host: {server}\n}}\n"),
+        );
+    }
+
+    fn draft(url: &str) -> HttpRequest {
+        let mut req = HttpRequest::blank();
+        req.url = url.to_owned();
+        req.headers = vec![KeyValue::new("x-own", "1")];
+        req
+    }
+
+    #[tokio::test]
+    async fn scratch_send_applies_collection_headers_not_folder_headers() {
+        let server = MockServer::start().await;
+        Mock::given(path("/scratch"))
+            .and(header("x-col", "1"))
+            .and(header("x-own", "1"))
+            .and(header("x-pre", "yes"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        scoped_collection(dir.path(), &server.uri());
+        let ws = Workspace::new(ExecOptions::default());
+        let open = ws.get(&ws.open(dir.path()).unwrap()).unwrap();
+        let req = draft("{{host}}/scratch");
+        let sent = send_one(
+            &open,
+            SendInput {
+                item_id: None,
+                draft: Some(&req),
+                env: Some("local"),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(sent.response.unwrap().status, 200);
+        let received = server.received_requests().await.unwrap();
+        assert!(received[0].headers.get("x-folder").is_none());
+        // Nothing was written for the scratch request.
+        assert!(!dir.path().join(".plover-scratch.bru").exists());
+    }
+
+    #[tokio::test]
+    async fn scratch_send_without_draft_is_error() {
+        let dir = tempfile::tempdir().unwrap();
+        scoped_collection(dir.path(), "http://127.0.0.1:9");
+        let ws = Workspace::new(ExecOptions::default());
+        let open = ws.get(&ws.open(dir.path()).unwrap()).unwrap();
+        let err = send_one(
+            &open,
+            SendInput {
+                item_id: None,
+                draft: None,
+                env: None,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, SendError::NotFound(_)), "{err:?}");
+    }
+}

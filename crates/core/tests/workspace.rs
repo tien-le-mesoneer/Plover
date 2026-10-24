@@ -190,7 +190,7 @@ async fn send_one_uses_draft_and_secrets() {
     let res = send_one(
         &open,
         SendInput {
-            item_id: "r.bru",
+            item_id: Some("r.bru"),
             draft: Some(&draft),
             env: Some("local"),
         },
