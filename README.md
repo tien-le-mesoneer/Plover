@@ -173,6 +173,18 @@ never secrets. `plv run` reads and writes only its `runs/` folder.
 - **New request** (above the sidebar) opens an unsaved tab that sends with the
   collection's headers, auth and scripts. It is never written to disk until you save it
   into a folder, and is not remembered across restarts.
+- **Cancel:** while a request runs, Send becomes `Cancel · 3.2s` (or press `Esc`). The
+  server stops the request and any script at once; a cancelled send keeps no variable
+  changes (cookies already received stay).
+- **Variables:** `{{name}}` in the URL, params, headers, auth and body is tinted when
+  defined, dotted amber when a script sets it later (`bru.setVar`, `vars:post-response`)
+  and wavy red when no scope defines it. Hover it, or leave the caret in it for half a
+  second, to see its value and scope (`Environment: Dev`, `Runtime`, …) and what it
+  overrides. Secrets, `process.env` values and values sent in an `Authorization` or
+  `Cookie` header are shown as `•••• secret`; scripts never run for this.
+- **Quick open** (`⌘/Ctrl+K`, also inside editors): find any request of the open
+  collections by name, folder or collection; case and accents do not matter
+  (`dang nhap` finds `Đăng nhập`). An empty search lists the requests you opened.
 - **Send** is the only coloured button. **⋯** next to it holds Copy as cURL (as written,
   or with variables filled in for the selected environment; it asks first when the
   command contains a secret), Copy resolved URL (secret values as `***`), Save and
@@ -189,8 +201,8 @@ never secrets. `plv run` reads and writes only its `runs/` folder.
   moves every credential into secret variables. See
   [Capture a browser flow and import it](docs/capture-with-claude.md).
 
-Shortcuts: `⌘/Ctrl+O` open collection, `⌘/Ctrl+P` filter requests (`Esc` clears),
-`⌘/Ctrl+Enter` send, `⌘/Ctrl+S` save, `⌘/Ctrl+F` search the response body, Enter on a
+Shortcuts: `⌘/Ctrl+O` open collection, `⌘/Ctrl+K` quick open, `⌘/Ctrl+P` filter
+requests (`Esc` clears), `⌘/Ctrl+Enter` send, `Esc` cancel a running send, `⌘/Ctrl+S` save, `⌘/Ctrl+F` search the response body, Enter on a
 JSON value for its menu, arrow keys in the sidebar tree and tab strips,
 `Esc` closes dialogs. `⌘/Ctrl+W` closes a request tab in the desktop app (browsers
 keep that shortcut for closing the window).
