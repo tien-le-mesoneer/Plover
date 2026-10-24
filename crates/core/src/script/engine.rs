@@ -65,7 +65,8 @@ pub struct ConsoleLine {
     pub text: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ScriptError {
     #[error("{}", thrown_display(.name, .message, .scope, .line))]
     Thrown {
@@ -84,7 +85,7 @@ pub enum ScriptError {
         message: String,
     },
     #[error("script timed out after {} ms", .0.as_millis())]
-    Timeout(Duration),
+    Timeout(#[serde(with = "crate::serde_ms")] Duration),
     #[error("script exceeded the memory limit")]
     OutOfMemory,
     #[error("script awaited a promise that can never settle")]

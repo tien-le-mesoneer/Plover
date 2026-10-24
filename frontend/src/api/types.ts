@@ -208,7 +208,71 @@ current: ConflictDto | null, };
 
 export type RunReportDto = { passed: number, failed: number, skipped: number, testsPassed: number, testsFailed: number, assertsPassed: number, assertsFailed: number, elapsedMs: number, };
 
-export type RunEventDto = { "type": "started", runId: string, item: string, name: string, method: string, url: string, } | { "type": "passed", runId: string, item: string, status: number, elapsedMs: number, size: number, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, } | { "type": "failed", runId: string, item: string, error: string, status: number | null, elapsedMs: number | null, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, scriptError: ScriptErrorDto | null, } | { "type": "skipped", runId: string, item: string, reason: string, } | { "type": "finished", runId: string, report: RunReportDto, } | { "type": "cancelled", runId: string, } | { "type": "error", runId: string | null, error: string, message: string, };
+export type RunMetaDto = { recordId: string, 
+/**
+ * `app` or `plv`.
+ */
+source: string, 
+/**
+ * What ran, relative to the collection root; `.` for the whole collection.
+ */
+target: string, env: string | null, startedAtMs: number, 
+/**
+ * `completed` or `cancelled`.
+ */
+outcome: string, report: RunReportDto, };
+
+export type RunDto = { meta: RunMetaDto, label: string, events: Array<RunEventDto>, };
+
+export type PartDetailDto = { name: string, 
+/**
+ * Text parts only.
+ */
+value: string | null, 
+/**
+ * File parts only: the file name, never its contents.
+ */
+fileName: string | null, contentType: string | null, };
+
+export type BodyDetailDto = { 
+/**
+ * `none`, `text`, `base64`, `form`, `multipart` or `omitted`.
+ */
+kind: string, text: string | null, base64: string | null, fields: Array<[string, string]>, parts: Array<PartDetailDto>, 
+/**
+ * The whole body's size in bytes.
+ */
+size: number, 
+/**
+ * Only the first 1 MiB was kept.
+ */
+truncated: boolean, 
+/**
+ * Why the body was not kept (`kind == "omitted"`).
+ */
+omitted: string | null, };
+
+export type RequestDetailDto = { method: string, url: string, headers: Array<[string, string]>, body: BodyDetailDto, };
+
+export type RunResultDetailDto = { index: number, item: string, name: string, 
+/**
+ * `pass`, `fail`, `error` or `skipped`.
+ */
+status: string, error: string | null, skipReason: string | null, 
+/**
+ * `None` when the request was never sent.
+ */
+request: RequestDetailDto | null, 
+/**
+ * How the response body was kept (cut at 1 MiB, or omitted), when there was one.
+ */
+responseBody: BodyDetailDto | null, result: SendResultDto, };
+
+export type RunEventDto = { "type": "accepted", runId: string, recordId: string, } | { "type": "started", runId: string, item: string, name: string, method: string, url: string, } | { "type": "passed", runId: string, 
+/**
+ * The result's position in the run (a request run twice has two).
+ */
+index: number, item: string, status: number, elapsedMs: number, size: number, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, } | { "type": "failed", runId: string, index: number, item: string, error: string, status: number | null, elapsedMs: number | null, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, scriptError: ScriptErrorDto | null, } | { "type": "skipped", runId: string, index: number, item: string, reason: string, } | { "type": "finished", runId: string, report: RunReportDto, } | { "type": "cancelled", runId: string, } | { "type": "error", runId: string | null, error: string, message: string, };
 
 export type ClientMessage = { "type": "start", runId: string, collectionId: string, item: string, env: string | null, } | { "type": "cancel", runId: string, };
 

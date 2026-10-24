@@ -1,0 +1,108 @@
+<style>
+  .pv{background:#1e1f24;color:#d8d8dc;font:13px/1.4 -apple-system,system-ui,sans-serif;border-radius:8px;overflow:hidden;border:1px solid #33343a}
+  .pv *{box-sizing:border-box}
+  .row{display:flex;align-items:center;gap:8px}
+  .top{height:38px;padding:0 12px;border-bottom:1px solid #2c2d33}
+  .side{width:210px;border-right:1px solid #2c2d33;padding:8px;flex:none}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .m{font:600 11px ui-monospace,Menlo,monospace;width:42px;display:inline-block}
+  .GET{color:#4ade80}.POST{color:#fbbf24}.PUT{color:#60a5fa}.PATCH{color:#c084fc}.DELETE{color:#f87171}
+  .tab{padding:8px 12px;border-right:1px solid #2c2d33;display:flex;gap:6px;align-items:center}
+  .tab.on{background:#26272d;box-shadow:inset 0 -2px #f59e0b}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+  .url{padding:8px 10px;border-bottom:1px solid #2c2d33}
+  .box{background:#16171b;border:1px solid #3a3b42;border-radius:6px;padding:5px 8px}
+  .chip{border-radius:999px;padding:3px 10px;font-size:12px;border:1px solid}
+  .btn{border-radius:6px;padding:5px 12px;font-weight:600;border:1px solid #3a3b42;background:#26272d;color:#d8d8dc}
+  .send{background:#f59e0b;color:#1a1a1a;border-color:#f59e0b}
+  .panes{display:flex;flex:1;min-height:300px}
+  .pane{flex:1;padding:10px;min-width:0}
+  .pane+.pane{border-left:1px solid #2c2d33}
+  .sub{display:flex;gap:14px;font-size:12px;color:#9a9aa2;border-bottom:1px solid #2c2d33;padding-bottom:6px;margin-bottom:8px}
+  .sub b{color:#e5e5e8;font-weight:600;box-shadow:0 7px 0 -5px #f59e0b}
+  .var{color:#7dd3fc;background:#0c4a6e55;border-radius:3px;padding:0 2px}
+  .code{font:12px/1.7 ui-monospace,Menlo,monospace}
+  .k{color:#93c5fd}.s{color:#fca5a5}.n{color:#fcd34d}
+  .hl{background:#2a2b31;border-radius:4px;outline:1px dashed #f59e0b88}
+  .ic{font-size:11px;color:#1a1a1a;background:#f59e0b;border-radius:4px;padding:0 5px;margin-left:6px}
+  .num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#f43f5e;color:#fff;font:700 11px system-ui;flex:none}
+  .mut{color:#8b8b93}
+  .legend{display:grid;grid-template-columns:24px 1fr;gap:8px 10px;margin-top:16px;font-size:14px}
+</style>
+
+<h2>Màn hình gửi request: đề xuất bố cục</h2>
+<p class="subtitle">Số đỏ = điểm thay đổi so với hiện tại. Bấm "Thích" / "Không" ở cuối, hoặc nói trong terminal.</p>
+
+<div class="pv">
+  <div class="row top">
+    <span style="color:#f59e0b">◆</span><b>Plover</b>
+    <span class="box mut" style="margin-left:24px;width:280px">⌘K  Tìm request…</span><span class="num">5</span>
+    <span style="flex:1"></span>
+    <span class="mut" style="font-size:12px">Mở trong trình duyệt</span>
+  </div>
+  <div class="row" style="align-items:stretch">
+    <div class="side">
+      <div class="row" style="justify-content:space-between"><b>signing-api</b>
+        <span class="chip" style="border-color:#f59e0b;color:#fbbf24;padding:1px 8px">● Dev</span></div>
+      <div class="mut" style="margin:8px 0 4px">› auth</div>
+      <div style="padding-left:10px"><span class="m POST">POST</span>login</div>
+      <div class="mut" style="margin:6px 0 4px">› documents</div>
+      <div style="padding-left:10px;background:#26272d;border-radius:4px"><span class="m GET">GET</span>get document</div>
+      <div style="padding-left:10px"><span class="m PUT">PUT</span>update</div>
+      <div style="padding-left:10px"><span class="m DELETE">DEL</span>delete</div>
+    </div>
+    <div class="main">
+      <div class="row" style="border-bottom:1px solid #2c2d33">
+        <div class="tab"><span class="m POST" style="width:auto">POST</span>login</div>
+        <div class="tab on"><span class="m GET" style="width:auto">GET</span>get document <span class="dot" style="background:#f59e0b" title="chưa lưu"></span></div>
+      </div>
+      <div class="row url">
+        <span class="box GET" style="font-weight:700">GET ▾</span>
+        <span class="box code" style="flex:1"><span class="var">{{baseUrl}}</span>/documents/<span class="var">{{docId}}</span></span>
+        <span class="chip" style="border-color:#f59e0b;color:#fbbf24">● Dev ▾</span><span class="num">1</span>
+        <span class="btn send">Send</span><span class="num">2</span>
+        <span class="btn">⋯</span><span class="num">3</span>
+      </div>
+      <div class="panes">
+        <div class="pane">
+          <div class="sub"><b>Params</b><span>Headers 3</span><span>Auth</span><span>Body</span><span>Script ●</span><span>Assert 2</span><span>Tests ●</span></div>
+          <div class="mut code">docId = <span class="var">{{docId}}</span> → <span style="color:#e5e5e8">"d-8812…"</span> <span class="mut">(runtime, đặt bởi login)</span></div>
+        </div>
+        <div class="pane">
+          <div class="row" style="margin-bottom:8px;flex-wrap:wrap">
+            <span class="chip" style="border-color:#16a34a;color:#4ade80;background:#14532d55">200 OK</span>
+            <span class="mut">312 ms · 1.2 KB</span>
+            <span class="chip" style="border-color:#16a34a;color:#4ade80">✓ 5/5 tests</span><span class="num">4</span>
+            <span style="flex:1"></span>
+            <span class="btn" style="padding:3px 8px">⧉ Copy body</span><span class="num">6</span>
+          </div>
+          <div class="sub"><b>Body</b><span>Headers 12</span><span>Tests 5/5</span><span>Console 2</span><span>Request</span></div>
+          <div class="code">
+            {<br>
+            &nbsp;&nbsp;<span class="k">"id"</span>: <span class="hl"><span class="s">"d-8812-ae01"</span><span class="ic">⧉ copy</span><span class="ic">→ biến</span></span><span class="num">7</span><br>
+            &nbsp;&nbsp;<span class="k">"status"</span>: <span class="s">"PENDING"</span>,<br>
+            &nbsp;&nbsp;<span class="k">"signers"</span>: <span class="n">3</span><br>
+            }
+          </div>
+          <div class="mut" style="margin-top:14px;font-size:12px">x-request-id: <span style="color:#e5e5e8">7f3c…a91</span> ⧉ <span class="num">8</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <span class="num">1</span><span><b>Env cạnh nút Send</b>, có màu: xanh = Local, vàng = Dev, đỏ = Stg/Prod (+ hỏi xác nhận). Sidebar cũng hiện env của collection.</span>
+  <span class="num">2</span><span><b>Send là nút màu duy nhất</b> trên màn hình. Lúc gửi → <code>Cancel · 3.2s</code>. Save chuyển vào ⌘S và chấm cam trên tab.</span>
+  <span class="num">3</span><span><b>Menu ⋯</b>: Copy as cURL, Copy URL đã thay biến, Save, Mở file .bru.</span>
+  <span class="num">4</span><span><b>Màu status</b>: 2xx xanh, 3xx xanh dương, 4xx vàng, 5xx và lỗi mạng đỏ. Kèm chữ, không chỉ dựa vào màu.</span>
+  <span class="num">5</span><span><b>⌘K tìm request</b> thay cho ô lọc ở sidebar.</span>
+  <span class="num">6</span><span><b>Copy body</b> luôn nằm cố định góc phải response.</span>
+  <span class="num">7</span><span><b>Rê chuột lên một giá trị JSON</b> → copy nhanh, hoặc "→ biến" để lưu thành biến runtime (vd id vừa tạo).</span>
+  <span class="num">8</span><span><b>Header hay cần copy</b> (request-id, trace-id, location) ghim ngay dưới body để gửi backend tra log.</span>
+</div>
+
+<div class="options" style="margin-top:20px">
+  <div class="option" data-choice="like" onclick="toggleSelect(this)"><div class="letter">✓</div><div class="content"><h3>Thích hướng này</h3><p>Đi tiếp sang màn Runner / lịch sử chạy</p></div></div>
+  <div class="option" data-choice="change" onclick="toggleSelect(this)"><div class="letter">✎</div><div class="content"><h3>Cần sửa</h3><p>Nói số nào cần sửa trong terminal</p></div></div>
+</div>

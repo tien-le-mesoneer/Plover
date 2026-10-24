@@ -16,6 +16,15 @@ fn write(root: &Path, rel: &str, text: &str) {
     fs::write(p, text).unwrap();
 }
 
+/// `plv` with history kept in a temporary state directory, never the user's.
+fn plv() -> Command {
+    static STATE: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    let state = STATE.get_or_init(|| tempfile::tempdir().unwrap());
+    let mut cmd = Command::cargo_bin("plv").unwrap();
+    cmd.env("PLOVER_STATE_DIR", state.path());
+    cmd
+}
+
 fn request(name: &str, seq: u32, url: &str, blocks: &str) -> String {
     format!(
         "meta {{\n  name: {name}\n  type: http\n  seq: {seq}\n}}\n\nget {{\n  url: {url}\n  body: none\n  auth: none\n}}\n{blocks}"
@@ -131,8 +140,7 @@ async fn junit_matches_bruno_layout() {
     let out = dir.path().join("out");
     fs::create_dir(&out).unwrap();
     let junit = out.join("results.xml");
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(dir.path())
         .arg("--reporter-junit")
@@ -189,8 +197,7 @@ async fn json_report_counts() {
     let server = MockServer::start().await;
     let dir = collection(&server).await;
     let json_path = dir.path().join("results.json");
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(dir.path())
         .arg("--reporter-json")
@@ -237,8 +244,7 @@ async fn json_report_counts() {
 async fn cli_prints_tests_and_summary() {
     let server = MockServer::start().await;
     let dir = collection(&server).await;
-    let out = Command::cargo_bin("plv")
-        .unwrap()
+    let out = plv()
         .arg("run")
         .arg(dir.path())
         .arg("--verbose")
@@ -267,12 +273,7 @@ async fn cli_prints_tests_and_summary() {
 async fn console_hidden_without_verbose() {
     let server = MockServer::start().await;
     let dir = collection(&server).await;
-    let out = Command::cargo_bin("plv")
-        .unwrap()
-        .arg("run")
-        .arg(dir.path())
-        .assert()
-        .code(1);
+    let out = plv().arg("run").arg(dir.path()).assert().code(1);
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).into_owned();
     assert!(!stdout.contains("from a"), "{stdout}");
 }
@@ -281,8 +282,7 @@ async fn console_hidden_without_verbose() {
 async fn missing_report_directory_is_a_setup_error() {
     let server = MockServer::start().await;
     let dir = collection(&server).await;
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(dir.path().join("c.bru"))
         .arg("--reporter-junit")
@@ -305,8 +305,7 @@ async fn script_limits_flags() {
             "\nscript:pre-request {\n  while (true) {}\n}\n",
         ),
     );
-    let out = Command::cargo_bin("plv")
-        .unwrap()
+    let out = plv()
         .arg("run")
         .arg(dir.path().join("slow.bru"))
         .arg("--script-timeout-ms")
@@ -342,8 +341,7 @@ async fn junit_reports_post_response_script_errors_like_bruno() {
         ),
     );
     let junit = root.join("junit.xml");
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(root)
         .arg("--reporter-junit")
@@ -390,8 +388,7 @@ async fn requests_that_never_ran_are_named_by_meta_name() {
         &request("r4", 4, &format!("{}/b", server.uri()), ""),
     );
     let json_path = root.join("results.json");
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(root)
         .arg("--reporter-json")
@@ -428,8 +425,7 @@ async fn junit_pre_request_errors_match_bruno() {
     );
     let junit = root.join("junit.xml");
     let json_path = root.join("results.json");
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(root)
         .arg("--reporter-junit")
@@ -467,22 +463,19 @@ async fn accepts_bruno_run_flags_used_by_existing_scripts() {
     let root = dir.path();
     // `bru run bruno -r --env Dev --sandbox safe --delay 0`: -r and --sandbox safe are
     // what Plover always does.
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(root.join("a.bru"))
         .args(["-r", "--sandbox", "safe", "--delay", "0"])
         .assert()
         .code(1); // a.bru has one failing test
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(root)
         .arg("--recursive")
         .assert()
         .code(1);
-    let out = Command::cargo_bin("plv")
-        .unwrap()
+    let out = plv()
         .arg("run")
         .arg(root)
         .args(["--sandbox", "developer"])
@@ -498,8 +491,7 @@ async fn html_report_is_self_contained_and_escaped() {
     let dir = collection(&server).await;
     let root = dir.path();
     let html_path = root.join("report.html");
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(root)
         .arg("--reporter-html")
@@ -527,4 +519,196 @@ async fn html_report_is_self_contained_and_escaped() {
     for forbidden in ["<script", "<link", "src=\"http", "href=\"http", "@import"] {
         assert!(!html.contains(forbidden), "found {forbidden}");
     }
+}
+
+/// login returns a token in its body; me sends it as `Authorization: Bearer` and returns
+/// `{"id":1}` with header `x-r`.
+async fn detail_collection(server: &MockServer) -> tempfile::TempDir {
+    use wiremock::matchers::path;
+    Mock::given(path("/login"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"token": "tok-AAAABBBBCCCC"})),
+        )
+        .mount(server)
+        .await;
+    Mock::given(path("/me"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("x-r", "y")
+                .set_body_json(serde_json::json!({"id": 1})),
+        )
+        .mount(server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "bruno.json",
+        r#"{"version":"1","name":"detail","type":"collection"}"#,
+    );
+    write(
+        root,
+        "login.bru",
+        &request(
+            "login",
+            1,
+            &format!("{}/login", server.uri()),
+            "\nscript:post-response {\n  bru.setVar('token', res.body.token);\n}\n",
+        ),
+    );
+    write(
+        root,
+        "me.bru",
+        &request(
+            "me",
+            2,
+            &format!("{}/me", server.uri()),
+            "\nheaders {\n  Authorization: Bearer {{token}}\n  x-q: 1\n}\n",
+        ),
+    );
+    write(
+        root,
+        "down.bru",
+        &request("down", 3, "http://127.0.0.1:9/down", ""),
+    );
+    dir
+}
+
+fn plv_run(root: &Path, extra: &[&str]) -> assert_cmd::assert::Assert {
+    let state = tempfile::tempdir().unwrap();
+    plv()
+        .env("PLOVER_STATE_DIR", state.path())
+        .env_remove("CI")
+        .arg("run")
+        .arg(root)
+        .args(extra)
+        .assert()
+}
+
+#[tokio::test]
+async fn json_report_has_bruno_request_and_response() {
+    let server = MockServer::start().await;
+    let dir = detail_collection(&server).await;
+    let out = dir.path().join("r.json");
+    plv_run(dir.path(), &["--reporter-json", out.to_str().unwrap()]).code(1);
+    let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
+    let results = v[0]["results"].as_array().unwrap();
+    let me = &results[1];
+    for key in ["method", "url", "headers", "data"] {
+        assert!(me["request"].get(key).is_some(), "request.{key}");
+    }
+    for key in [
+        "status",
+        "statusText",
+        "headers",
+        "data",
+        "url",
+        "responseTime",
+        "duration",
+        "size",
+    ] {
+        assert!(me["response"].get(key).is_some(), "response.{key}");
+    }
+    assert!(me["request"]["headers"].is_object());
+    assert_eq!(me["request"]["headers"]["x-q"], "1");
+    assert_eq!(me["response"]["data"], serde_json::json!({"id": 1}));
+    assert_eq!(me["response"]["headers"]["x-r"], "y");
+    assert_eq!(me["response"]["statusText"], "OK");
+    let down = &results[2];
+    assert_eq!(down["response"]["status"], "error");
+    assert_eq!(down["response"]["size"], 0);
+}
+
+#[tokio::test]
+async fn reports_are_masked() {
+    let server = MockServer::start().await;
+    let dir = detail_collection(&server).await;
+    let (json, html, xml) = (
+        dir.path().join("r.json"),
+        dir.path().join("r.html"),
+        dir.path().join("r.xml"),
+    );
+    plv_run(
+        dir.path(),
+        &[
+            "--reporter-json",
+            json.to_str().unwrap(),
+            "--reporter-html",
+            html.to_str().unwrap(),
+            "--reporter-junit",
+            xml.to_str().unwrap(),
+        ],
+    )
+    .code(1);
+    for path in [&json, &html] {
+        let text = fs::read_to_string(path).unwrap();
+        assert!(text.contains("***"), "{}", path.display());
+        assert!(!text.contains("tok-AAAABBBBCCCC"), "{}", path.display());
+    }
+    assert!(
+        !fs::read_to_string(&xml)
+            .unwrap()
+            .contains("tok-AAAABBBBCCCC")
+    );
+}
+
+#[tokio::test]
+async fn skip_flags_match_bruno() {
+    let server = MockServer::start().await;
+    let dir = detail_collection(&server).await;
+    let out = dir.path().join("r.json");
+    let read = |out: &Path| -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(out).unwrap()).unwrap()
+    };
+    plv_run(
+        dir.path(),
+        &[
+            "--reporter-json",
+            out.to_str().unwrap(),
+            "--reporter-skip-all-headers",
+        ],
+    )
+    .code(1);
+    let me = &read(&out)[0]["results"][1];
+    assert_eq!(me["request"]["headers"], serde_json::json!({}));
+    assert_eq!(me["response"]["headers"], serde_json::json!({}));
+    plv_run(
+        dir.path(),
+        &[
+            "--reporter-json",
+            out.to_str().unwrap(),
+            "--reporter-skip-headers",
+            "X-R",
+        ],
+    )
+    .code(1);
+    let me = &read(&out)[0]["results"][1];
+    assert!(me["response"]["headers"].get("x-r").is_none());
+    assert_eq!(me["request"]["headers"]["x-q"], "1");
+    plv_run(
+        dir.path(),
+        &[
+            "--reporter-json",
+            out.to_str().unwrap(),
+            "--reporter-skip-body",
+        ],
+    )
+    .code(1);
+    let me = &read(&out)[0]["results"][1];
+    assert!(me["request"].get("data").is_none());
+    assert!(me["response"].get("data").is_none());
+}
+
+#[tokio::test]
+async fn html_has_details_and_no_script() {
+    let server = MockServer::start().await;
+    let dir = detail_collection(&server).await;
+    let out = dir.path().join("r.html");
+    plv_run(dir.path(), &["--reporter-html", out.to_str().unwrap()]).code(1);
+    let html = fs::read_to_string(&out).unwrap();
+    // Every result that was sent: login, me, and down (sent, no response).
+    assert_eq!(html.matches("<details>").count(), 3);
+    assert!(html.contains("<code>x-r</code>"));
+    assert!(!html.contains("<script"));
 }

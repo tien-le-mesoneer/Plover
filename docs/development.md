@@ -128,6 +128,12 @@ layout in `state.json` (see the README for its location). Set `PLOVER_STATE_DIR`
 temp directory when you start them from tests or scripts so they don't touch your real
 list; the CLI tests, `npm run check:console` and the CI smoke step already do.
 
+Run history lives in `runs/` in the same directory, and `plv run` writes to it too
+(unless `CI` is set). Every test that runs `plv run` or starts a server with a state
+directory must point `PLOVER_STATE_DIR` (or `ServerConfig::state_dir`) at a temp
+directory: the CLI test helpers (`plv()` in `crates/cli/tests/report.rs`, `bru_rs()` in
+`cli.rs`) set one per test binary, and `crates/cli/tests/history.rs` uses one per test.
+
 ## Desktop smoke test
 
 `PLOVER_DESKTOP_SMOKE=1 target/release/bundle/macos/Plover.app/Contents/MacOS/plover`

@@ -197,8 +197,18 @@ history stores. *Claude's call.*
 
 ### App UI
 
+> **Revised after the mockup session.** The runner becomes a **tab** (like Bruno) instead
+> of the bottom `RunPanel`, with a Bruno-style `All | Fail | Pass | Skip` filter and the
+> history list as a "Previous runs ▾" menu. The final layout is in
+> [`2026-10-23-dev-ux-design.md`](2026-10-23-dev-ux-design.md) §6. This run-history work
+> builds the data, endpoints and detail pane and may ship them inside today's `RunPanel`;
+> the dev-UX work moves that content into the Run tab after the run-history and curl/HAR
+> branches merge. Where this section and the dev-UX doc differ on layout, the dev-UX doc
+> wins.
+
 - **Request detail in the runner** ("like Bruno", user decision).
-  - Clicking a finished row in `RunPanel.tsx` opens a detail pane for that result.
+  - Clicking a finished row in the runner (`RunPanel.tsx` today, the Run tab later)
+    opens a detail pane for that result.
   - The pane has tabs: Response, Headers, Request, Tests, Console. Request holds what
     Bruno's Timeline tab shows: method, URL, headers and body as sent. *Tab names are
     Claude's call.*
@@ -246,6 +256,12 @@ history stores. *Claude's call.*
   `RequestRecord` (`crates/cli/src/report/mod.rs`) become, or are built from, the core
   "run record" type that history also uses. This way a saved run and a live run render
   through the same code. *Claude's call.*
+- **The report renderers move into core in this work** (*user decision*). The JSON,
+  HTML and JUnit renderers in `crates/cli/src/report/{json,html,junit}.rs` move to a
+  `report` module in core, next to the run-record type, and take a masked run record.
+  `plv run`, `plv runs show` and the server all call the same functions, so the app's
+  Export (data-driven/export design) needs no second move. `crates/cli` keeps only flag
+  parsing and writing the files.
 
 ## Left to the builder
 

@@ -2,18 +2,19 @@
 //! one `<testsuite>` per request, one `<testcase>` per assert and test.
 
 use std::fmt::Write;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, UNIX_EPOCH};
 
-use super::{POST_RESPONSE_SCRIPT_ERROR, RecordStatus, RequestRecord};
+use crate::run_record::{POST_RESPONSE_SCRIPT_ERROR, ResultStatus, RunRecord};
+use crate::time::iso_utc;
 
-pub fn render(records: &[RequestRecord]) -> String {
-    let timestamp = iso_timestamp(SystemTime::now());
+pub fn render(record: &RunRecord) -> String {
+    let timestamp = iso_utc(UNIX_EPOCH + Duration::from_millis(record.header.started_at_ms));
     let hostname = std::env::var("HOSTNAME")
         .ok()
         .filter(|h| !h.is_empty())
         .unwrap_or_else(|| "localhost".to_owned());
     let mut out = String::from("<?xml version=\"1.0\"?>\n<testsuites>\n");
-    for r in records {
+    for r in &record.results {
         let classname = r.file.strip_suffix(".bru").unwrap_or(&r.file);
         let run_duration = r.duration().as_secs_f64();
         let mut cases = Vec::new();
@@ -35,11 +36,11 @@ pub fn render(records: &[RequestRecord]) -> String {
         };
         let mut body = String::new();
         let (errors, tests, skipped) = match r.status {
-            RecordStatus::Skipped => (0, total, 1),
-            RecordStatus::Error => (1, 1, 0),
+            ResultStatus::Skipped => (0, total, 1),
+            ResultStatus::Error => (1, 1, 0),
             _ => (0, total, 0),
         };
-        if r.status == RecordStatus::Error {
+        if r.status == ResultStatus::Error {
             let _ = write!(
                 body,
                 "    <testcase name=\"Test suite has no errors\" status=\"fail\" classname=\"{}\" time=\"{:.3}\">\n      <error type=\"error\" message=\"{}\"/>\n    </testcase>\n",
@@ -68,7 +69,7 @@ pub fn render(records: &[RequestRecord]) -> String {
                 }
             }
         }
-        if r.status == RecordStatus::Skipped {
+        if r.status == ResultStatus::Skipped {
             body.push_str("    <skipped message=\"Request Skipped\"/>\n");
         }
         let _ = write!(
@@ -109,40 +110,9 @@ fn escape(text: &str) -> String {
     out
 }
 
-/// `new Date().toISOString().split('Z')[0]`: UTC, milliseconds, no `Z`.
-pub(super) fn iso_timestamp(now: SystemTime) -> String {
-    let since = now.duration_since(UNIX_EPOCH).unwrap_or_default();
-    let secs = since.as_secs();
-    let (days, rem) = (secs / 86_400, secs % 86_400);
-    // Howard Hinnant's civil_from_days.
-    let z = days as i64 + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}",
-        rem / 3600,
-        rem % 3600 / 60,
-        rem % 60,
-        since.subsec_millis()
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
-
-    #[test]
-    fn timestamp_format() {
-        let t = UNIX_EPOCH + Duration::from_millis(1_761_134_400_123);
-        assert_eq!(iso_timestamp(t), "2025-10-22T12:00:00.123");
-    }
 
     #[test]
     fn escapes_attributes() {

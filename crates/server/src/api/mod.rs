@@ -5,6 +5,7 @@ mod collections;
 pub mod dto;
 mod environments;
 mod extract;
+mod history;
 mod native;
 mod requests;
 mod session;
@@ -58,6 +59,15 @@ pub fn routes() -> Router<AppState> {
             get(requests::read).put(requests::save),
         )
         .route("/collections/{id}/send", post(requests::send))
+        .route(
+            "/collections/{id}/runs",
+            get(history::list).delete(history::clear),
+        )
+        .route("/collections/{id}/runs/{run_id}", get(history::get))
+        .route(
+            "/collections/{id}/runs/{run_id}/results/{index}",
+            get(history::result),
+        )
         .route("/collections/{id}/environments", get(environments::list))
         .route(
             "/collections/{id}/environments/{name}",

@@ -527,6 +527,173 @@ pub struct RunReportDto {
     pub elapsed_ms: u64,
 }
 
+/// One saved run, as `GET /collections/{id}/runs` lists it.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RunMetaDto {
+    pub record_id: String,
+    /// `app` or `plv`.
+    pub source: String,
+    /// What ran, relative to the collection root; `.` for the whole collection.
+    pub target: String,
+    pub env: Option<String>,
+    #[ts(type = "number")]
+    pub started_at_ms: u64,
+    /// `completed` or `cancelled`.
+    pub outcome: String,
+    pub report: RunReportDto,
+}
+
+/// A saved run replayed as the events a live run sends, so the UI builds its rows the
+/// same way. Events carry the record ID as `runId`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RunDto {
+    pub meta: RunMetaDto,
+    pub label: String,
+    pub events: Vec<super::runs::RunEventDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PartDetailDto {
+    pub name: String,
+    /// Text parts only.
+    pub value: Option<String>,
+    /// File parts only: the file name, never its contents.
+    pub file_name: Option<String>,
+    pub content_type: Option<String>,
+}
+
+/// A stored request or response body.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct BodyDetailDto {
+    /// `none`, `text`, `base64`, `form`, `multipart` or `omitted`.
+    pub kind: String,
+    pub text: Option<String>,
+    pub base64: Option<String>,
+    pub fields: Vec<(String, String)>,
+    pub parts: Vec<PartDetailDto>,
+    /// The whole body's size in bytes.
+    #[ts(type = "number")]
+    pub size: u64,
+    /// Only the first 1 MiB was kept.
+    pub truncated: bool,
+    /// Why the body was not kept (`kind == "omitted"`).
+    pub omitted: Option<String>,
+}
+
+/// The request of a run result as it was sent.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestDetailDto {
+    pub method: String,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub body: BodyDetailDto,
+}
+
+/// `GET /collections/{id}/runs/{runId}/results/{index}`: one result of a run, masked.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RunResultDetailDto {
+    pub index: u32,
+    pub item: String,
+    pub name: String,
+    /// `pass`, `fail`, `error` or `skipped`.
+    pub status: String,
+    pub error: Option<String>,
+    pub skip_reason: Option<String>,
+    /// `None` when the request was never sent.
+    pub request: Option<RequestDetailDto>,
+    /// How the response body was kept (cut at 1 MiB, or omitted), when there was one.
+    pub response_body: Option<BodyDetailDto>,
+    pub result: SendResultDto,
+}
+
+impl From<&plover_core::run_record::BodyDetail> for BodyDetailDto {
+    fn from(b: &plover_core::run_record::BodyDetail) -> Self {
+        use plover_core::run_record::{BodyDetail, PartDetail};
+        let mut dto = BodyDetailDto {
+            kind: String::new(),
+            text: None,
+            base64: None,
+            fields: Vec::new(),
+            parts: Vec::new(),
+            size: u64::try_from(b.size()).unwrap_or(u64::MAX),
+            truncated: false,
+            omitted: None,
+        };
+        dto.kind = match b {
+            BodyDetail::None => "none",
+            BodyDetail::Text {
+                text, truncated, ..
+            } => {
+                dto.text = Some(text.clone());
+                dto.truncated = *truncated;
+                "text"
+            }
+            BodyDetail::Base64 {
+                data, truncated, ..
+            } => {
+                dto.base64 = Some(data.clone());
+                dto.truncated = *truncated;
+                "base64"
+            }
+            BodyDetail::Form { fields } => {
+                dto.fields = fields.clone();
+                "form"
+            }
+            BodyDetail::Multipart { parts } => {
+                dto.parts = parts
+                    .iter()
+                    .map(|p| match p {
+                        PartDetail::Text {
+                            name,
+                            value,
+                            content_type,
+                        } => PartDetailDto {
+                            name: name.clone(),
+                            value: Some(value.clone()),
+                            file_name: None,
+                            content_type: content_type.clone(),
+                        },
+                        PartDetail::File {
+                            name,
+                            file_name,
+                            content_type,
+                        } => PartDetailDto {
+                            name: name.clone(),
+                            value: None,
+                            file_name: Some(file_name.clone()),
+                            content_type: content_type.clone(),
+                        },
+                    })
+                    .collect();
+                "multipart"
+            }
+            BodyDetail::Omitted { reason, .. } => {
+                dto.omitted = Some(reason.clone());
+                "omitted"
+            }
+        }
+        .to_owned();
+        dto
+    }
+}
+
+impl From<&plover_core::run_record::RequestDetail> for RequestDetailDto {
+    fn from(r: &plover_core::run_record::RequestDetail) -> Self {
+        RequestDetailDto {
+            method: r.method.clone(),
+            url: r.url.clone(),
+            headers: r.headers.clone(),
+            body: (&r.body).into(),
+        }
+    }
+}
+
 impl From<&KeyValue> for KeyValueDto {
     fn from(kv: &KeyValue) -> Self {
         KeyValueDto {
@@ -770,6 +937,12 @@ pub fn typescript_bindings() -> String {
         ConflictDto::decl(&cfg),
         ApiErrorDto::decl(&cfg),
         RunReportDto::decl(&cfg),
+        RunMetaDto::decl(&cfg),
+        RunDto::decl(&cfg),
+        PartDetailDto::decl(&cfg),
+        BodyDetailDto::decl(&cfg),
+        RequestDetailDto::decl(&cfg),
+        RunResultDetailDto::decl(&cfg),
         super::runs::RunEventDto::decl(&cfg),
         super::runs::ClientMessage::decl(&cfg),
         CapabilitiesDto::decl(&cfg),

@@ -1,0 +1,64 @@
+<style>
+  .pv{background:#1e1f24;color:#d8d8dc;font:13px/1.45 -apple-system,system-ui,sans-serif;border-radius:8px;overflow:hidden;border:1px solid #33343a}
+  .row{display:flex;align-items:center;gap:8px}
+  .chip{border-radius:999px;padding:2px 9px;font-size:12px;border:1px solid}
+  .ico{font-size:12px;color:#9a9aa2;border:1px solid #3a3b42;border-radius:5px;padding:0 6px}
+  .mut{color:#8b8b93}
+  .box{background:#16171b;border:1px solid #3a3b42;border-radius:6px;padding:3px 8px;font-size:12px}
+  .sub{display:flex;gap:14px;font-size:12px;color:#9a9aa2;border-bottom:1px solid #2c2d33;padding:6px 10px}
+  .sub b{color:#e5e5e8;box-shadow:0 7px 0 -5px #f59e0b}
+  .code{font:12px/1.8 ui-monospace,Menlo,monospace;padding:8px 10px}
+  .k{color:#93c5fd}.s{color:#fca5a5}.n{color:#fcd34d}.b{color:#c084fc}
+  .hl{background:#2a2b31;border-radius:4px;outline:1px dashed #f59e0b88;position:relative}
+  .pop{position:absolute;left:0;top:22px;background:#232429;border:1px solid #3a3b42;border-radius:7px;box-shadow:0 8px 24px #0008;font:12px -apple-system,system-ui;z-index:3;width:210px}
+  .pop div{padding:5px 10px}.pop div:hover{background:#2f3036}
+  .seg{display:inline-flex;border:1px solid #3a3b42;border-radius:6px;overflow:hidden}.seg span{padding:2px 9px;font-size:12px;border-right:1px solid #3a3b42}.seg .on{background:#33343a;color:#fff}
+  .num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#f43f5e;color:#fff;font:700 11px system-ui;flex:none}
+  .legend{display:grid;grid-template-columns:24px 1fr;gap:8px 10px;margin-top:16px;font-size:14px}
+  .found{background:#854d0e;color:#fff;border-radius:2px}
+</style>
+
+<h2>Response: xem nhanh, tìm nhanh, copy nhanh</h2>
+<p class="subtitle">Menu nhỏ đang mở trên giá trị "id" để bạn thấy khi rê chuột / bấm vào.</p>
+
+<div class="pv" style="max-width:760px">
+  <div class="row" style="padding:8px 10px">
+    <span class="chip" style="border-color:#16a34a;color:#4ade80">201 Created</span><span class="mut">312 ms · 1.2 KB</span>
+    <span style="flex:1"></span>
+    <span class="ico" title="Copy body">⧉</span><span class="ico" title="Lưu ra file">⤓</span>
+  </div>
+  <div class="sub"><b>Body</b><span>Headers 12</span><span>Request</span><span>Tests 5/5</span><span>Console</span></div>
+  <div class="row" style="padding:6px 10px;border-bottom:1px solid #2c2d33">
+    <span class="seg"><span class="on">Pretty</span><span>Raw</span><span>Preview</span></span><span class="num">1</span>
+    <span class="box" style="flex:1">🔍 signer <span class="mut">· 2/3</span></span><span class="num">2</span>
+    <span class="box mut" style="width:180px">$.signers[*].email</span><span class="num">3</span>
+  </div>
+  <div class="code">
+    {<br>
+    &nbsp;&nbsp;<span class="k">"id"</span>: <span class="hl"><span class="s">"d-8812-ae01"</span>
+      <span class="pop"><div>⧉ Copy giá trị</div><div>⧉ Copy đường dẫn <span class="mut">$.id</span></div><div>→ Lưu thành biến <span class="mut">{{docId}}</span></div></span>
+    </span>,<span class="num">4</span><br>
+    &nbsp;&nbsp;<span class="k">"status"</span>: <span class="s">"PENDING"</span>,<br>
+    &nbsp;&nbsp;<span class="k">"<span class="found">signer</span>s"</span>: [ <span class="mut">▸ 3 mục</span> ],<span class="num">5</span><br>
+    &nbsp;&nbsp;<span class="k">"locked"</span>: <span class="b">false</span><br>
+    }
+  </div>
+  <div class="row" style="padding:6px 10px;border-top:1px solid #2c2d33;font-size:12px">
+    <span class="mut">x-request-id</span> <span>7f3c…a91</span> <span class="ico">⧉</span>
+    <span class="mut" style="margin-left:12px">location</span> <span>/documents/d-8812</span> <span class="ico">⧉</span><span class="num">6</span>
+  </div>
+</div>
+
+<div class="legend">
+  <span class="num">1</span><span><b>Pretty / Raw / Preview</b> (Preview cho HTML, ảnh, PDF).</span>
+  <span class="num">2</span><span><b>⌘F tìm trong body</b>, có đếm "2/3", Enter nhảy kết quả kế.</span>
+  <span class="num">3</span><span><b>Lọc JSONPath</b> giống Bruno (<code>$.signers[*].email</code>), copy được kết quả đã lọc.</span>
+  <span class="num">4</span><span><b>Bấm vào giá trị</b> → copy giá trị / copy đường dẫn (dán thẳng vào assert) / lưu thành biến.</span>
+  <span class="num">5</span><span><b>Thu gọn mảng, object lớn</b>. Body &gt; 1 MB: chỉ hiện phần đầu + nút "Hiện hết".</span>
+  <span class="num">6</span><span><b>Header hay copy ghim ở đáy</b>: request-id, trace-id, location. Tab Headers: mỗi dòng có ⧉ khi rê chuột.</span>
+</div>
+
+<div class="options" style="margin-top:18px">
+  <div class="option" data-choice="like" onclick="toggleSelect(this)"><div class="letter">✓</div><div class="content"><h3>Ổn</h3></div></div>
+  <div class="option" data-choice="change" onclick="toggleSelect(this)"><div class="letter">✎</div><div class="content"><h3>Cần sửa</h3><p>Nói số trong terminal</p></div></div>
+</div>

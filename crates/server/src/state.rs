@@ -1,6 +1,9 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use plover_core::executor::ExecOptions;
+use plover_core::run_history::RunHistory;
+use plover_core::run_record::{RunRecord, RunRecorder};
 use plover_core::secrets::SecretVault;
 use plover_core::workspace::Workspace;
 use tokio::sync::watch;
@@ -25,7 +28,19 @@ pub struct AppState {
     /// How far the page got: loaded, launch code traded, ready report (the desktop smoke
     /// test reads it to say where startup stopped).
     pub client: Arc<watch::Sender<ClientProgress>>,
+    /// Saved runs; in memory when the server has no state directory.
+    pub history: Arc<RunHistory>,
+    /// Runs in progress or being saved, by record ID, so their results can be shown.
+    pub live: Arc<LiveRuns>,
 }
+
+/// A run the server holds in memory: still recording, or finished and being saved.
+pub enum LiveRun {
+    Running(Box<RunRecorder>),
+    Done(Arc<RunRecord>),
+}
+
+pub type LiveRuns = Mutex<HashMap<String, LiveRun>>;
 
 /// Startup milestones of the UI page. Counts, so a page that loads twice (and then holds
 /// an already-used launch code) is visible.
@@ -72,7 +87,14 @@ impl AppState {
             codes: Arc::new(SessionCodes::default()),
             events: Events::default(),
             client: Arc::new(watch::channel(ClientProgress::default()).0),
+            history: Arc::new(RunHistory::in_memory()),
+            live: Arc::default(),
         }
+    }
+
+    pub fn with_history(mut self, history: RunHistory) -> AppState {
+        self.history = Arc::new(history);
+        self
     }
 
     pub fn with_native(mut self, host: Arc<dyn NativeHost>) -> AppState {
