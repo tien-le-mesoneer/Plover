@@ -14,6 +14,13 @@
 
 **Starts after:** the run-history work (`main`, plan `docs/superpowers/plans/2026-10-23-run-history.md`) and the curl/HAR work (`feat/import-curl-har`, plan `docs/superpowers/plans/2026-10-23-import-curl-har.md`) are both merged into `main`. The data-driven/export plan (`docs/superpowers/plans/2026-10-23-data-driven-and-export.md`, written separately) also puts controls into the Run tab header; see Task 10.
 
+**Task 0 outcome (verified on `e46f2bd`):** every run-history and curl/HAR name listed in Task 0 exists. Differences, and how the tasks below adapt:
+- `RunHistoryMenu` takes only `{ collectionId }`; choosing a run calls `useRuns.openHistory`, which sets `viewing`. Task 9 adds an optional `onChoose(recordId)` prop so a Run tab retargets itself instead.
+- The data-driven work landed: `ExportMenu({ collectionId, recordId, disabled })` and `RunWithDataDialog({ collectionId, item, label, env, onClose })`. Task 9 mounts them directly in the Run tab header (no slot props needed); Task 10 Step 1 is covered by Task 9.
+- `CapabilitiesDto` already has `nativeSave`; Task 4 adds `reveal`.
+- The `started` event carries `item`, not a folder; `buildRows` derives the folder from the item path.
+- Run tabs live in `useTabs` as a separate `runTabs: RunTab[]` list that shares `active` with request tabs, instead of turning `Tab` into a union. Request-tab code keeps working on `tabs` unchanged; the tab strip renders both lists.
+
 ## Global Constraints
 
 - No new fields in `.bru` files. UI-only state goes to `state.json` through `crates/core/src/app_state.rs`.
