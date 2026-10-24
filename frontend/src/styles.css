@@ -180,6 +180,19 @@ button.text:hover { background: var(--bg-3); }
 .urlbar { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border); }
 .urlbar .method { font-weight: 700; }
 .urlbar .url { flex: 1; font-family: var(--font-mono); font-size: var(--fs-dense); }
+.urlbar .url-wrap { flex: 1; }
+.urlbar .url-wrap .url { width: 100%; }
+/* {{variables}}: an aria-hidden mirror behind a transparent input draws the marks. */
+.var-input { position: relative; display: inline-flex; min-width: 0; background: var(--bg); border-radius: var(--radius); }
+.var-input > input { position: relative; z-index: 1; background: transparent; flex: 1; min-width: 0; }
+.var-mirror { position: absolute; inset: 0; overflow: hidden; white-space: pre; color: transparent; pointer-events: none; border: 1px solid transparent; box-sizing: border-box; }
+td .var-input { display: flex; }
+.var-defined { background: var(--var-defined-bg); border-radius: 2px; }
+.var-setlater { text-decoration: underline dotted var(--warn); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.var-undefined { text-decoration: underline wavy var(--err); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+.var-hover { position: fixed; z-index: 20; max-width: min(420px, 90vw); background: var(--bg); color: var(--fg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 16px var(--scrim); display: flex; flex-direction: column; gap: 2px; }
+.var-hover-name { font-family: var(--font-mono); font-weight: 600; }
+.var-hover code { font-family: var(--font-mono); overflow-wrap: anywhere; }
 .split { display: flex; flex: 1; min-height: 0; }
 .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--border); }
 .pane:last-child { border-right: none; }

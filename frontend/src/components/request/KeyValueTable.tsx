@@ -1,6 +1,7 @@
 import type { KeyValueDto } from "../../api/types";
 import { Banner } from "../Banner";
 import { CloseIcon } from "../icons";
+import { VarInput } from "./VarInput";
 
 interface Props {
   rows: KeyValueDto[];
@@ -12,12 +13,14 @@ interface Props {
   valueLabel?: string;
   /** A short example shown above the table instead of example placeholders. */
   hint?: string;
+  /** The request tab: `{{variables}}` in values are underlined and explained. */
+  varTabKey?: string;
 }
 
 const empty = (): KeyValueDto => ({ name: "", value: "", enabled: true, local: false });
 
 /** Editable name/value rows; the checkbox maps to `~` (disabled) in `.bru`. */
-export function KeyValueTable({ rows, onChange, fixedNames, nameLabel = "Name", valueLabel = "Value", hint }: Props) {
+export function KeyValueTable({ rows, onChange, fixedNames, nameLabel = "Name", valueLabel = "Value", hint, varTabKey }: Props) {
   const set = (index: number, patch: Partial<KeyValueDto>) =>
     onChange(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   const remove = (index: number) => onChange(rows.filter((_, i) => i !== index));
@@ -76,12 +79,22 @@ export function KeyValueTable({ rows, onChange, fixedNames, nameLabel = "Name", 
                 />
               </td>
               <td>
-                <input
-                  value={row.value}
-                  aria-label={isNew ? `New ${valueLabel.toLowerCase()}` : `${valueLabel} of ${rowName}`}
-                  spellCheck={false}
-                  onChange={(e) => change({ value: e.target.value })}
-                />
+                {varTabKey ? (
+                  <VarInput
+                    tabKey={varTabKey}
+                    value={row.value}
+                    aria-label={isNew ? `New ${valueLabel.toLowerCase()}` : `${valueLabel} of ${rowName}`}
+                    spellCheck={false}
+                    onChange={(e) => change({ value: e.target.value })}
+                  />
+                ) : (
+                  <input
+                    value={row.value}
+                    aria-label={isNew ? `New ${valueLabel.toLowerCase()}` : `${valueLabel} of ${rowName}`}
+                    spellCheck={false}
+                    onChange={(e) => change({ value: e.target.value })}
+                  />
+                )}
               </td>
               <td className="kv-del">
                 {!isNew && !fixedNames && (

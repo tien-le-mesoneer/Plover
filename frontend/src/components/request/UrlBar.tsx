@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { HttpRequestDto } from "../../api/types";
 import { formatElapsed } from "../../lib/elapsed";
 import { syncPathParams, syncQueryFromUrl } from "../../lib/url";
+import { VarInput } from "./VarInput";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "CONNECT", "TRACE"];
 
@@ -18,12 +19,14 @@ interface Props {
   onCurl?: (text: string) => void;
   /** Controls after Send (the `⋯` request menu). */
   actions?: ReactNode;
+  /** The request tab: `{{variables}}` in the URL are underlined and explained. */
+  tabKey?: string;
 }
 
 const CURL = /^\s*curl\s/i;
 
 /** Method · URL · Send (the only coloured button on the screen) · request menu. Save is ⌘S or the menu. */
-export function UrlBar({ draft, sending, sendStartedAt, onEdit, onSend, onCancel, onCurl, actions }: Props) {
+export function UrlBar({ draft, sending, sendStartedAt, onEdit, onSend, onCancel, onCurl, actions, tabKey }: Props) {
   const methods = METHODS.includes(draft.method) ? METHODS : [...METHODS, draft.method];
   return (
     <form
@@ -43,7 +46,37 @@ export function UrlBar({ draft, sending, sendStartedAt, onEdit, onSend, onCancel
           <option key={m}>{m}</option>
         ))}
       </select>
-      <input
+      {tabKey ? (
+        <VarInput
+          tabKey={tabKey}
+          wrapperClassName="url-wrap"
+        aria-label="URL"
+          className="url"
+          value={draft.url}
+          spellCheck={false}
+          onPaste={(e) => {
+            const text = e.clipboardData.getData("text");
+            if (!onCurl || !CURL.test(text)) return;
+            e.preventDefault();
+            onCurl(text);
+          }}
+          onKeyDown={(e) => {
+            // Cmd/Ctrl+Enter sends through the app-wide shortcut; stop the form's
+            // implicit submission so it is not sent twice.
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.preventDefault();
+          }}
+          onChange={(e) => {
+            const url = e.target.value;
+            onEdit((d) => ({
+              ...d,
+              url,
+              query: syncQueryFromUrl(url, d.query),
+              pathParams: syncPathParams(url, d.pathParams),
+            }));
+          }}
+        />
+      ) : (
+        <input
         aria-label="URL"
         className="url"
         value={draft.url}
@@ -68,7 +101,8 @@ export function UrlBar({ draft, sending, sendStartedAt, onEdit, onSend, onCancel
             pathParams: syncPathParams(url, d.pathParams),
           }));
         }}
-      />
+        />
+      )}
       {sending && onCancel ? (
         <CancelButton startedAt={sendStartedAt} onCancel={onCancel} />
       ) : (

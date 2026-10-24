@@ -37,6 +37,15 @@ describe.each(Object.entries(themes))("%s theme", (_name, t) => {
     expect(contrast(t["color-on-send"]!, t["color-send-hover"]!)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it("variable_marks_are_visible", () => {
+    // Set-later and undefined underlines are UI marks (3:1) on the page background;
+    // text on the defined tint stays readable (4.5:1).
+    for (const mark of ["warn", "err"]) {
+      expect(contrast(t[mark]!, t["bg"]!), `--${mark} underline`).toBeGreaterThanOrEqual(3);
+    }
+    expect(contrast(t["fg"]!, t["var-defined-bg"]!)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it("control_borders_meet_3", () => {
     for (const bg of ["bg", "bg-2"]) {
       expect(contrast(t["border-strong"]!, t[bg]!), `--border-strong on --${bg}`).toBeGreaterThanOrEqual(3);

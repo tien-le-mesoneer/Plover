@@ -96,6 +96,7 @@ export function RequestEditor({ tab }: { tab: Tab }) {
         onCancel={() => void cancel(tab.key)}
         onCurl={(text) => void onCurl(text)}
         actions={<RequestMenu tabKey={tab.key} />}
+        tabKey={tab.key}
       />
       {pasted && (
         <CurlBanner
@@ -162,6 +163,7 @@ export function RequestEditor({ tab }: { tab: Tab }) {
               <>
                 <h4>Query</h4>
                 <KeyValueTable
+                  varTabKey={tab.key}
                   rows={draft.query}
                   onChange={(query) => onEdit((d) => ({ ...d, query, url: urlWithQuery(d.url, query) }))}
                 />
@@ -169,6 +171,7 @@ export function RequestEditor({ tab }: { tab: Tab }) {
                   <>
                     <h4>Path</h4>
                     <KeyValueTable
+                      varTabKey={tab.key}
                       rows={draft.pathParams}
                       fixedNames
                       onChange={(pathParams) => onEdit((d) => ({ ...d, pathParams }))}
@@ -179,11 +182,14 @@ export function RequestEditor({ tab }: { tab: Tab }) {
             )}
             {section === "Headers" && (
               <KeyValueTable
+                varTabKey={tab.key}
                 rows={draft.headers}
                 onChange={(headers) => onEdit((d) => ({ ...d, headers }))}
               />
             )}
-            {section === "Auth" && <AuthTab auth={draft.auth} onChange={(auth) => onEdit((d) => ({ ...d, auth }))} />}
+            {section === "Auth" && (
+              <AuthTab tabKey={tab.key} auth={draft.auth} onChange={(auth) => onEdit((d) => ({ ...d, auth }))} />
+            )}
             {section === "Script" && (
               <ScriptTab
                 pre={draft.scriptPre}

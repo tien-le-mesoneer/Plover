@@ -168,3 +168,21 @@ describe("quick open", () => {
     expect(screen.getByRole("dialog", { name: "Quick open" })).toBeTruthy();
   });
 });
+
+describe("variable hover", () => {
+  it("mirror is hidden from assistive tech; the card is described-by while shown", async () => {
+    const { VarInput } = await import("./request/VarInput");
+    const { useVars } = await import("../store/vars");
+    useVars.setState({
+      byTab: { "c1:a.bru": { vars: [{ name: "h", source: "runtime", value: "x", masked: false, truncated: false, shadows: [] }], setLater: [] } },
+    });
+    const { container } = render(<VarInput tabKey="c1:a.bru" aria-label="Field" value="{{h}}" onChange={() => {}} />);
+    expect(container.querySelector(".var-mirror")!.getAttribute("aria-hidden")).toBe("true");
+    const input = screen.getByLabelText("Field");
+    expect(input.getAttribute("aria-describedby")).toBeNull();
+    const span = container.querySelector<HTMLElement>(".var-mirror .var-defined")!;
+    span.getBoundingClientRect = () => ({ left: 0, right: 50, top: 0, bottom: 20, width: 50, height: 20, x: 0, y: 0, toJSON: () => ({}) });
+    fireEvent.mouseMove(input, { clientX: 5, clientY: 5 });
+    expect(input.getAttribute("aria-describedby")).toBe(screen.getByRole("tooltip").id);
+  });
+});
