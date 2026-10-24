@@ -225,3 +225,32 @@ describe("ApiClient", () => {
     await run.done;
   });
 });
+
+describe("import and scratch calls", () => {
+  it("uses the exact paths and bodies", async () => {
+    const fetch = vi.fn(async () => jsonResponse(200, {}));
+    const api = createApiClient("", "tok", { fetch });
+    const draft = { name: "x" } as unknown as import("./types").HttpRequestDto;
+    await api.parseCurl("curl x");
+    await api.copyCurl("c1", { item: null, draft, env: "dev", resolve: true });
+    await api.createRequest("c1", "f", "GET a", draft);
+    await api.previewHar("c1", "{}");
+    const har = { har: "{}", entries: [1], folder: "", newFolder: "cap", env: null };
+    await api.planHar("c1", har);
+    await api.importHar("c1", har);
+    await api.send("c1", null, draft, null);
+    const calls = (fetch.mock.calls as unknown as [string, RequestInit][]).map(([u, i]) => [
+      `${i.method} ${u}`,
+      JSON.parse(i.body as string),
+    ]);
+    expect(calls).toEqual([
+      ["POST /api/curl/parse", { text: "curl x" }],
+      ["POST /api/collections/c1/curl", { item: null, draft, env: "dev", resolve: true }],
+      ["POST /api/collections/c1/requests/new", { folder: "f", name: "GET a", request: draft }],
+      ["POST /api/collections/c1/import/har/preview", { har: "{}" }],
+      ["POST /api/collections/c1/import/har/plan", har],
+      ["POST /api/collections/c1/import/har", har],
+      ["POST /api/collections/c1/send", { item: null, draft, env: null }],
+    ]);
+  });
+});

@@ -53,7 +53,7 @@ export function RequestTabs() {
             aria-keyshortcuts="Delete"
             tabIndex={selected ? 0 : -1}
             className={`tab ${selected ? "active" : ""}`}
-            title={t.item}
+            title={t.item ?? "Unsaved request"}
             onClick={() => activate(t.key)}
             onKeyDown={(e) => onKeyDown(e, index)}
             onAuxClick={(e) => e.button === 1 && closeTabWithConfirm(t.key)}

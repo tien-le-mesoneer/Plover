@@ -2,13 +2,15 @@ import { create } from "zustand";
 import { ApiError } from "../api/client";
 import { api } from "../api/instance";
 import type { ConflictDto, HttpRequestDto, SendResultDto } from "../api/types";
+import { blankRequest } from "../lib/request";
 import { useWorkspace } from "./workspace";
 
 export interface Tab {
-  /** `collectionId + ':' + item` */
+  /** `collectionId + ':' + item`, or `collectionId + ':scratch:' + n` for a scratch tab. */
   key: string;
   collectionId: string;
-  item: string;
+  /** The request file; `null` for a scratch tab, which has no file until it is saved. */
+  item: string | null;
   saved: HttpRequestDto;
   draft: HttpRequestDto;
   hash: string;
@@ -31,9 +33,19 @@ export interface TabsState {
   save(key: string): Promise<"saved" | "conflict">;
   resolveConflict(key: string, choice: "reload" | "overwrite"): Promise<void>;
   send(key: string): Promise<void>;
+  /** Opens an unsaved "Untitled" request in `collectionId`; returns its key. */
+  newScratch(collectionId: string): string;
+  /** Writes a scratch tab to a new file and turns it into that file's tab. */
+  saveScratch(key: string, folder: string, name: string): Promise<"saved" | "exists">;
+  /** Fills method, URL, query, headers, body and auth from a pasted curl; returns the draft before. */
+  applyCurl(key: string, parsed: HttpRequestDto): HttpRequestDto;
+  /** Some scratch tab has content that would be lost. */
+  hasScratchContent(): boolean;
 }
 
 export const tabKey = (collectionId: string, item: string) => `${collectionId}:${item}`;
+
+let scratchCount = 0;
 
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -49,6 +61,7 @@ export const useTabs = create<TabsState>()((set, get) => {
   const find = (key: string) => get().tabs.find((t) => t.key === key);
 
   async function write(tab: Tab, hash: string): Promise<"saved" | "conflict"> {
+    if (tab.item === null) throw new Error("a scratch request is saved with saveScratch");
     try {
       const saved = await api().saveRequest(tab.collectionId, tab.item, tab.draft, hash);
       // Adopt what the file now says (e.g. trimmed values), so "saved" matches disk.
@@ -136,7 +149,7 @@ export const useTabs = create<TabsState>()((set, get) => {
 
     async resolveConflict(key, choice) {
       const tab = find(key);
-      if (!tab?.conflict) return;
+      if (!tab?.conflict || tab.item === null) return;
       if (choice === "overwrite") {
         await write(tab, tab.conflict.hash);
         return;
@@ -161,6 +174,75 @@ export const useTabs = create<TabsState>()((set, get) => {
       } catch (e) {
         update(key, { sending: false, error: message(e), result: undefined });
       }
+    },
+  
+    newScratch(collectionId) {
+      scratchCount += 1;
+      const key = `${collectionId}:scratch:${scratchCount}`;
+      const request = blankRequest("Untitled");
+      set((s) => ({
+        tabs: [
+          ...s.tabs,
+          { key, collectionId, item: null, saved: request, draft: request, hash: "", sending: false },
+        ],
+        active: key,
+      }));
+      return key;
+    },
+
+    async saveScratch(key, folder, name) {
+      const tab = find(key);
+      if (!tab || tab.item !== null) return "saved";
+      let created;
+      try {
+        created = await api().createRequest(tab.collectionId, folder, name, tab.draft);
+      } catch (e) {
+        if (e instanceof ApiError && e.code === "exists") return "exists";
+        throw e;
+      }
+      const fileKey = tabKey(tab.collectionId, created.item);
+      set((s) => ({
+        tabs: s.tabs
+          .filter((t) => t.key !== fileKey)
+          .map((t) =>
+            t.key === key
+              ? {
+                  ...t,
+                  key: fileKey,
+                  item: created.item,
+                  saved: created.request,
+                  draft: created.request,
+                  hash: created.hash,
+                  error: undefined,
+                }
+              : t,
+          ),
+        active: s.active === key ? fileKey : s.active,
+      }));
+      void useWorkspace.getState().refreshTree(tab.collectionId).catch(() => {});
+      return "saved";
+    },
+
+    applyCurl(key, parsed) {
+      const tab = find(key);
+      if (!tab) return parsed;
+      const previous = tab.draft;
+      update(key, {
+        draft: {
+          ...previous,
+          method: parsed.method,
+          url: parsed.url,
+          query: parsed.query,
+          headers: parsed.headers,
+          body: parsed.body,
+          auth: parsed.auth,
+        },
+      });
+      return previous;
+    },
+
+    hasScratchContent() {
+      return get().tabs.some((t) => t.item === null && get().isDirty(t.key));
     },
   };
 });

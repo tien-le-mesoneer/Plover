@@ -223,4 +223,25 @@ describe("remembered UI state", () => {
     });
     stop();
   });
+
+  it("ui state never contains scratch tabs", async () => {
+    vi.useFakeTimers();
+    const stop = startUiPersistence();
+    act(() => {
+      const key = useTabs.getState().newScratch("c1");
+      useTabs.getState().edit(key, (d) => ({ ...d, url: "http://tok-SCRATCH" }));
+    });
+    act(() => useWorkspace.getState().toggleExpanded("c1", "users"));
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(client.saveUiState).toHaveBeenCalledWith("c1", {
+      tabs: [],
+      active: null,
+      expanded: ["users"],
+      env: null,
+    });
+    expect(JSON.stringify(client.saveUiState!.mock.calls)).not.toContain("tok-SCRATCH");
+    stop();
+  });
 });

@@ -4,7 +4,15 @@ import type {
   CapabilitiesDto,
   ClientMessage,
   CollectionSummaryDto,
+  CopyCurlBody,
+  CreatedRequestDto,
+  CurlParsedDto,
+  CurlTextDto,
   EnvironmentDto,
+  HarImportBody,
+  HarImportResultDto,
+  HarPlanDto,
+  HarRowDto,
   HashDto,
   HttpRequestDto,
   KeyValueDto,
@@ -76,12 +84,27 @@ export interface ApiClient {
     request: HttpRequestDto,
     hash: string,
   ): Promise<SavedRequestDto>;
+  /** `item: null` sends `draft` as a scratch request (collection scope only). */
   send(
     id: string,
-    item: string,
+    item: string | null,
     draft: HttpRequestDto | null,
     env: string | null,
   ): Promise<SendResultDto>;
+  /** A pasted curl command as a request, plus the options it could not fill in. */
+  parseCurl(text: string): Promise<CurlParsedDto>;
+  copyCurl(id: string, body: CopyCurlBody): Promise<CurlTextDto>;
+  /** Writes a new request file; rejects with code `exists` when the name is taken. */
+  createRequest(
+    id: string,
+    folder: string,
+    name: string,
+    request: HttpRequestDto,
+  ): Promise<CreatedRequestDto>;
+  previewHar(id: string, har: string): Promise<HarRowDto[]>;
+  /** The secret and request names an import would create; writes nothing. */
+  planHar(id: string, body: HarImportBody): Promise<HarPlanDto>;
+  importHar(id: string, body: HarImportBody): Promise<HarImportResultDto>;
   environments(id: string): Promise<EnvironmentDto[]>;
   saveEnvironment(id: string, name: string, vars: KeyValueDto[], hash: string): Promise<HashDto>;
   /** Merges secret values; `null` clears one. Warns for values kept in memory only. */
@@ -200,6 +223,13 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     saveRequest: (id, item, request, hash) =>
       call("PUT", `${collections(id)}/requests?item=${enc(item)}`, { request, hash }),
     send: (id, item, draft, env) => call("POST", `${collections(id)}/send`, { item, draft, env }),
+    parseCurl: (text) => call("POST", "/curl/parse", { text }),
+    copyCurl: (id, body) => call("POST", `${collections(id)}/curl`, body),
+    createRequest: (id, folder, name, request) =>
+      call("POST", `${collections(id)}/requests/new`, { folder, name, request }),
+    previewHar: (id, har) => call("POST", `${collections(id)}/import/har/preview`, { har }),
+    planHar: (id, body) => call("POST", `${collections(id)}/import/har/plan`, body),
+    importHar: (id, body) => call("POST", `${collections(id)}/import/har`, body),
     environments: (id) => call("GET", `${collections(id)}/environments`),
     saveEnvironment: (id, name, vars, hash) =>
       call("PUT", `${collections(id)}/environments/${enc(name)}`, { vars, hash }),
