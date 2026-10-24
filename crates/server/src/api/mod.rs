@@ -66,6 +66,7 @@ pub fn routes() -> Router<AppState> {
         .route("/collections/{id}/send", post(requests::send))
         .route("/curl/parse", post(curl::parse))
         .route("/collections/{id}/curl", post(curl::copy))
+        .route("/collections/{id}/resolved-url", post(curl::resolved))
         .route(
             "/collections/{id}/import/har/preview",
             post(import::preview_har),
@@ -102,6 +103,7 @@ pub fn routes() -> Router<AppState> {
         .route("/native/pick-folder", post(native::pick_folder))
         .route("/native/open-browser", post(native::open_browser))
         .route("/native/save-report", post(native::save_report))
+        .route("/native/reveal", post(native::reveal))
         .route("/ws", get(runs::upgrade))
         .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY))
 }

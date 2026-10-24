@@ -901,6 +901,8 @@ pub struct CapabilitiesDto {
     pub open_external: bool,
     /// Reports can be saved through a native save dialog (`POST /native/save-report`).
     pub native_save: bool,
+    /// A request file can be shown in the file manager (`POST /native/reveal`).
+    pub reveal: bool,
     /// Where secrets are kept: `"keychain"` or `"memory"`.
     #[ts(type = "\"keychain\" | \"memory\"")]
     pub secret_backend: String,
@@ -956,6 +958,36 @@ pub struct CurlNoticeDto {
 pub struct CurlParsedDto {
     pub request: HttpRequestDto,
     pub notices: Vec<CurlNoticeDto>,
+}
+
+/// `POST /collections/{id}/resolved-url`: the request whose URL to fill in.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedUrlBody {
+    /// The request file; `null` for a scratch request (then `draft` is required).
+    #[serde(default)]
+    pub item: Option<String>,
+    #[serde(default)]
+    pub draft: Option<HttpRequestDto>,
+    #[serde(default)]
+    pub env: Option<String>,
+}
+
+/// The URL Send would use, with secret values replaced by `***`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedUrlDto {
+    pub url: String,
+    /// Some secret value was replaced.
+    pub masked: bool,
+}
+
+/// `POST /native/reveal`: show a request file in the file manager (desktop only).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RevealBody {
+    pub collection: String,
+    pub item: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1135,6 +1167,9 @@ pub fn typescript_bindings() -> String {
         CurlNoticeDto::decl(&cfg),
         CurlParsedDto::decl(&cfg),
         CopyCurlBody::decl(&cfg),
+        ResolvedUrlBody::decl(&cfg),
+        ResolvedUrlDto::decl(&cfg),
+        RevealBody::decl(&cfg),
         CurlTextDto::decl(&cfg),
         CreateRequestBody::decl(&cfg),
         CreatedRequestDto::decl(&cfg),

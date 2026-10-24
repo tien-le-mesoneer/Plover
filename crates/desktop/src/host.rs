@@ -1,7 +1,7 @@
 //! The server's `NativeHost` in the desktop app: native folder picker, save dialog and
 //! opening URLs in the default browser, through Tauri's dialog and opener plugins.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use plover_server::native::{HostFuture, NativeHost};
 use tauri::{AppHandle, Wry};
@@ -55,6 +55,15 @@ impl NativeHost for DesktopHost {
             .map_err(|e| e.to_string())?
             .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
             Ok(Some(path))
+        })
+    }
+
+    fn reveal<'a>(&'a self, path: &'a Path) -> HostFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            self.app
+                .opener()
+                .reveal_item_in_dir(path)
+                .map_err(|e| e.to_string())
         })
     }
 

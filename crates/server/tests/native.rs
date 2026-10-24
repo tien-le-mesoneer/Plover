@@ -20,6 +20,7 @@ struct FakeHost {
     pick: Mutex<Vec<Option<PathBuf>>>,
     opened: Mutex<Vec<String>>,
     saved: Mutex<Vec<(String, Vec<u8>)>>,
+    revealed: Mutex<Vec<PathBuf>>,
 }
 
 impl NativeHost for FakeHost {
@@ -45,6 +46,12 @@ impl NativeHost for FakeHost {
             Ok(Some(PathBuf::from("/saved").join(default_name)))
         })
     }
+    fn reveal<'a>(&'a self, path: &'a std::path::Path) -> HostFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            self.revealed.lock().unwrap().push(path.to_path_buf());
+            Ok(())
+        })
+    }
 }
 
 const BASE_URL: &str = "http://127.0.0.1:4321";
@@ -68,6 +75,7 @@ async fn capabilities_web_mode() {
             "nativePicker": false,
             "openExternal": false,
             "nativeSave": false,
+            "reveal": false,
             "secretBackend": "memory"
         })
     );
@@ -82,6 +90,53 @@ async fn capabilities_desktop_mode() {
     assert_eq!(body["nativePicker"], json!(true));
     assert_eq!(body["openExternal"], json!(true));
     assert_eq!(body["nativeSave"], json!(true));
+    assert_eq!(body["reveal"], json!(true));
+}
+
+#[tokio::test]
+async fn reveal_shows_the_file_and_rejects_escape() {
+    let host = Arc::new(FakeHost::default());
+    let app = desktop_app(host.clone());
+    let dir = common::small_collection("https://example.test");
+    let (status, opened) = call(
+        &app,
+        "POST",
+        "/api/collections",
+        Some(json!({ "path": dir.path() })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{opened}");
+    let id = opened["id"].as_str().unwrap();
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/native/reveal",
+        Some(json!({ "collection": id, "item": "a.bru" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let revealed = host.revealed.lock().unwrap().clone();
+    assert_eq!(revealed.len(), 1);
+    assert!(revealed[0].ends_with("a.bru"));
+
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/native/reveal",
+        Some(json!({ "collection": id, "item": "../x.bru" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"], "bad_item");
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/api/native/reveal",
+        Some(json!({ "collection": id, "item": "missing.bru" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(host.revealed.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

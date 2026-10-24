@@ -62,7 +62,7 @@ export function RequestTabs() {
           >
             <span className={`badge method-${t.draft.method.toLowerCase()}`}>{t.draft.method}</span>
             <span className="tab-name">{t.draft.name}</span>
-            {dirty && <span className="dirty" aria-hidden="true" title="Unsaved changes" />}
+            {dirty && <span className="dirty" role="img" aria-label="Unsaved changes" title="Unsaved changes" />}
             <button
               className="icon"
               tabIndex={-1}

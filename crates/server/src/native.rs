@@ -2,7 +2,7 @@
 //! through the API like everything else; web mode has no host and answers 501.
 
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 pub type HostFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -19,4 +19,9 @@ pub trait NativeHost: Send + Sync {
         default_name: &'a str,
         bytes: Vec<u8>,
     ) -> HostFuture<'a, Result<Option<PathBuf>, String>>;
+    /// Shows `path` selected in the file manager (Finder, Explorer).
+    fn reveal<'a>(&'a self, path: &'a Path) -> HostFuture<'a, Result<(), String>> {
+        let _ = path;
+        Box::pin(async { Err("revealing files is not supported here".to_owned()) })
+    }
 }

@@ -7,8 +7,8 @@ import { useWorkspace } from "../store/workspace";
 import { EnvEditor } from "./EnvEditor";
 import { SidebarHeader } from "./SidebarHeader";
 
-const web: CapabilitiesDto = { desktop: false, nativePicker: false, openExternal: false, nativeSave: false, secretBackend: "memory" };
-const desktop: CapabilitiesDto = { desktop: true, nativePicker: true, openExternal: true, nativeSave: true, secretBackend: "keychain" };
+const web: CapabilitiesDto = { desktop: false, nativePicker: false, openExternal: false, nativeSave: false, reveal: false, secretBackend: "memory" };
+const desktop: CapabilitiesDto = { desktop: true, nativePicker: true, openExternal: true, nativeSave: true, reveal: true, secretBackend: "keychain" };
 
 const env: EnvironmentDto = {
   name: "local",

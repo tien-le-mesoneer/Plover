@@ -86,7 +86,8 @@ describe("scratch requests", () => {
     const key = useTabs.getState().newScratch("c1");
     useTabs.getState().edit(key, (d) => ({ ...d, method: "POST", url: "{{host}}/api/orders?page=2" }));
     render(<App hasToken />);
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "More request actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Save/ }));
     const dialog = await screen.findByRole("dialog", { name: "Save request" });
     expect(dialog).toBeTruthy();
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("POST orders");
@@ -151,9 +152,10 @@ describe("scratch requests", () => {
     const key = useTabs.getState().newScratch("c1");
     useTabs.getState().edit(key, (d) => ({ ...d, url: "http://x" }));
     render(<App hasToken />);
-    const save = screen.getByRole("button", { name: "Save" });
+    const save = screen.getByRole("button", { name: "More request actions" });
     save.focus();
     fireEvent.click(save);
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Save/ }));
     await screen.findByRole("dialog", { name: "Save request" });
     expect(screen.getByLabelText("Folder").tagName).toBe("SELECT");
     expect(screen.getByLabelText("Name").tagName).toBe("INPUT");

@@ -6,20 +6,19 @@ const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "CO
 
 interface Props {
   draft: HttpRequestDto;
-  dirty: boolean;
   sending: boolean;
   onEdit: (f: (d: HttpRequestDto) => HttpRequestDto) => void;
   onSend: () => void;
-  onSave: () => void;
   /** A pasted `curl …` command, instead of pasting it as the URL. */
   onCurl?: (text: string) => void;
-  /** More controls after Save (Copy as cURL). */
+  /** Controls after Send (the `⋯` request menu). */
   actions?: ReactNode;
 }
 
 const CURL = /^\s*curl\s/i;
 
-export function UrlBar({ draft, dirty, sending, onEdit, onSend, onSave, onCurl, actions }: Props) {
+/** Method · URL · Send (the only coloured button on the screen) · request menu. Save is ⌘S or the menu. */
+export function UrlBar({ draft, sending, onEdit, onSend, onCurl, actions }: Props) {
   const methods = METHODS.includes(draft.method) ? METHODS : [...METHODS, draft.method];
   return (
     <form
@@ -67,9 +66,6 @@ export function UrlBar({ draft, dirty, sending, onEdit, onSend, onSave, onCurl, 
       />
       <button type="submit" className="send" disabled={sending} title="Send (Enter, Ctrl/Cmd+Enter)">
         {sending ? "Sending…" : "Send"}
-      </button>
-      <button type="button" disabled={!dirty} onClick={onSave} title="Save (Ctrl/Cmd+S)">
-        Save
       </button>
       {actions}
     </form>

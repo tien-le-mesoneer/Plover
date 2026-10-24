@@ -317,6 +317,10 @@ desktop: boolean, nativePicker: boolean, openExternal: boolean,
  */
 nativeSave: boolean, 
 /**
+ * A request file can be shown in the file manager (`POST /native/reveal`).
+ */
+reveal: boolean, 
+/**
  * Where secrets are kept: `"keychain"` or `"memory"`.
  */
 secretBackend: "keychain" | "memory", };
@@ -354,6 +358,20 @@ item: string | null, draft: HttpRequestDto | null, env: string | null,
  * Fill in variables for `env` (no scripts run); otherwise copy as written.
  */
 resolve: boolean, };
+
+export type ResolvedUrlBody = { 
+/**
+ * The request file; `null` for a scratch request (then `draft` is required).
+ */
+item: string | null, draft: HttpRequestDto | null, env: string | null, };
+
+export type ResolvedUrlDto = { url: string, 
+/**
+ * Some secret value was replaced.
+ */
+masked: boolean, };
+
+export type RevealBody = { collection: string, item: string, };
 
 export type CurlTextDto = { text: string, 
 /**

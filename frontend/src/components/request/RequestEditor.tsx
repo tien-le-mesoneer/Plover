@@ -5,7 +5,7 @@ import { switchBodyMode } from "../../lib/body";
 import { urlWithQuery } from "../../lib/url";
 import { useTabs, type Tab } from "../../store/tabs";
 import { useWorkspace } from "../../store/workspace";
-import { CopyCurlMenu } from "./CopyCurlMenu";
+import { RequestMenu } from "./RequestMenu";
 import { CurlBanner, secretMoves } from "./CurlBanner";
 import { Banner } from "../Banner";
 import { ResponseViewer } from "../ResponseViewer";
@@ -41,7 +41,7 @@ function hasCode(draft: HttpRequestDto, section: Section): boolean {
 
 export function RequestEditor({ tab }: { tab: Tab }) {
   const [section, setSection] = useState<Section>(tab.draft.body.mode === "none" ? "Params" : "Body");
-  const { edit, requestSave, send, isDirty, resolveConflict } = useTabs();
+  const { edit, send, resolveConflict } = useTabs();
   const onEdit = (f: (d: HttpRequestDto) => HttpRequestDto) => edit(tab.key, f);
   const draft = tab.draft;
   const envName = useWorkspace((s) => s.activeEnv[tab.collectionId] ?? null);
@@ -89,13 +89,11 @@ export function RequestEditor({ tab }: { tab: Tab }) {
     <div className="request-editor">
       <UrlBar
         draft={draft}
-        dirty={isDirty(tab.key)}
         sending={tab.sending}
         onEdit={onEdit}
         onSend={() => void send(tab.key)}
-        onSave={() => requestSave(tab.key)}
         onCurl={(text) => void onCurl(text)}
-        actions={<CopyCurlMenu tabKey={tab.key} />}
+        actions={<RequestMenu tabKey={tab.key} />}
       />
       {pasted && (
         <CurlBanner

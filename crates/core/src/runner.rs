@@ -1144,8 +1144,91 @@ pub fn copy_as_curl(
     input: SendInput<'_>,
     resolve: bool,
 ) -> Result<CopiedCurl, SendError> {
-    use crate::request::{Auth, Body};
     let collection = open.collection();
+    let CopyPrep {
+        prepared,
+        vars,
+        omitted,
+    } = prepare_copy(open, &collection, &input)?;
+    let command = if resolve {
+        let resolved = finalize(
+            &prepared,
+            &vars.var_stack(),
+            &collection.root,
+            &InterpolateLimits::default(),
+        )
+        .map_err(SendError::Resolve)?;
+        crate::curl::CurlCommand::from(&resolved)
+    } else {
+        crate::curl::CurlCommand::from(&prepared)
+    };
+    let text = crate::curl::to_curl(&command);
+    let contains_secret = input.env.is_some_and(|env| {
+        open.secrets(env)
+            .values()
+            .any(|v| v.len() >= 4 && text.contains(v.as_str()))
+    });
+    Ok(CopiedCurl {
+        text,
+        contains_secret,
+        omitted,
+    })
+}
+
+/// The URL Send would use for `input` (variables filled in, no scripts run), with every
+/// secret value of `input.env` replaced by [`crate::masking::MASK`]. The flag says whether
+/// anything was masked.
+pub fn resolved_url(
+    open: &OpenCollection,
+    input: SendInput<'_>,
+) -> Result<(String, bool), SendError> {
+    let collection = open.collection();
+    let CopyPrep { prepared, vars, .. } = prepare_copy(open, &collection, &input)?;
+    let resolved = finalize(
+        &prepared,
+        &vars.var_stack(),
+        &collection.root,
+        &InterpolateLimits::default(),
+    )
+    .map_err(SendError::Resolve)?;
+    let mut url = resolved.url;
+    let mut masked = false;
+    if let Some(env) = input.env {
+        let mut secrets: Vec<String> = open
+            .secrets(env)
+            .into_values()
+            .filter(|v| v.len() >= 4)
+            .collect();
+        // Longest first, so a secret that contains another is masked whole.
+        secrets.sort_by_key(|v| std::cmp::Reverse(v.len()));
+        for secret in secrets {
+            let encoded =
+                url::form_urlencoded::byte_serialize(secret.as_bytes()).collect::<String>();
+            for form in [secret.as_str(), encoded.as_str()] {
+                if url.contains(form) {
+                    url = url.replace(form, crate::masking::MASK);
+                    masked = true;
+                }
+            }
+        }
+    }
+    Ok((url, masked))
+}
+
+struct CopyPrep {
+    prepared: PreparedRequest,
+    vars: ScriptVars,
+    omitted: Vec<String>,
+}
+
+/// Resolves `input` for copying: collection and folder parts merged, parts Plover cannot
+/// send left out (and named in `omitted`).
+fn prepare_copy(
+    open: &OpenCollection,
+    collection: &Collection,
+    input: &SendInput<'_>,
+) -> Result<CopyPrep, SendError> {
+    use crate::request::{Auth, Body};
     let environment = match input.env {
         Some(name) => Some(
             collection
@@ -1155,7 +1238,7 @@ pub fn copy_as_curl(
         None => None,
     };
     let mut slot = None;
-    let found = locate_request(&collection, input.item_id, input.draft, &mut slot)?;
+    let found = locate_request(collection, input.item_id, input.draft, &mut slot)?;
     let Item::Request { file, .. } = found.item else {
         return Err(SendError::Unsupported("not a request".into()));
     };
@@ -1172,7 +1255,7 @@ pub fn copy_as_curl(
     let overrides = input.env.map(|e| open.env_overrides(e)).unwrap_or_default();
     let runtime = open.runtime();
     let ctx = ResolveContext {
-        collection: &collection,
+        collection,
         environment,
         env_overrides: &overrides,
         runtime: &runtime,
@@ -1208,27 +1291,9 @@ pub fn copy_as_curl(
         }
         other => other.map_err(SendError::Resolve)?,
     };
-    let command = if resolve {
-        let resolved = finalize(
-            &prepared,
-            &vars.var_stack(),
-            &collection.root,
-            &InterpolateLimits::default(),
-        )
-        .map_err(SendError::Resolve)?;
-        crate::curl::CurlCommand::from(&resolved)
-    } else {
-        crate::curl::CurlCommand::from(&prepared)
-    };
-    let text = crate::curl::to_curl(&command);
-    let contains_secret = input.env.is_some_and(|env| {
-        open.secrets(env)
-            .values()
-            .any(|v| v.len() >= 4 && text.contains(v.as_str()))
-    });
-    Ok(CopiedCurl {
-        text,
-        contains_secret,
+    Ok(CopyPrep {
+        prepared,
+        vars,
         omitted,
     })
 }

@@ -59,7 +59,7 @@ beforeEach(() => {
   useWorkspace.setState({
     collections: [{ id: "c1", name: "ui-check", root: "/x", available: true, error: null }],
     activeEnv: { c1: "local" },
-    capabilities: { desktop: false, nativePicker: false, openExternal: false, nativeSave: false, secretBackend: "memory" },
+    capabilities: { desktop: false, nativePicker: false, openExternal: false, nativeSave: false, reveal: false, secretBackend: "memory" },
   });
   previewDataFile = vi.fn(async () => ({ rows: 2, columns: ["user", "password"] }));
   startRun = vi.fn(() => ({ runId: "r9", cancel: vi.fn(), done: new Promise(() => {}) }));
@@ -204,7 +204,7 @@ describe("Export", () => {
 
   it("uses the native save dialog in the desktop app", async () => {
     useWorkspace.setState({
-      capabilities: { desktop: true, nativePicker: true, openExternal: true, nativeSave: true, secretBackend: "keychain" },
+      capabilities: { desktop: true, nativePicker: true, openExternal: true, nativeSave: true, reveal: true, secretBackend: "keychain" },
     });
     live([started(0), ok(0, 0), { type: "finished", runId: "r1", report }]);
     render(<RunPanel onClose={() => {}} />);

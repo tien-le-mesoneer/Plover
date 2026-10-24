@@ -1,5 +1,7 @@
 // The only module that talks to the backend (fetch + WebSocket).
 import type {
+  ResolvedUrlBody,
+  ResolvedUrlDto,
   LayoutDto,
   ApiErrorDto,
   CapabilitiesDto,
@@ -101,6 +103,10 @@ export interface ApiClient {
   /** A pasted curl command as a request, plus the options it could not fill in. */
   parseCurl(text: string): Promise<CurlParsedDto>;
   copyCurl(id: string, body: CopyCurlBody): Promise<CurlTextDto>;
+  /** The URL Send would use, variables filled in and secret values masked. */
+  resolvedUrl(id: string, body: ResolvedUrlBody): Promise<ResolvedUrlDto>;
+  /** Shows a request file in the file manager (desktop only). */
+  reveal(collection: string, item: string): Promise<void>;
   /** Writes a new request file; rejects with code `exists` when the name is taken. */
   createRequest(
     id: string,
@@ -257,6 +263,8 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     send: (id, item, draft, env) => call("POST", `${collections(id)}/send`, { item, draft, env }),
     parseCurl: (text) => call("POST", "/curl/parse", { text }),
     copyCurl: (id, body) => call("POST", `${collections(id)}/curl`, body),
+    resolvedUrl: (id, body) => call("POST", `${collections(id)}/resolved-url`, body),
+    reveal: (collection, item) => call("POST", "/native/reveal", { collection, item }),
     createRequest: (id, folder, name, request) =>
       call("POST", `${collections(id)}/requests/new`, { folder, name, request }),
     previewHar: (id, har) => call("POST", `${collections(id)}/import/har/preview`, { har }),

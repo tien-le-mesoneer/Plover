@@ -5,7 +5,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use plover_core::secrets::SecretBackend;
 
-use super::dto::{CapabilitiesDto, PickedFolderDto, SaveReportBody, SavedFileDto};
+use super::dto::{CapabilitiesDto, PickedFolderDto, RevealBody, SaveReportBody, SavedFileDto};
 use super::extract::ApiJson;
 use crate::error::ApiError;
 use crate::native::NativeHost;
@@ -18,6 +18,7 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<CapabilitiesDto
         native_picker: native,
         open_external: native,
         native_save: native,
+        reveal: native,
         secret_backend: match state.workspace.secret_backend() {
             SecretBackend::Keychain => "keychain",
             SecretBackend::Memory => "memory",
@@ -72,4 +73,22 @@ pub async fn save_report(
     Ok(Json(SavedFileDto {
         path: path.map(|p| p.to_string_lossy().into_owned()),
     }))
+}
+
+/// Shows a request file in the file manager. The item must be inside the collection.
+pub async fn reveal(
+    State(state): State<AppState>,
+    ApiJson(body): ApiJson<RevealBody>,
+) -> Result<StatusCode, ApiError> {
+    let host = host(&state)?;
+    let open = super::open_collection(&state, &body.collection)?;
+    let path = plover_core::store::resolve_item_path(&open.collection().root, &body.item)
+        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, "bad_item", e.to_string()))?;
+    if !path.is_file() {
+        return Err(ApiError::not_found(format!("`{}` not found", body.item)));
+    }
+    host.reveal(&path)
+        .await
+        .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, "reveal_failed", e))?;
+    Ok(StatusCode::NO_CONTENT)
 }

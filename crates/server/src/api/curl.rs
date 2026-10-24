@@ -5,9 +5,12 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use plover_core::curl::parse_curl;
 use plover_core::request::HttpRequest;
-use plover_core::runner::{SendInput, copy_as_curl};
+use plover_core::runner::{SendInput, copy_as_curl, resolved_url};
 
-use super::dto::{CopyCurlBody, CurlParseBody, CurlParsedDto, CurlTextDto, HttpRequestDto};
+use super::dto::{
+    CopyCurlBody, CurlParseBody, CurlParsedDto, CurlTextDto, HttpRequestDto, ResolvedUrlBody,
+    ResolvedUrlDto,
+};
 use super::extract::{ApiJson, ApiPath};
 use super::open_collection;
 use crate::error::ApiError;
@@ -50,4 +53,30 @@ pub async fn copy(
         contains_secret: copied.contains_secret,
         omitted: copied.omitted,
     }))
+}
+
+/// "Copy resolved URL": the URL Send would use, variables filled in, secrets masked.
+pub async fn resolved(
+    State(state): State<AppState>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(body): ApiJson<ResolvedUrlBody>,
+) -> Result<Json<ResolvedUrlDto>, ApiError> {
+    let open = open_collection(&state, &id)?;
+    if body.item.is_none() && body.draft.is_none() {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "bad_item",
+            "a scratch request needs a draft",
+        ));
+    }
+    let draft = body.draft.map(HttpRequest::from);
+    let (url, masked) = resolved_url(
+        &open,
+        SendInput {
+            item_id: body.item.as_deref(),
+            draft: draft.as_ref(),
+            env: body.env.as_deref(),
+        },
+    )?;
+    Ok(Json(ResolvedUrlDto { url, masked }))
 }
