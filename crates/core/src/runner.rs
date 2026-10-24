@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 
 use std::collections::BTreeSet;
 
+use serde::{Deserialize, Serialize};
+
 use crate::bru::model::{RequestFile, ScopeFile};
 use crate::collection::{Collection, Environment, Item, RequestRef};
 use crate::executor::{ExecError, ExecOptions, ResponseSummary, Session};
@@ -19,6 +21,7 @@ use crate::resolve::{
     PreparedBody, PreparedRequest, ResolveContext, ResolveError, ResolvedRequest,
     environment_values, finalize, initial_vars, prepare,
 };
+use crate::run_record::{RequestDetail, ResponseDetail, status_text};
 use crate::script::{
     AssertResult, ConsoleLine, Flow, NextRequest, ScriptBody, ScriptContext, ScriptEngine,
     ScriptError, ScriptInfo, ScriptLimits, ScriptRequest, ScriptResponse, ScriptVars, Segment,
@@ -158,7 +161,8 @@ pub enum RunEvent {
     Finished { report: RunReport },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RunReport {
     pub passed: usize,
     pub failed: usize,
@@ -167,17 +171,21 @@ pub struct RunReport {
     pub tests_failed: usize,
     pub asserts_passed: usize,
     pub asserts_failed: usize,
+    #[serde(with = "crate::serde_ms")]
     pub elapsed: Duration,
 }
 
-/// What happened to one request, apart from the response body.
-#[derive(Debug, Clone, PartialEq, Default)]
+/// What happened to one request.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RequestOutcome {
     /// `None` when the request was not sent or the transport failed.
     pub status: Option<u16>,
     /// The response time.
+    #[serde(with = "crate::serde_ms")]
     pub elapsed: Duration,
     /// The whole request in a run, scripts included (Bruno's `runDuration`).
+    #[serde(with = "crate::serde_ms")]
     pub duration: Duration,
     pub size: usize,
     pub tests: Vec<TestResult>,
@@ -186,6 +194,10 @@ pub struct RequestOutcome {
     pub script_error: Option<ScriptFailure>,
     /// Requests scripts sent with `bru.sendRequest` or `axios`.
     pub scripted_requests: Vec<ScriptedRequest>,
+    /// The request as sent; `None` when it was never sent (skipped, pre-request failure).
+    pub request: Option<RequestDetail>,
+    /// The response; `None` when there was none (also after a transport error).
+    pub response: Option<ResponseDetail>,
 }
 
 impl RequestOutcome {
@@ -213,13 +225,14 @@ fn plural(n: usize) -> &'static str {
     if n == 1 { "" } else { "s" }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScriptFailure {
     pub phase: ScriptPhase,
     pub error: ScriptError,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ScriptPhase {
     PreRequest,
     PostResponse,
@@ -740,6 +753,7 @@ impl Exec<'_> {
                 return executed;
             }
         };
+        executed.outcome.request = Some(RequestDetail::of(&resolved));
         started(&request.name, &resolved);
         let mut response = match self.session.send(&resolved).await {
             Ok(response) => response,
@@ -829,6 +843,7 @@ impl Exec<'_> {
         }
 
         save(state, &script_ctx.vars);
+        executed.outcome.response = Some(ResponseDetail::of(&response, &resolved.url));
         executed.response = Some(response);
         executed
     }
@@ -898,11 +913,7 @@ fn apply_script_request(p: &mut PreparedRequest, s: &ScriptRequest) {
 fn script_response(res: &ResponseSummary, url: &str) -> ScriptResponse {
     ScriptResponse {
         status: res.status,
-        status_text: reqwest::StatusCode::from_u16(res.status)
-            .ok()
-            .and_then(|s| s.canonical_reason())
-            .unwrap_or_default()
-            .to_owned(),
+        status_text: status_text(res.status),
         headers: res.headers.clone(),
         body: String::from_utf8_lossy(&res.body).into_owned(),
         response_time_ms: res.elapsed.as_millis() as u64,

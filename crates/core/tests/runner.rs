@@ -294,3 +294,227 @@ async fn delay_waits_between_requests_not_after_the_last() {
     run_all(one.path(), &opts).await.0.unwrap();
     assert!(started.elapsed() < std::time::Duration::from_millis(290));
 }
+
+mod detail {
+    use super::*;
+    use plover_core::run_record::{BodyDetail, MAX_DETAIL_BODY, PartDetail};
+    use plover_core::runner::RequestOutcome;
+
+    fn env(root: &Path, host: &str) {
+        write(
+            root,
+            "environments/local.bru",
+            &format!("vars {{\n  host: {host}\n  x: 1\n}}\n"),
+        );
+    }
+
+    /// The outcome of the only request of the run.
+    async fn only_outcome(root: &Path) -> RequestOutcome {
+        let (_, events) = run_all(root, &env_opts()).await;
+        events
+            .into_iter()
+            .find_map(|e| match e {
+                RunEvent::Passed { outcome, .. } | RunEvent::Failed { outcome, .. } => {
+                    Some(outcome)
+                }
+                _ => None,
+            })
+            .expect("a finished request")
+    }
+
+    #[tokio::test]
+    async fn run_keeps_request_and_response_detail() {
+        let server = MockServer::start().await;
+        Mock::given(path("/p"))
+            .respond_with(
+                ResponseTemplate::new(201)
+                    .insert_header("x-r", "y")
+                    .set_body_string("ok"),
+            )
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        collection(root);
+        env(root, &server.uri());
+        write(
+            root,
+            "p.bru",
+            "meta {\n  name: p\n  type: http\n  seq: 1\n}\n\npost {\n  url: {{host}}/p\n  body: json\n  auth: none\n}\n\nbody:json {\n  {\"a\":\"{{x}}\"}\n}\n",
+        );
+        let outcome = only_outcome(root).await;
+        let request = outcome.request.expect("request detail");
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.url, format!("{}/p", server.uri()));
+        assert!(
+            request
+                .headers
+                .iter()
+                .any(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+        );
+        assert!(
+            matches!(&request.body, BodyDetail::Text { text, truncated: false, .. } if text == "{\"a\":\"1\"}"),
+            "{:?}",
+            request.body
+        );
+        let response = outcome.response.expect("response detail");
+        assert_eq!(response.status, 201);
+        assert_eq!(response.status_text, "Created");
+        assert!(
+            response
+                .headers
+                .contains(&("x-r".to_owned(), "y".to_owned()))
+        );
+        assert_eq!(
+            response.body,
+            BodyDetail::Text {
+                text: "ok".into(),
+                size: 2,
+                truncated: false
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn set_body_is_what_detail_shows() {
+        let server = MockServer::start().await;
+        Mock::given(path("/a"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("orig"))
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        collection(root);
+        env(root, &server.uri());
+        write(
+            root,
+            "a.bru",
+            &format!(
+                "{}\nscript:post-response {{\n  res.setBody({{b: 2}});\n}}\n",
+                request("a", 1)
+            ),
+        );
+        let outcome = only_outcome(root).await;
+        assert!(
+            matches!(&outcome.response.unwrap().body, BodyDetail::Text { text, .. } if text == "{\"b\":2}")
+        );
+    }
+
+    #[tokio::test]
+    async fn transport_error_keeps_request_detail() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        collection(root);
+        env(root, "http://127.0.0.1:9");
+        write(root, "a.bru", &request("a", 1));
+        let outcome = only_outcome(root).await;
+        assert!(outcome.request.is_some());
+        assert!(outcome.response.is_none());
+    }
+
+    #[tokio::test]
+    async fn pre_request_error_has_no_detail() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        collection(root);
+        env(root, "http://127.0.0.1:9");
+        write(
+            root,
+            "a.bru",
+            &format!(
+                "{}\nscript:pre-request {{\n  throw new Error(\"x\");\n}}\n",
+                request("a", 1)
+            ),
+        );
+        let outcome = only_outcome(root).await;
+        assert!(outcome.request.is_none());
+        assert!(outcome.response.is_none());
+    }
+
+    #[tokio::test]
+    async fn binary_response_is_base64() {
+        let server = MockServer::start().await;
+        Mock::given(path("/a"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0xff, 0x00, 0x01]))
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        collection(root);
+        env(root, &server.uri());
+        write(root, "a.bru", &request("a", 1));
+        let outcome = only_outcome(root).await;
+        assert_eq!(
+            outcome.response.unwrap().body,
+            BodyDetail::Base64 {
+                data: "/wAB".into(),
+                size: 3,
+                truncated: false
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn large_body_is_capped() {
+        let server = MockServer::start().await;
+        Mock::given(path("/a"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string("a".repeat(MAX_DETAIL_BODY + 10)),
+            )
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        collection(root);
+        env(root, &server.uri());
+        write(root, "a.bru", &request("a", 1));
+        let outcome = only_outcome(root).await;
+        match outcome.response.unwrap().body {
+            BodyDetail::Text {
+                text,
+                size,
+                truncated,
+            } => {
+                assert_eq!(size, MAX_DETAIL_BODY + 10);
+                assert!(truncated);
+                assert_eq!(text.len(), MAX_DETAIL_BODY);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn multipart_file_part_keeps_only_name() {
+        let server = MockServer::start().await;
+        Mock::given(path("/a"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        collection(root);
+        env(root, &server.uri());
+        write(root, "files/upload.txt", "FILE-BYTES-0123");
+        write(
+            root,
+            "a.bru",
+            "meta {\n  name: a\n  type: http\n  seq: 1\n}\n\npost {\n  url: {{host}}/a\n  body: multipartForm\n  auth: none\n}\n\nbody:multipart-form {\n  note: hi\n  doc: @file(files/upload.txt)\n}\n",
+        );
+        let outcome = only_outcome(root).await;
+        let body = outcome.request.unwrap().body;
+        let BodyDetail::Multipart { parts } = &body else {
+            panic!("{body:?}");
+        };
+        assert!(
+            parts.iter().any(
+                |p| matches!(p, PartDetail::File { file_name, .. } if file_name == "upload.txt")
+            )
+        );
+        assert!(
+            parts
+                .iter()
+                .any(|p| matches!(p, PartDetail::Text { value, .. } if value == "hi"))
+        );
+        assert!(!format!("{body:?}").contains("FILE-BYTES"));
+    }
+}
