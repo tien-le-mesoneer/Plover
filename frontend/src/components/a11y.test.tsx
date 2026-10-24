@@ -148,3 +148,23 @@ describe("cancel button", () => {
     expect(document.activeElement).toBe(button);
   });
 });
+
+describe("quick open", () => {
+  it("is a labelled dialog with a combobox that points at the active option", async () => {
+    const { QuickOpen } = await import("./QuickOpen");
+    useWorkspace.setState({
+      trees: {
+        c1: { ...tree, children: [{ kind: "request", id: "a.bru", name: "list users", method: "GET", seq: null, error: null, children: null }] },
+      },
+    });
+    render(<QuickOpen open onClose={() => {}} />);
+    const box = screen.getByRole("combobox");
+    fireEvent.change(box, { target: { value: "list" } });
+    const listbox = screen.getByRole("listbox");
+    expect(box.getAttribute("aria-controls")).toBe(listbox.id);
+    expect(box.getAttribute("aria-expanded")).toBe("true");
+    const option = within(listbox).getByRole("option");
+    expect(box.getAttribute("aria-activedescendant")).toBe(option.id);
+    expect(screen.getByRole("dialog", { name: "Quick open" })).toBeTruthy();
+  });
+});

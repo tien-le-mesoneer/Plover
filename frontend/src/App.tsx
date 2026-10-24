@@ -9,6 +9,7 @@ import { closeTabWithConfirm } from "./components/RequestTabs";
 import { EnvSelector } from "./components/EnvSelector";
 import { RequestEditor } from "./components/request/RequestEditor";
 import { RequestTabs } from "./components/RequestTabs";
+import { QuickOpen } from "./components/QuickOpen";
 import { RunTab } from "./components/run/RunTab";
 import { SaveRequestDialog } from "./components/SaveRequestDialog";
 import { Sidebar } from "./components/Sidebar";
@@ -29,6 +30,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
     useWorkspace();
   const anyDirty = useTabs((s) => s.tabs.some((t) => s.isDirty(t.key)));
   const [confirmReload, setConfirmReload] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const startRun = useRuns((s) => s.start);
   const tab = tabs.find((t) => t.key === active) ?? null;
   const runTab = runTabs.find((t) => t.key === active) ?? null;
@@ -79,8 +81,9 @@ export default function App({ hasToken }: { hasToken: boolean }) {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [anyDirty]);
 
-  // App shortcuts: Cmd/Ctrl+S save, Cmd/Ctrl+Enter send, Cmd/Ctrl+W close the tab.
-  // Monaco handles Cmd/Ctrl+Enter itself and dispatches "plover:send" (see CodeEditor).
+  // App shortcuts: Cmd/Ctrl+K quick open, Cmd/Ctrl+S save, Cmd/Ctrl+Enter send,
+  // Cmd/Ctrl+W close the tab, Esc cancel the running send. Monaco handles Cmd/Ctrl+Enter
+  // and Cmd/Ctrl+K itself and dispatches "plover:send" / "plover:quick-open" (see CodeEditor).
   // Browsers reserve Cmd/Ctrl+W for closing the window and never deliver it to the
   // page; it works in the desktop app and in browsers that pass it through.
   useEffect(() => {
@@ -94,7 +97,10 @@ export default function App({ hasToken }: { hasToken: boolean }) {
       }
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
       const key = e.key.toLowerCase();
-      if (key === "s") {
+      if (key === "k" && !e.shiftKey) {
+        e.preventDefault();
+        setQuickOpen(true);
+      } else if (key === "s") {
         e.preventDefault();
         if (active) requestSave(active);
       } else if (key === "enter") {
@@ -109,11 +115,14 @@ export default function App({ hasToken }: { hasToken: boolean }) {
     const onSend = () => {
       if (active) void send(active);
     };
+    const onQuickOpen = () => setQuickOpen(true);
     window.addEventListener("keydown", onKey);
     window.addEventListener("plover:send", onSend);
+    window.addEventListener("plover:quick-open", onQuickOpen);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("plover:send", onSend);
+      window.removeEventListener("plover:quick-open", onQuickOpen);
     };
   }, [active, requestSave, send, cancel]);
 
@@ -143,6 +152,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
         )}
         <EnvSelector collectionId={collectionId} />
       </header>
+      <QuickOpen key={String(quickOpen)} open={quickOpen} onClose={() => setQuickOpen(false)} />
       {saveDialog && <SaveRequestDialog tabKey={saveDialog} onClose={closeSaveDialog} />}
       {confirmReload && (
         <Modal title="Reload window" onDismiss={() => setConfirmReload(false)}>

@@ -43,6 +43,8 @@ export interface TabsState {
   /** Run tabs, after the request tabs in the tab strip; they share `active`. */
   runTabs: RunTab[];
   active: string | null;
+  /** Request tab keys opened during this page life, newest first (quick open). */
+  recent: string[];
   /** The scratch tab whose "Save request" dialog is open. */
   saveDialog: string | null;
   /** Save, or for a scratch tab open the dialog that picks its folder and name. */
@@ -129,6 +131,7 @@ export const useTabs = create<TabsState>()((set, get) => {
     tabs: [],
     runTabs: [],
     active: null,
+    recent: [],
     saveDialog: null,
 
     requestSave(key) {
@@ -144,6 +147,7 @@ export const useTabs = create<TabsState>()((set, get) => {
 
     async open(collectionId, item) {
       const key = tabKey(collectionId, item);
+      set((s) => ({ recent: [key, ...s.recent.filter((k) => k !== key)].slice(0, 50) }));
       if (find(key)) {
         set({ active: key });
         return;

@@ -55,6 +55,10 @@ export function CodeEditor({ value, language, readOnly, onChange, height, onRead
     instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () =>
       window.dispatchEvent(new Event("plover:send")),
     );
+    // Cmd/Ctrl+K opens quick open; Monaco's own Cmd+K chords are given up for it.
+    instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () =>
+      window.dispatchEvent(new Event("plover:quick-open")),
+    );
     const sub = instance.onDidChangeModelContent(() => changeHandler.current?.(instance.getValue()));
     const pick = (position: monaco.Position | null) => {
       const model = instance.getModel();

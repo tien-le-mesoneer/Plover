@@ -218,6 +218,14 @@ h4 { margin: 6px 0 2px; font-size: 12px; color: var(--muted); text-transform: up
 .modal-backdrop { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; z-index: 10; }
 .modal { background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 16px; width: min(640px, 92vw); max-height: 85vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
 .modal h3 { margin: 0; }
+.quick-input { width: 100%; font-size: var(--fs-body); padding: 6px 8px; }
+.quick-list { list-style: none; margin: 0; padding: 0; overflow: auto; max-height: 55vh; }
+.quick-list li { display: flex; align-items: baseline; gap: 8px; padding: 4px 8px; cursor: pointer; border-radius: var(--radius); }
+.quick-list li:hover { background: var(--bg-2); }
+.quick-list li.selected { background: var(--bg-3); box-shadow: inset 2px 0 var(--focus); }
+.quick-list .badge { min-width: 4.5em; font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+.quick-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.quick-where { margin-left: auto; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .actions { display: flex; justify-content: flex-end; gap: 6px; }
 
 .response { display: flex; flex-direction: column; flex: 1; min-height: 0; }
