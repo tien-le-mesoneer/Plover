@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-23-dev-ux-design.md` §1, §2, §3, §5, §6 (mockups in `docs/superpowers/specs/2026-10-23-ui-mockups/`; the spec wins where they differ).
 
-**Pending user decision — one-line change:** the Send button colour. The plan puts it behind `--color-send` / `--color-on-send` and defaults to **black fill, white text** (`#111418` / `#ffffff` light; `#e6e8eb` / `#16181c` dark). The alternative is green `#15803d`, which is the same colour as `GET` and 2xx. Changing it is the two token lines in Task 1 and the expected values in `theme.test.ts`.
+**Send colour (user decision):** Tailwind emerald-700 — light `--color-send #047857`, `--color-on-send #ffffff` (5.48:1). It is deliberately a different green from `GET` and 2xx (`#15803d`), so Send never reads as a method label or a status. Claude's call: hover `--color-send-hover #065f46` (emerald-800, 7.68:1 with white); dark theme `--color-send #10b981` (emerald-500) with `--color-on-send #16181c` (7.01:1; white on emerald-500/600 fails 4.5:1) and hover `#34d399` (emerald-400, 9.25:1 with `#16181c`).
 
 **Starts after:** the run-history work (`main`, plan `docs/superpowers/plans/2026-10-23-run-history.md`) and the curl/HAR work (`feat/import-curl-har`, plan `docs/superpowers/plans/2026-10-23-import-curl-har.md`) are both merged into `main`. The data-driven/export plan (`docs/superpowers/plans/2026-10-23-data-driven-and-export.md`, written separately) also puts controls into the Run tab header; see Task 10.
 
@@ -58,19 +58,19 @@ No code. Run this before Task 1, on `main` after both merges.
 **Interfaces:**
 - Produces, as custom properties on `:root` (light) and inside `@media (prefers-color-scheme: dark)` (dark); these are the only colour names components may use:
   - Surfaces and text: `--bg`, `--bg-2`, `--bg-3`, `--fg`, `--muted`, `--placeholder`, `--border`, `--border-strong`, `--focus`.
-  - Send: `--color-send`, `--color-on-send`.
+  - Send: `--color-send`, `--color-on-send`, `--color-send-hover`.
   - Meaning: `--ok`, `--info`, `--warn`, `--err` (status groups 2xx/3xx/4xx/5xx), `--var-defined-bg`.
   - Methods: `--get`, `--post`, `--put`, `--patch`, `--delete`, `--method-other`.
   - Shape and type: `--radius: 3px`, `--font-ui: "IBM Plex Sans", system-ui, sans-serif`, `--font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace`, `--fs-dense: 13px`, `--fs-body: 14px`.
-- Light values (spec §1): `--bg #ffffff`, `--bg-2 #f6f7f8`, `--fg #111418`, `--muted #5f6670`, `--border #e3e5e8`, `--color-send #111418`, `--color-on-send #ffffff`, `--get #15803d`, `--post #b45309`, `--put #1d4ed8`, `--patch #7c3aed`, `--delete #b91c1c`, `--ok #15803d`, `--warn #b45309`, `--err #b91c1c`. Dark values (spec §1, Claude's call): `--bg #16181c`, `--bg-2 #1d2025`, `--fg #e6e8eb`, `--border #30343a`, `--color-send #e6e8eb`, `--color-on-send #16181c`; dark method colours are today's dark values. The implementer picks `--border-strong`, `--muted`, `--info`, `--bg-3`, `--placeholder` and `--focus` so that the contrast test passes, and writes each ratio in a comment as the current file does.
+- Light values (spec §1): `--bg #ffffff`, `--bg-2 #f6f7f8`, `--fg #111418`, `--muted #5f6670`, `--border #e3e5e8`, `--color-send #047857`, `--color-on-send #ffffff`, `--color-send-hover #065f46`, `--get #15803d`, `--post #b45309`, `--put #1d4ed8`, `--patch #7c3aed`, `--delete #b91c1c`, `--ok #15803d`, `--warn #b45309`, `--err #b91c1c`. Dark values (spec §1, Claude's call): `--bg #16181c`, `--bg-2 #1d2025`, `--fg #e6e8eb`, `--border #30343a`, `--color-send #10b981`, `--color-on-send #16181c`, `--color-send-hover #34d399`; dark method colours are today's dark values. The implementer picks `--border-strong`, `--muted`, `--info`, `--bg-3`, `--placeholder` and `--focus` so that the contrast test passes, and writes each ratio in a comment as the current file does.
 - `export function contrast(a: string, b: string): number` in `lib/contrast.ts` (hex in, ratio out).
 - `--accent` / `--accent-fg` are removed. Every former use either becomes `--color-send` (Send only) or a neutral outline.
 - No `box-shadow` except `--focus` rings; popovers use a 1 px `--border-strong` border.
 
 - [ ] **Step 1: Write the failing tests** in `frontend/src/theme.test.ts`. It reads `styles.css` as text (`?raw` import) and parses the two token blocks.
-  - `text_tokens_meet_4_5`: for each theme, `--fg`, `--muted`, `--placeholder`, every method token and `--ok/--info/--warn/--err` against `--bg` and `--bg-2` ≥ 4.5; `--color-on-send` on `--color-send` ≥ 4.5.
+  - `text_tokens_meet_4_5`: for each theme, `--fg`, `--muted`, `--placeholder`, every method token and `--ok/--info/--warn/--err` against `--bg` and `--bg-2` ≥ 4.5; `--color-on-send` on `--color-send` and on `--color-send-hover` ≥ 4.5.
   - `control_borders_meet_3`: `--border-strong` and `--focus` against `--bg` and `--bg-2` ≥ 3.
-  - `send_defaults_to_black`: light `--color-send` is `#111418` and `--color-on-send` is `#ffffff` (the pending decision; update here if it changes).
+  - `send_is_emerald_700`: light `--color-send` is `#047857` and `--color-on-send` is `#ffffff`; `--color-send` differs from `--get` and `--ok` in both themes.
   - `no_raw_colours_outside_tokens`: no `#rgb`, `#rrggbb` or `rgb(` in `styles.css` outside the two token blocks.
   - `fonts_are_local`: `fonts.css` has `@font-face` rules whose `src` are relative `url(./…woff2)`, each with `font-display: swap`.
   - In `check-no-cdn`: a built `dist/` containing `fonts.googleapis.com` fails the check.

@@ -102,8 +102,11 @@ status tokens, with a `prefers-color-scheme: dark` block).
   dividers and `--border-strong` (≥ 3:1) for form controls. Radius ~3 px everywhere. No
   shadows, except one flat 1 px border on popovers and menus.
 - **One accent:** green, used **only** for the Send button (and its focus ring). Every
-  other button is outlined/neutral. Claude's call: accent `#16a34a` with white text fails
-  4.5:1 (3.3:1), so use `#15803d` (5.0:1) for the Send fill.
+  other button is outlined/neutral. User decision: Send is Tailwind emerald-700 `#047857`
+  with white text (5.48:1). It is a different green from GET and 2xx (`#15803d`), so Send
+  never reads as a method label or a status. Claude's call: hover `#065f46` (emerald-800,
+  7.68:1 with white); dark theme Send `#10b981` (emerald-500) with text `#16181c` (7.01:1;
+  white on emerald-500/600 fails 4.5:1), hover `#34d399` (9.25:1).
 - **Method colours (light):** GET `#15803d`, POST `#b45309`, PUT `#1d4ed8`, PATCH
   `#7c3aed`, DELETE `#b91c1c` — all ≥ 4.5:1 on white. Methods are always written out
   (`GET`, `POST`), so colour is never the only signal.
@@ -388,8 +391,8 @@ Order:
   responses that arrived before the cancel.
 - **C2** Esc cancels only when nothing else (modal, palette, Monaco widget, var hover)
   handled it.
-- **C3** Swiss Minimal token values (§1), including Send fill `#15803d` instead of
-  `#16a34a` for contrast, and the dark variant values.
+- **C3** Swiss Minimal token values (§1): Send hover and dark-theme Send values (Send fill
+  `#047857` itself is the user's choice), and the dark variant values.
 - **C4** Sidebar width stored globally in `state.json`; min 180 px, max 50%.
 - **C5** `⋯` menu contents; Save moves into it (⌘S stays).
 - **C6** JSONPath subset; value menu via a tokenizer over the pretty text; collapse
