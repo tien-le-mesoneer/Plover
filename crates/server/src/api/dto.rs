@@ -607,6 +607,8 @@ pub struct RunResultDetailDto {
     pub skip_reason: Option<String>,
     /// `None` when the request was never sent.
     pub request: Option<RequestDetailDto>,
+    /// How the response body was kept (cut at 1 MiB, or omitted), when there was one.
+    pub response_body: Option<BodyDetailDto>,
     pub result: SendResultDto,
 }
 

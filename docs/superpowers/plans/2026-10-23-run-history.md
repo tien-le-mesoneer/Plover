@@ -364,7 +364,7 @@ User decision: the renderers live in core from this task on, so the app's Export
   - History: the History button lists runs with time, source (`app`/`plv`), env and counts; choosing one renders it read-only (no Cancel button) with the same rows; "Clear history" asks for confirmation (existing `Modal`) and then calls `clearRuns`.
   - `a11y.test.tsx`: rows are keyboard-focusable with `aria-selected`; the History menu traps focus like `OpenCollectionPopover` and Esc returns focus to the button.
 - [ ] **Step 2: Run** `cd frontend && npm test` → FAIL.
-- [ ] **Step 3: Implement.** Rows map by event `index`, never by item. The detail pane sits beside or below the table per `docs/ui-ux-review.md` rules (existing tokens, no new colors). `RunPanel` shows the selected run (newest live run by default; an opened history run replaces it until closed).
+- [ ] **Step 3: Implement.** (Added while building: `RunResultDetailDto.responseBody` carries the stored response `BodyDetailDto`, so the pane can say "first 1 MiB" or "not kept"; `RunPanel` takes a `collectionId` and shows History even before the first run, and the top bar gets a "Runs" button to open it.) Rows map by event `index`, never by item. The detail pane sits beside or below the table per `docs/ui-ux-review.md` rules (existing tokens, no new colors). `RunPanel` shows the selected run (newest live run by default; an opened history run replaces it until closed).
 - [ ] **Step 4: Run** `cd frontend && npm run typecheck && npm run lint && npm test`, then `cargo test --workspace` (embedded UI build) → PASS.
 - [ ] **Step 5: Commit** `feat(ui): show run result detail and earlier runs`.
 

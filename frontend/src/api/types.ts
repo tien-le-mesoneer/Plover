@@ -262,7 +262,11 @@ status: string, error: string | null, skipReason: string | null,
 /**
  * `None` when the request was never sent.
  */
-request: RequestDetailDto | null, result: SendResultDto, };
+request: RequestDetailDto | null, 
+/**
+ * How the response body was kept (cut at 1 MiB, or omitted), when there was one.
+ */
+responseBody: BodyDetailDto | null, result: SendResultDto, };
 
 export type RunEventDto = { "type": "accepted", runId: string, recordId: string, } | { "type": "started", runId: string, item: string, name: string, method: string, url: string, } | { "type": "passed", runId: string, 
 /**

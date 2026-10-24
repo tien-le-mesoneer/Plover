@@ -10,7 +10,10 @@ import type {
   KeyValueDto,
   PickedFolderDto,
   RecentDto,
+  RunDto,
   RunEventDto,
+  RunMetaDto,
+  RunResultDetailDto,
   SavedRequestDto,
   SecretsResultDto,
   SendResultDto,
@@ -89,6 +92,13 @@ export interface ApiClient {
     env: string | null,
     onEvent: (e: RunEventDto) => void,
   ): RunHandle;
+  /** Saved runs of a collection (app and `plv`), newest first. */
+  listRuns(id: string): Promise<RunMetaDto[]>;
+  /** A saved run as replayed run events. */
+  getRun(id: string, recordId: string): Promise<RunDto>;
+  /** One result's request and response, masked; live runs answer from memory. */
+  runResult(id: string, recordId: string, index: number): Promise<RunResultDetailDto>;
+  clearRuns(id: string): Promise<void>;
 }
 
 interface Deps {
@@ -195,6 +205,11 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
       call("PUT", `${collections(id)}/environments/${enc(name)}`, { vars, hash }),
     setSecrets: (id, name, values) =>
       call("PUT", `${collections(id)}/environments/${enc(name)}/secrets`, { values }),
+    listRuns: (id) => call("GET", `${collections(id)}/runs`),
+    getRun: (id, recordId) => call("GET", `${collections(id)}/runs/${enc(recordId)}`),
+    runResult: (id, recordId, index) =>
+      call("GET", `${collections(id)}/runs/${enc(recordId)}/results/${index}`),
+    clearRuns: (id) => call("DELETE", `${collections(id)}/runs`),
     startRun(id, item, env, onEvent) {
       const runId = crypto.randomUUID();
       const socket = new Socket(wsUrl(), [`plover.token.${token}`]);

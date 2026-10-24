@@ -222,6 +222,7 @@ fn detail_dto(r: &ResultRecord) -> RunResultDetailDto {
         error: r.error.clone(),
         skip_reason: r.skip_reason.clone(),
         request: o.request.as_ref().map(Into::into),
+        response_body: o.response.as_ref().map(|d| (&d.body).into()),
         result: SendResultDto {
             response,
             tests,

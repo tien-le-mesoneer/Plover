@@ -1,13 +1,21 @@
 import type { RunEventDto, RunReportDto } from "../api/types";
 import { formatDuration, formatSize } from "../lib/format";
-import { useRuns } from "../store/runs";
+import { shownRun, useRuns } from "../store/runs";
 import { CloseIcon } from "./icons";
+import { RunHistoryMenu } from "./RunHistoryMenu";
+import { RunResultDetail } from "./RunResultDetail";
 
 interface Row {
   item: string;
   name: string;
   method: string;
   outcome?: RunEventDto;
+}
+
+/** The result index of a finished row (events carry it; a request run twice has two). */
+function resultIndex(r: Row): number | undefined {
+  const o = r.outcome;
+  return o && (o.type === "passed" || o.type === "failed" || o.type === "skipped") ? o.index : undefined;
 }
 
 function rows(events: RunEventDto[]): Row[] {
@@ -40,16 +48,36 @@ function checks(r: RunReportDto): string {
 
 const RESULT_TEXT = { passed: "✓ Passed", failed: "✗ Failed", skipped: "– Skipped" } as const;
 
-/** The most recent collection run, with live rows and a Cancel button. */
-export function RunPanel({ onClose }: { onClose: () => void }) {
-  const { runs, order, cancel } = useRuns();
-  const run = runs[order[order.length - 1] ?? ""];
-  if (!run) return null;
+/**
+ * The shown collection run (the newest, or one opened from History) with live rows, a
+ * Cancel button, and the detail of the selected row.
+ */
+export function RunPanel({ onClose, collectionId }: { onClose: () => void; collectionId?: string | null }) {
+  const state = useRuns();
+  const { cancel, select, closeHistory } = state;
+  const run = shownRun(state);
+  const historyFor = run?.collectionId ?? collectionId ?? null;
+  if (!run) {
+    return (
+      <section className="run-panel" aria-label="Run">
+        <header>
+          <strong>Runs</strong>
+          <span className="muted">No run in this session</span>
+          <span className="spacer" />
+          {historyFor && <RunHistoryMenu collectionId={historyFor} />}
+          <button className="icon" title="Close run panel" aria-label="Close run panel" onClick={onClose}>
+            <CloseIcon />
+          </button>
+        </header>
+      </section>
+    );
+  }
+  const saved = run.source === "history";
   return (
     <section className="run-panel" aria-label="Run">
       <header>
         <strong>Run: {run.label}</strong>
-        <span className="muted">{run.status}</span>
+        <span className="muted">{saved ? `saved · ${run.status}` : run.status}</span>
         {run.report && (
           <span>
             {run.report.passed} passed, {run.report.failed} failed, {run.report.skipped} skipped
@@ -58,44 +86,64 @@ export function RunPanel({ onClose }: { onClose: () => void }) {
         )}
         {run.error && <span className="err">{run.error}</span>}
         <span className="spacer" />
-        {run.status === "running" && <button onClick={() => cancel(run.runId)}>Cancel</button>}
+        {!saved && run.status === "running" && <button onClick={() => cancel(run.runId)}>Cancel</button>}
+        {saved && <button onClick={closeHistory}>Back to latest run</button>}
+        {historyFor && <RunHistoryMenu collectionId={historyFor} />}
         <button className="icon" title="Close run panel" aria-label="Close run panel" onClick={onClose}>
           <CloseIcon />
         </button>
       </header>
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Result</th>
-            <th scope="col">Method</th>
-            <th scope="col">Name</th>
-            <th scope="col">Status</th>
-            <th scope="col">Time · Size</th>
-            <th scope="col">Checks</th>
-            <th scope="col">Message</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows(run.events).map((r, i) => {
-            const o = r.outcome;
-            return (
-              <tr key={i}>
-                <td className={o?.type ?? "pending"}>
-                  {o?.type === "passed" || o?.type === "failed" || o?.type === "skipped" ? RESULT_TEXT[o.type] : "… Running"}
-                </td>
-                <td className={`badge method-${r.method.toLowerCase()}`}>{r.method}</td>
-                <td>{r.name}</td>
-                <td className="num">{o?.type === "passed" ? o.status : o?.type === "failed" ? (o.status ?? "") : ""}</td>
-                <td className="num">{o?.type === "passed" ? `${formatDuration(o.elapsedMs)} · ${formatSize(o.size)}` : ""}</td>
-                <td className="num">{o && (o.type === "passed" || o.type === "failed") ? testCount(o) : ""}</td>
-                <td className={o?.type === "failed" ? "err message" : "muted message"}>
-                  {o?.type === "failed" ? o.error : o?.type === "skipped" ? o.reason : ""}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div className="run-body">
+        <table aria-label="Run results">
+          <thead>
+            <tr>
+              <th scope="col">Result</th>
+              <th scope="col">Method</th>
+              <th scope="col">Name</th>
+              <th scope="col">Status</th>
+              <th scope="col">Time · Size</th>
+              <th scope="col">Checks</th>
+              <th scope="col">Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows(run.events).map((r, i) => {
+              const o = r.outcome;
+              const index = resultIndex(r);
+              const selectable = index !== undefined;
+              const open = () => index !== undefined && select(run.runId, index);
+              return (
+                <tr
+                  key={i}
+                  className={selectable ? "selectable" : undefined}
+                  tabIndex={selectable ? 0 : undefined}
+                  aria-selected={selectable ? run.selected === index : undefined}
+                  onClick={open}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      open();
+                    }
+                  }}
+                >
+                  <td className={o?.type ?? "pending"}>
+                    {o?.type === "passed" || o?.type === "failed" || o?.type === "skipped" ? RESULT_TEXT[o.type] : "… Running"}
+                  </td>
+                  <td className={`badge method-${r.method.toLowerCase()}`}>{r.method}</td>
+                  <td>{r.name}</td>
+                  <td className="num">{o?.type === "passed" ? o.status : o?.type === "failed" ? (o.status ?? "") : ""}</td>
+                  <td className="num">{o?.type === "passed" ? `${formatDuration(o.elapsedMs)} · ${formatSize(o.size)}` : ""}</td>
+                  <td className="num">{o && (o.type === "passed" || o.type === "failed") ? testCount(o) : ""}</td>
+                  <td className={o?.type === "failed" ? "err message" : "muted message"}>
+                    {o?.type === "failed" ? o.error : o?.type === "skipped" ? o.reason : ""}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <RunResultDetail runId={run.runId} />
+      </div>
     </section>
   );
 }

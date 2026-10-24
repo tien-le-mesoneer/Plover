@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ScriptErrorDto, SendResultDto } from "../api/types";
+import type { BodyDetailDto, RequestDetailDto, ScriptErrorDto, SendResultDto } from "../api/types";
 import { CodeEditor } from "../editor/CodeEditor";
 import { Banner } from "./Banner";
 import { formatDuration, formatSize, prettyBody, statusLine } from "../lib/format";
@@ -21,7 +21,7 @@ export function scriptErrorText(e: ScriptErrorDto): string {
   return `${e.phase} script error${where ? ` (${where})` : ""}: ${what}`;
 }
 
-type View = "body" | "headers" | "tests" | "console";
+type View = "body" | "headers" | "request" | "tests" | "console";
 
 /** Whether the request as a whole passed: script errors and failed checks win over the HTTP status. */
 function outcome(result: SendResultDto): { ok: boolean; text: string } | null {
@@ -37,9 +37,78 @@ interface Props {
   sending: boolean;
   /** Shows the request's scripts (used by the script-error banner). */
   onOpenScript?: () => void;
+  /** The request as sent (a run result): adds a Request tab, and Body becomes Response. */
+  request?: RequestDetailDto | null;
+  /** Replaces the truncation notice, e.g. for a body a run kept only in part. */
+  bodyNote?: string;
 }
 
-export function ResponseViewer({ result, sending, onOpenScript }: Props) {
+/** A stored request body: text, form or multipart fields, or a note. */
+export function BodyDetail({ body }: { body: BodyDetailDto }) {
+  switch (body.kind) {
+    case "none":
+      return <p className="muted">No body</p>;
+    case "text":
+      return (
+        <>
+          <pre className="body-text">{body.text}</pre>
+          {body.truncated && (
+            <p className="muted">
+              Showing the first {formatSize((body.text ?? "").length)} of {formatSize(body.size)}
+            </p>
+          )}
+        </>
+      );
+    case "base64":
+      return <p className="muted">Binary body, {body.size} bytes</p>;
+    case "omitted":
+      return <p className="muted">Body not kept ({body.omitted})</p>;
+    default: {
+      const rows: [string, string][] =
+        body.kind === "form"
+          ? body.fields
+          : body.parts.map((p) => [p.name, p.fileName !== null ? `file ${p.fileName}` : (p.value ?? "")]);
+      return <KeyValueRows rows={rows} label="Body fields" />;
+    }
+  }
+}
+
+function KeyValueRows({ rows, label }: { rows: [string, string][]; label: string }) {
+  return (
+    <table className="headers" aria-label={label}>
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(([k, v], i) => (
+          <tr key={i}>
+            <th scope="row">{k}</th>
+            <td>{v}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function RequestView({ request }: { request: RequestDetailDto }) {
+  return (
+    <div className="request-detail">
+      <p>
+        <code>
+          <span className={`badge method-${request.method.toLowerCase()}`}>{request.method}</span> {request.url}
+        </code>
+      </p>
+      {request.headers.length > 0 && <KeyValueRows rows={request.headers} label="Request headers" />}
+      <BodyDetail body={request.body} />
+    </div>
+  );
+}
+
+export function ResponseViewer({ result, sending, onOpenScript, request, bodyNote }: Props) {
   const failedChecks = result ? testSummary(result.tests, result.asserts) : { passed: 0, total: 0 };
   const hasFailures = failedChecks.passed < failedChecks.total;
   const [view, setView] = useState<View>(hasFailures ? "tests" : "body");
@@ -88,7 +157,7 @@ export function ResponseViewer({ result, sending, onOpenScript }: Props) {
   const tabList: SubTab<View>[] = [
     ...(response
       ? [
-          { id: "body" as const, label: "Body", name: "Response body" },
+          { id: "body" as const, label: request ? "Response" : "Body", name: "Response body" },
           {
             id: "headers" as const,
             label: (
@@ -99,6 +168,9 @@ export function ResponseViewer({ result, sending, onOpenScript }: Props) {
             name: `Response headers, ${response.headers.length}`,
           },
         ]
+      : []),
+    ...(request
+      ? [{ id: "request" as const, label: "Request", name: "Request as sent" }]
       : []),
     {
       id: "tests",
@@ -135,6 +207,8 @@ export function ResponseViewer({ result, sending, onOpenScript }: Props) {
   const extra =
     current === "tests" ? (
       <TestResults tests={result.tests} asserts={result.asserts} />
+    ) : current === "request" && request ? (
+      <RequestView request={request} />
     ) : current === "console" ? (
       <ConsoleOutput lines={result.console} requests={result.scriptedRequests} />
     ) : null;
@@ -192,7 +266,11 @@ export function ResponseViewer({ result, sending, onOpenScript }: Props) {
       </div>
       {tabs}
       {banners}
-      {response.truncated && (
+      {bodyNote ? (
+        <Banner kind="warn" role="status">
+          {bodyNote}
+        </Banner>
+      ) : response.truncated && (
         <Banner kind="warn" role="status">
           {response.sizeComplete
             ? "Showing the first 10 MB of the body."

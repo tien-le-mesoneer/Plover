@@ -115,6 +115,11 @@ export default function App({ hasToken }: { hasToken: boolean }) {
             Open in browser
           </button>
         )}
+        {collectionId && !showRun && (
+          <button type="button" onClick={() => setShowRun(true)}>
+            Runs
+          </button>
+        )}
         <EnvSelector collectionId={collectionId} />
       </header>
       {confirmReload && (
@@ -152,7 +157,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
         <main className="main">
           <RequestTabs />
           {tab ? <RequestEditor key={tab.key} tab={tab} /> : <EmptyState />}
-          {showRun && <RunPanel onClose={() => setShowRun(false)} />}
+          {showRun && <RunPanel collectionId={collectionId} onClose={() => setShowRun(false)} />}
         </main>
       </div>
     </div>

@@ -1,6 +1,15 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HttpRequestDto, SendResultDto, TreeNodeDto } from "../api/types";
+import type { ApiClient } from "../api/client";
+import { api, setApi } from "../api/instance";
+import type {
+  BodyDetailDto,
+  HttpRequestDto,
+  RunEventDto,
+  RunResultDetailDto,
+  SendResultDto,
+  TreeNodeDto,
+} from "../api/types";
 import { useRuns } from "../store/runs";
 import { useTabs } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
@@ -313,5 +322,227 @@ describe("environment editor dismissal (A3)", () => {
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(confirm).toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("run result detail and history", () => {
+  const ok = (index: number, item = "a.bru"): RunEventDto => ({
+    type: "passed",
+    runId: "r1",
+    index,
+    item,
+    status: 200,
+    elapsedMs: 5,
+    size: 2,
+    tests: [],
+    asserts: [],
+    console: [],
+  });
+  const started = (item = "a.bru", name = "a"): RunEventDto => ({
+    type: "started",
+    runId: "r1",
+    item,
+    name,
+    method: "POST",
+    url: "http://h/a",
+  });
+  const body = (b: Partial<BodyDetailDto>): BodyDetailDto => ({
+    kind: "text",
+    text: null,
+    base64: null,
+    fields: [],
+    parts: [],
+    size: 0,
+    truncated: false,
+    omitted: null,
+    ...b,
+  });
+  const detail = (over: Partial<RunResultDetailDto> = {}): RunResultDetailDto => ({
+    index: 0,
+    item: "a.bru",
+    name: "a",
+    status: "pass",
+    error: null,
+    skipReason: null,
+    request: {
+      method: "POST",
+      url: "http://h/a?x=1",
+      headers: [["x-sent", "yes"]],
+      body: body({ text: '{"q":1}', size: 7 }),
+    },
+    responseBody: body({ text: "ok", size: 2 }),
+    result: {
+      response: {
+        status: 200,
+        headers: [["content-type", "text/plain"]],
+        elapsedMs: 5,
+        size: 2,
+        sizeComplete: true,
+        bodyText: "ok",
+        bodyBase64: null,
+        truncated: false,
+      },
+      tests: [],
+      asserts: [],
+      console: [],
+      scriptError: null,
+      scriptedRequests: [],
+      skipped: null,
+    },
+    ...over,
+  });
+  let runResult: ReturnType<typeof vi.fn>;
+
+  const live = (events: RunEventDto[], status = "done") =>
+    useRuns.setState({
+      order: ["r1"],
+      viewing: null,
+      history: {},
+      runs: {
+        r1: { runId: "r1", collectionId: "c1", item: "", label: "all", status, events, recordId: "rec", source: "live" },
+      } as never,
+    });
+
+  beforeEach(() => {
+    runResult = vi.fn(async (_c: string, _r: string, index: number) => detail({ index }));
+    setApi({
+      runResult,
+      listRuns: vi.fn(async () => [
+        {
+          recordId: "rec-old",
+          source: "plv",
+          target: ".",
+          env: "local",
+          startedAtMs: 0,
+          outcome: "completed",
+          report: { passed: 2, failed: 1, skipped: 0, testsPassed: 0, testsFailed: 0, assertsPassed: 0, assertsFailed: 0, elapsedMs: 9 },
+        },
+      ]),
+      getRun: vi.fn(async () => ({
+        meta: { recordId: "rec-old", source: "plv", target: ".", env: "local", startedAtMs: 0, outcome: "completed", report: { passed: 1, failed: 0, skipped: 0, testsPassed: 0, testsFailed: 0, assertsPassed: 0, assertsFailed: 0, elapsedMs: 9 } },
+        label: "saved-col",
+        events: [
+          { type: "started", runId: "rec-old", item: "a.bru", name: "a", method: "GET", url: "u" },
+          { type: "passed", runId: "rec-old", index: 0, item: "a.bru", status: 200, elapsedMs: 5, size: 2, tests: [], asserts: [], console: [] },
+          { type: "finished", runId: "rec-old", report: { passed: 1, failed: 0, skipped: 0, testsPassed: 0, testsFailed: 0, assertsPassed: 0, assertsFailed: 0, elapsedMs: 9 } },
+        ],
+      })),
+      clearRuns: vi.fn(async () => {}),
+    } as unknown as ApiClient);
+  });
+
+  it("clicking a finished row opens the detail with five tabs, and the Request tab shows what was sent", async () => {
+    live([started(), ok(0)]);
+    render(<RunPanel onClose={() => {}} />);
+    const row = within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row")[1]!;
+    await act(async () => {
+      fireEvent.click(row);
+    });
+    const tabs = within(screen.getByRole("tablist", { name: "Response sections" })).getAllByRole("tab");
+    expect(tabs.map((t) => t.textContent)).toEqual(["Response", expect.stringMatching(/^Headers/), "Request", "Tests", "Console"]);
+    fireEvent.click(screen.getByRole("tab", { name: "Request as sent" }));
+    expect(screen.getByText("http://h/a?x=1", { exact: false })).toBeTruthy();
+    expect(screen.getByText("x-sent")).toBeTruthy();
+    expect(screen.getByText('{"q":1}')).toBeTruthy();
+    expect(row.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("Enter on a row opens it; a running row is not selectable", async () => {
+    live([started(), ok(0), started("b.bru", "b")], "running");
+    render(<RunPanel onClose={() => {}} />);
+    const rows = within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row").slice(1);
+    expect(rows[1]!.tabIndex).toBe(-1);
+    expect(rows[1]!.getAttribute("aria-selected")).toBeNull();
+    fireEvent.click(rows[1]!);
+    expect(runResult).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.keyDown(rows[0]!, { key: "Enter" });
+    });
+    expect(runResult).toHaveBeenCalledWith("c1", "rec", 0);
+  });
+
+  it("the second row of a request run twice asks for index 1", async () => {
+    live([started(), ok(0), started(), ok(1)]);
+    render(<RunPanel onClose={() => {}} />);
+    const rows = within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row").slice(1);
+    await act(async () => {
+      fireEvent.click(rows[1]!);
+    });
+    expect(runResult).toHaveBeenCalledWith("c1", "rec", 1);
+  });
+
+  it("a skipped row shows its reason and no tabs", async () => {
+    runResult.mockResolvedValue(detail({ status: "skipped", skipReason: "skipRequest", request: null, responseBody: null }));
+    live([{ type: "skipped", runId: "r1", index: 0, item: "a.bru", reason: "skipRequest" }]);
+    render(<RunPanel onClose={() => {}} />);
+    const rows = within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row").slice(1);
+    await act(async () => {
+      fireEvent.click(rows[0]!);
+    });
+    expect(screen.getByText("Skipped: skipRequest")).toBeTruthy();
+    expect(screen.queryByRole("tablist", { name: "Response sections" })).toBeNull();
+  });
+
+  it("binary, truncated and omitted bodies say so", async () => {
+    const binary = detail({
+      request: { method: "POST", url: "u", headers: [], body: body({ kind: "base64", base64: "/wAB", size: 3 }) },
+      responseBody: body({ text: "aaa", size: 5_000_000, truncated: true }),
+    });
+    runResult.mockResolvedValue(binary);
+    live([started(), ok(0)]);
+    render(<RunPanel onClose={() => {}} />);
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row")[1]!);
+    });
+    expect(screen.getByText(/Showing the first 1 MiB of/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Request as sent" }));
+    expect(screen.getByText("Binary body, 3 bytes")).toBeTruthy();
+    cleanup();
+    runResult.mockResolvedValue(detail({ responseBody: body({ kind: "omitted", omitted: "run size limit", size: 9 }) }));
+    live([started(), ok(0)]);
+    render(<RunPanel onClose={() => {}} />);
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row")[1]!);
+    });
+    expect(screen.getByText("Body not kept (run size limit)")).toBeTruthy();
+  });
+
+  it("History lists saved runs and opens one read-only", async () => {
+    live([started(), ok(0)], "running");
+    render(<RunPanel onClose={() => {}} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "History" }));
+    });
+    const menu = screen.getByRole("dialog", { name: "Run history" });
+    const entry = within(menu).getByRole("button", { name: /plv/ });
+    expect(entry.textContent).toMatch(/collection · local · 2 passed, 1 failed, 0 skipped/);
+    await act(async () => {
+      fireEvent.click(entry);
+    });
+    expect(screen.getByText("Run: saved-col")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Back to latest run" }));
+    expect(screen.getByText("Run: all")).toBeTruthy();
+  });
+
+  it("Clear history asks first", async () => {
+    live([started(), ok(0)]);
+    render(<RunPanel onClose={() => {}} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "History" }));
+    });
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Run history" })).getByRole("button", { name: "Clear history" }));
+    const confirm = screen.getByRole("dialog", { name: "Clear run history" });
+    await act(async () => {
+      fireEvent.click(within(confirm).getByRole("button", { name: "Clear history" }));
+    });
+    expect(api().clearRuns).toHaveBeenCalledWith("c1");
+  });
+
+  it("with no run yet the panel still offers History", () => {
+    useRuns.setState({ order: [], runs: {}, viewing: null, history: {} });
+    render(<RunPanel collectionId="c1" onClose={() => {}} />);
+    expect(screen.getByRole("button", { name: "History" })).toBeTruthy();
   });
 });
