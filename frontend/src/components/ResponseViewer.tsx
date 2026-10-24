@@ -3,6 +3,7 @@ import type { BodyDetailDto, RequestDetailDto, ScriptErrorDto, SendResultDto } f
 import { CodeEditor } from "../editor/CodeEditor";
 import type { monaco } from "../editor/monaco";
 import { Banner } from "./Banner";
+import { foldTargets, renderSlice } from "../lib/body";
 import { downloadBody } from "../lib/download";
 import { formatSize, header, prettyBody } from "../lib/format";
 import { evaluateJsonPath, filterText, type JsonPathResult } from "../lib/jsonpath";
@@ -140,6 +141,7 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
   const [mode, setMode] = useState<BodyMode>("pretty");
   const [filter, setFilter] = useState("");
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const [picked, setPicked] = useState<{ at: { x: number; y: number }; value: ValueAt } | null>(null);
   const bodyInfo = useMemo(() => bodyView(result?.response ?? null), [result]);
 
@@ -147,6 +149,8 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
   // hidden behind a green 200 (state adjusted during render, not in an effect).
   if (result !== shown) {
     setShown(result);
+    setShowAll(false);
+    setPicked(null);
     if (hasFailures) setView("tests");
   }
 
@@ -243,9 +247,14 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
   // A JSON content type with a body that is not JSON (a proxy's HTML error page) shows Raw.
   const shownMode: BodyMode =
     mode === "preview" && !preview ? "pretty" : mode === "pretty" && body.jsonMismatch ? "raw" : mode;
-  const shownText = filtered ?? (shownMode === "raw" ? (response.bodyText ?? "") : body.text);
+  const fullText = filtered ?? (shownMode === "raw" ? (response.bodyText ?? "") : body.text);
+  // At most 1 MiB goes into the editor until "Show all"; Copy and Save use the whole body.
+  const slice = showAll ? { shown: fullText, capped: false, total: fullText.length } : renderSlice(fullText);
+  const shownText = slice.shown;
+  const jsonShown = body.parsed.ok && (filtered !== null || shownMode === "pretty");
+  const folds = jsonShown ? foldTargets(shownText).map((f) => f.startLine) : undefined;
   // The value menu works on the pretty (or filtered) JSON text that is shown.
-  const pickable = body.parsed.ok && (filtered !== null || shownMode === "pretty");
+  const pickable = jsonShown;
   const onPick = (offset: number, at: { x: number; y: number }) => {
     if (!pickable) return;
     const value = jsonPathAt(shownText, offset);
@@ -300,6 +309,11 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
                 canPretty={!body.jsonMismatch}
               />
             )}
+            {slice.capped && shownMode !== "preview" && (
+              <Banner kind="warn" role="status" actions={<button onClick={() => setShowAll(true)}>Show all</button>}>
+                Showing the first {formatSize(slice.shown.length)} of {formatSize(slice.total)}. Copy and Save use the whole body.
+              </Banner>
+            )}
             {shownMode === "preview" && preview ? (
               <BodyPreview response={response} kind={preview} />
             ) : textBody ? (
@@ -310,6 +324,7 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
                   readOnly
                   onReady={(e) => (editor.current = e)}
                   onPick={onPick}
+                  foldLines={folds}
                 />
               </div>
             ) : (

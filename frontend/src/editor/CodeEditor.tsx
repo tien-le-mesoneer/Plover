@@ -18,10 +18,12 @@ export interface CodeEditorProps {
    * screen point under it (for a menu).
    */
   onPick?: (offset: number, at: { x: number; y: number }) => void;
+  /** 1-based start lines of regions to fold each time the value is set (large JSON arrays). */
+  foldLines?: number[];
 }
 
 /** A thin wrapper around a Monaco editor instance. */
-export function CodeEditor({ value, language, readOnly, onChange, height, onReady, onPick }: CodeEditorProps) {
+export function CodeEditor({ value, language, readOnly, onChange, height, onReady, onPick, foldLines }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const changeHandler = useRef(onChange);
@@ -98,6 +100,16 @@ export function CodeEditor({ value, language, readOnly, onChange, height, onRead
     const instance = editor.current;
     if (instance && instance.getValue() !== value) instance.setValue(value);
   }, [value]);
+
+  // Folded once per value (a new array with the same lines must not undo the user's unfold).
+  const foldKey = foldLines?.join(",") ?? "";
+  useEffect(() => {
+    const instance = editor.current;
+    if (!instance || !foldKey) return;
+    // `editor.fold` waits for the folding model; selectionLines are 0-based.
+    const lines = foldKey.split(",").map((l) => Number(l) - 1);
+    instance.trigger("plover", "editor.fold", { levels: 1, selectionLines: lines });
+  }, [value, foldKey]);
 
   useEffect(() => {
     const model = editor.current?.getModel();
