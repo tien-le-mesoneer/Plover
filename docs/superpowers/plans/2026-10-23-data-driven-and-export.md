@@ -40,8 +40,9 @@
 ### Task 1: Data files and the credential list in core
 
 **Files:**
-- Create: `crates/core/src/data_file.rs`, `crates/core/src/credentials.rs`
+- Create: `crates/core/src/data_file.rs`
 - Modify: `crates/core/src/lib.rs`, `crates/core/Cargo.toml` (`csv = "1"`)
+- Already present (from the curl/HAR merge): `crates/core/src/credentials.rs` with `CREDENTIAL_FIELDS` (the same 12 names) and `is_credential_field`; `har.rs` already uses it. Reuse it; do not add a second list.
 - Test: `crates/core/tests/data_file.rs`
 
 **Interfaces:**
@@ -62,12 +63,12 @@
   pub fn columns(rows: &[ValueMap]) -> Vec<String>;
   /// String values of credential-named keys at any depth in every row (for the masker).
   pub fn credential_values(rows: &[ValueMap]) -> Vec<String>;
-  // credentials.rs
-  pub const CREDENTIAL_FIELDS: [&str; 12] = ["password", "passwd", "client_secret", "secret", "token", "access_token", "refresh_token", "id_token", "api_key", "apikey", "assertion", "client_assertion"];
+  // credentials.rs (exists already, consumed here)
+  pub const CREDENTIAL_FIELDS: [&str; 12];
   pub fn is_credential_field(name: &str) -> bool;   // ASCII case-insensitive, exact
   ```
 
-- [ ] **Step 0: Verify the run-history interfaces exist** — `rg -n "pub struct RunRecord|pub struct ResultRecord|pub struct RunRecorder|pub enum RunEnd|pub struct Masker|pub fn secret_strings|pub struct RunHistory|pub struct ReportFilter|pub mod report|LiveRun" crates/` and `ls frontend/src/components/RunResultDetail.tsx frontend/src/components/RunHistoryMenu.tsx`. If any name, signature or path differs from this plan, update this plan before coding. If the curl/HAR branch is merged and already has a credential list in `har.rs`, move it to `credentials.rs` (same list) and make `har.rs` use it instead of creating a second list.
+- [x] **Step 0: Verify the run-history interfaces exist** (checked after the run-history and curl/HAR merges: all names exist; `RunEnd` is in `run_record.rs`, `LiveRun`/`LiveRuns` in `crates/server/src/state.rs`, `RunHistory::load(&CollectionId, &RunId)`; `credentials.rs` already exists — Task 1 reuses it) — `rg -n "pub struct RunRecord|pub struct ResultRecord|pub struct RunRecorder|pub enum RunEnd|pub struct Masker|pub fn secret_strings|pub struct RunHistory|pub struct ReportFilter|pub mod report|LiveRun" crates/` and `ls frontend/src/components/RunResultDetail.tsx frontend/src/components/RunHistoryMenu.tsx`. If any name, signature or path differs from this plan, update this plan before coding. If the curl/HAR branch is merged and already has a credential list in `har.rs`, move it to `credentials.rs` (same list) and make `har.rs` use it instead of creating a second list.
 - [ ] **Step 1: Write the failing tests** in `crates/core/tests/data_file.rs`:
   - `csv_basic`: `"user,pass\nalice,p1\nbob,p2\n"` → 2 rows, `{"user":"alice","pass":"p1"}` …, values are strings.
   - `csv_bom_crlf_quotes_blank_lines` (Review Focus 1): `"\u{feff}a,b\r\n\"x,1\",\"line1\nline2\"\r\n\r\n y , z \r\n"` → rows `[{a:"x,1",b:"line1\nline2"},{a:"y",b:"z"}]` (fields trimmed, blank line skipped); the LF-only version gives equal rows.
@@ -88,7 +89,7 @@
 
 **Files:**
 - Modify: `crates/core/src/vars.rs` (`Scope::Iteration`, `PRECEDENCE`, `VarStack::from_values`), `crates/core/src/script/api.rs` (`ScriptVars.iteration`, `var_stack`), `crates/core/src/script/api.js` (`bru.runner`), `crates/core/src/runner.rs` (`save` copies `iteration` back)
-- Test: `crates/core/tests/vars.rs` (`precedence_matches_bruno`), `crates/core/tests/script_gaps.rs` (or a new `crates/core/tests/iteration_scripts.rs`)
+- Test: the `precedence_matches_bruno` unit test inside `crates/core/src/vars.rs` (there is no `crates/core/tests/vars.rs`), and a new `crates/core/tests/iteration_scripts.rs`
 
 **Interfaces:**
 - Consumes: none from Task 1.
@@ -194,7 +195,7 @@
 - Test: `crates/core/tests/report.rs`
 
 **Interfaces:**
-- Consumes: Task 4 records; run-history `json::render`, `html::render`, `junit::render`, `ReportFilter` (signatures unchanged).
+- Consumes: Task 4 records; run-history `json::render(&RunRecord, &ReportFilter) -> Value`, `html::render(&RunRecord, &ReportFilter) -> String`, `junit::render(&RunRecord) -> String` (no filter), `ReportFilter` (signatures unchanged).
 - Produces: JSON output is an array of `{ iterationIndex, summary, results }`, one per iteration reached, each `summary` counting only its iteration; results also carry `iterationIndex`; no `iterationData` key. HTML has one `<section>` per iteration titled `Iteration N of M` with a `<table>` of the masked row and that iteration's counts, only when there is more than one iteration or a non-empty row. JUnit stays one flat list in run order with Bruno's suite names (no iteration in names).
 
 - [ ] **Step 1: Write the failing tests** in `crates/core/tests/report.rs`:
