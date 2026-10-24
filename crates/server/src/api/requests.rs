@@ -7,9 +7,11 @@ use plover_core::runner::{SendInput, send_one};
 use plover_core::store::{self, ContentHash};
 use serde::Deserialize;
 
+use axum::http::StatusCode;
+
 use super::dto::{
-    HttpRequestDto, ResponseDto, SaveRequestBody, SavedRequestDto, SendBody, SendResultDto,
-    StoredRequestDto, outcome_lists,
+    CreateRequestBody, CreatedRequestDto, HttpRequestDto, ResponseDto, SaveRequestBody,
+    SavedRequestDto, SendBody, SendResultDto, StoredRequestDto, outcome_lists,
 };
 use super::extract::{ApiJson, ApiPath, ApiQuery};
 use super::open_collection;
@@ -54,17 +56,41 @@ pub async fn save(
     }))
 }
 
+/// Writes a new request file (`POST …/requests/new`); 409 `exists` if the name is taken.
+pub async fn create(
+    State(state): State<AppState>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(body): ApiJson<CreateRequestBody>,
+) -> Result<Json<CreatedRequestDto>, ApiError> {
+    let open = open_collection(&state, &id)?;
+    let request = HttpRequest::from(body.request);
+    let (item, stored) = store::create_request(&open.root(), &body.folder, &body.name, &request)?;
+    open.reload()?;
+    Ok(Json(CreatedRequestDto {
+        item,
+        request: HttpRequestDto::from(&stored.value),
+        hash: stored.hash.0,
+    }))
+}
+
 pub async fn send(
     State(state): State<AppState>,
     ApiPath(id): ApiPath<String>,
     ApiJson(body): ApiJson<SendBody>,
 ) -> Result<Json<SendResultDto>, ApiError> {
     let open = open_collection(&state, &id)?;
+    if body.item.is_none() && body.draft.is_none() {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "bad_item",
+            "a scratch request needs a draft",
+        ));
+    }
     let draft = body.draft.map(HttpRequest::from);
     let sent = send_one(
         &open,
         SendInput {
-            item_id: Some(&body.item),
+            item_id: body.item.as_deref(),
             draft: draft.as_ref(),
             env: body.env.as_deref(),
         },

@@ -59,6 +59,7 @@ pub fn routes() -> Router<AppState> {
             "/collections/{id}/requests",
             get(requests::read).put(requests::save),
         )
+        .route("/collections/{id}/requests/new", post(requests::create))
         .route("/collections/{id}/send", post(requests::send))
         .route("/curl/parse", post(curl::parse))
         .route("/collections/{id}/curl", post(curl::copy))

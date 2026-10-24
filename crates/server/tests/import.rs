@@ -225,3 +225,131 @@ mod curl {
         }
     }
 }
+
+mod scratch {
+    use super::*;
+    use wiremock::matchers::{header, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn new_request(url: &str) -> serde_json::Value {
+        json!({
+            "name": "", "seq": 0.0, "kind": "http", "method": "GET", "url": url,
+            "query": [], "pathParams": [], "headers": [], "body": { "mode": "none" },
+            "otherBodies": [], "auth": { "mode": "inherit" }, "varsPre": [], "varsPost": [],
+            "scriptPre": null, "scriptPost": null, "tests": null, "asserts": [],
+            "settings": { "followRedirects": null, "maxRedirects": null, "timeoutMs": null }
+        })
+    }
+
+    #[tokio::test]
+    async fn create_request_then_tree_lists_it() {
+        let dir = folder_auth_collection();
+        let app = app();
+        let id = open(&app, dir.path()).await;
+        let (status, body) = call(
+            &app,
+            "POST",
+            &format!("/api/collections/{id}/requests/new"),
+            Some(json!({ "folder": "secure", "name": "GET orders", "request": new_request("{{host}}/orders") })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["item"], "secure/GET orders.bru");
+        assert_eq!(body["request"]["name"], "GET orders");
+        assert_eq!(body["request"]["seq"], 2.0);
+        assert!(body["hash"].as_str().unwrap().len() == 64);
+        let (_, tree) = call(&app, "GET", &format!("/api/collections/{id}/tree"), None).await;
+        let secure = tree["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == "secure")
+            .unwrap();
+        assert!(
+            secure["children"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["id"] == "secure/GET orders.bru")
+        );
+        let (status, read) = call(
+            &app,
+            "GET",
+            &format!(
+                "/api/collections/{id}/requests?item={}",
+                enc("secure/GET orders.bru")
+            ),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{read}");
+        assert_eq!(read["hash"], body["hash"]);
+    }
+
+    #[tokio::test]
+    async fn create_request_existing_is_409_exists() {
+        let dir = small_collection("https://api.example.test");
+        let app = app();
+        let id = open(&app, dir.path()).await;
+        let before = std::fs::read(dir.path().join("a.bru")).unwrap();
+        let (status, body) = call(
+            &app,
+            "POST",
+            &format!("/api/collections/{id}/requests/new"),
+            Some(json!({ "folder": "", "name": "a", "request": new_request("x") })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert_eq!(body["error"], "exists");
+        assert_eq!(std::fs::read(dir.path().join("a.bru")).unwrap(), before);
+        let (status, body) = call(
+            &app,
+            "POST",
+            &format!("/api/collections/{id}/requests/new"),
+            Some(json!({ "folder": "../out", "name": "a", "request": new_request("x") })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["error"], "bad_item");
+    }
+
+    #[tokio::test]
+    async fn scratch_send_null_item_uses_collection_scope() {
+        let server = MockServer::start().await;
+        Mock::given(path("/scratch"))
+            .and(header("x-col", "1"))
+            .respond_with(ResponseTemplate::new(202).set_body_string("ok"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let dir = small_collection(&server.uri());
+        write(dir.path(), "collection.bru", "headers {\n  x-col: 1\n}\n");
+        let app = app();
+        let id = open(&app, dir.path()).await;
+        let (status, body) = call(
+            &app,
+            "POST",
+            &format!("/api/collections/{id}/send"),
+            Some(json!({ "item": null, "draft": new_request("{{host}}/scratch"), "env": "local" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["response"]["status"], 202);
+    }
+
+    #[tokio::test]
+    async fn scratch_send_null_item_without_draft_is_400() {
+        let dir = small_collection("https://api.example.test");
+        let app = app();
+        let id = open(&app, dir.path()).await;
+        let (status, body) = call(
+            &app,
+            "POST",
+            &format!("/api/collections/{id}/send"),
+            Some(json!({ "item": null })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["error"], "bad_item");
+    }
+}

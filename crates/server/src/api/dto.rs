@@ -474,7 +474,9 @@ pub struct HashDto {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SendBody {
-    pub item: String,
+    /// The request file; `null` sends `draft` as a scratch request (collection scope only).
+    #[serde(default)]
+    pub item: Option<String>,
     #[serde(default)]
     pub draft: Option<HttpRequestDto>,
     #[serde(default)]
@@ -948,6 +950,24 @@ pub struct CurlTextDto {
     pub omitted: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRequestBody {
+    /// The folder ID (`""` is the collection root).
+    pub folder: String,
+    /// The display name; the file name is made from it.
+    pub name: String,
+    pub request: HttpRequestDto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedRequestDto {
+    pub item: String,
+    pub request: HttpRequestDto,
+    pub hash: String,
+}
+
 impl From<&plover_core::curl::CurlNotice> for CurlNoticeDto {
     fn from(n: &plover_core::curl::CurlNotice) -> Self {
         CurlNoticeDto {
@@ -1013,6 +1033,8 @@ pub fn typescript_bindings() -> String {
         CurlParsedDto::decl(&cfg),
         CopyCurlBody::decl(&cfg),
         CurlTextDto::decl(&cfg),
+        CreateRequestBody::decl(&cfg),
+        CreatedRequestDto::decl(&cfg),
     ];
     let mut out = String::from(
         "// Generated from crates/server/src/api by ts-rs. Do not edit.\n\

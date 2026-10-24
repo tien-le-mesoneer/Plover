@@ -180,7 +180,11 @@ export type SavedRequestDto = { request: HttpRequestDto, hash: string, };
 
 export type HashDto = { hash: string, };
 
-export type SendBody = { item: string, draft: HttpRequestDto | null, env: string | null, };
+export type SendBody = { 
+/**
+ * The request file; `null` sends `draft` as a scratch request (collection scope only).
+ */
+item: string | null, draft: HttpRequestDto | null, env: string | null, };
 
 export type SaveEnvironmentBody = { vars: Array<KeyValueDto>, hash: string, };
 
@@ -329,3 +333,15 @@ containsSecret: boolean,
  * What was left out because Plover cannot send it.
  */
 omitted: Array<string>, };
+
+export type CreateRequestBody = { 
+/**
+ * The folder ID (`""` is the collection root).
+ */
+folder: string, 
+/**
+ * The display name; the file name is made from it.
+ */
+name: string, request: HttpRequestDto, };
+
+export type CreatedRequestDto = { item: string, request: HttpRequestDto, hash: string, };
