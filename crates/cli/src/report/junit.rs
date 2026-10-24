@@ -2,12 +2,14 @@
 //! one `<testsuite>` per request, one `<testcase>` per assert and test.
 
 use std::fmt::Write;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
+
+use plover_core::time::iso_utc;
 
 use super::{POST_RESPONSE_SCRIPT_ERROR, RecordStatus, RequestRecord};
 
 pub fn render(records: &[RequestRecord]) -> String {
-    let timestamp = iso_timestamp(SystemTime::now());
+    let timestamp = iso_utc(SystemTime::now());
     let hostname = std::env::var("HOSTNAME")
         .ok()
         .filter(|h| !h.is_empty())
@@ -109,40 +111,9 @@ fn escape(text: &str) -> String {
     out
 }
 
-/// `new Date().toISOString().split('Z')[0]`: UTC, milliseconds, no `Z`.
-pub(super) fn iso_timestamp(now: SystemTime) -> String {
-    let since = now.duration_since(UNIX_EPOCH).unwrap_or_default();
-    let secs = since.as_secs();
-    let (days, rem) = (secs / 86_400, secs % 86_400);
-    // Howard Hinnant's civil_from_days.
-    let z = days as i64 + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}",
-        rem / 3600,
-        rem % 3600 / 60,
-        rem % 60,
-        since.subsec_millis()
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
-
-    #[test]
-    fn timestamp_format() {
-        let t = UNIX_EPOCH + Duration::from_millis(1_761_134_400_123);
-        assert_eq!(iso_timestamp(t), "2025-10-22T12:00:00.123");
-    }
 
     #[test]
     fn escapes_attributes() {

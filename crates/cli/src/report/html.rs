@@ -28,7 +28,7 @@ pub fn render(records: &[RequestRecord], report: &RunReport) -> String {
     let _ = writeln!(
         out,
         "<p class=\"meta\">{} UTC · {:.2} s</p>",
-        super::junit::iso_timestamp(SystemTime::now()),
+        plover_core::time::iso_utc(SystemTime::now()),
         report.elapsed.as_secs_f64()
     );
     let tests = report.tests_passed + report.tests_failed;

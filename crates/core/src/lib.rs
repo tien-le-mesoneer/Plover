@@ -15,5 +15,6 @@ pub mod secrets;
 mod serde_ms;
 pub mod session_host;
 pub mod store;
+pub mod time;
 pub mod vars;
 pub mod workspace;
