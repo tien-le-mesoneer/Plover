@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { BodyDetailDto, RequestDetailDto, ScriptErrorDto, SendResultDto } from "../api/types";
 import { CodeEditor } from "../editor/CodeEditor";
+import type { monaco } from "../editor/monaco";
 import { Banner } from "./Banner";
 import { downloadBody } from "../lib/download";
-import { formatSize, prettyBody } from "../lib/format";
+import { formatSize, header, prettyBody } from "../lib/format";
+import { evaluateJsonPath, filterText, type JsonPathResult } from "../lib/jsonpath";
+import { BodyPreview, previewKind } from "./response/BodyPreview";
+import { BodyToolbar, type BodyMode } from "./response/BodyToolbar";
 import { ConsoleOutput } from "./response/ConsoleOutput";
 import { HeadersTable } from "./response/HeadersTable";
 import { PinnedHeaders } from "./response/PinnedHeaders";
@@ -98,12 +102,41 @@ function RequestView({ request }: { request: RequestDetailDto }) {
   );
 }
 
+interface BodyView {
+  language: ReturnType<typeof prettyBody>["language"];
+  /** Pretty-printed text (JSON indented), or the binary note. */
+  text: string;
+  parsed: { ok: true; value: unknown } | { ok: false };
+  jsonMismatch: boolean;
+}
+
+/** Parses a response body once per result: pretty text, the JSON value, and whether a JSON content type lies. */
+function bodyView(response: SendResultDto["response"]): BodyView | null {
+  if (!response) return null;
+  const pretty = prettyBody(response);
+  const jsonType = (header(response, "content-type") ?? "").toLowerCase().includes("json");
+  let parsed: BodyView["parsed"] = { ok: false };
+  const text = response.bodyText;
+  if (text !== null && (jsonType || /^\s*[[{]/.test(text))) {
+    try {
+      parsed = { ok: true, value: JSON.parse(text) };
+    } catch {
+      parsed = { ok: false };
+    }
+  }
+  return { language: pretty.language, text: pretty.text, parsed, jsonMismatch: jsonType && text !== null && !parsed.ok };
+}
+
 export function ResponseViewer({ result, sending, onOpenScript, request, bodyNote, name }: Props) {
   const failedChecks = result ? testSummary(result.tests, result.asserts) : { passed: 0, total: 0 };
   const hasFailures = failedChecks.passed < failedChecks.total;
   const [view, setView] = useState<View>(hasFailures ? "tests" : "body");
   const [shown, setShown] = useState(result);
   const { note, copy } = useCopy();
+  const [mode, setMode] = useState<BodyMode>("pretty");
+  const [filter, setFilter] = useState("");
+  const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const bodyInfo = useMemo(() => bodyView(result?.response ?? null), [result]);
 
   // A new result with failing checks opens the Tests tab, so the failure is not
   // hidden behind a green 200 (state adjusted during render, not in an effect).
@@ -197,14 +230,27 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
       </div>
     );
   }
-  const body = prettyBody(response);
+  const body = bodyInfo!;
   const textBody = body.language !== "binary";
+  const filterResult: JsonPathResult | null = filter.trim() && body.parsed.ok ? evaluateJsonPath(body.parsed.value, filter) : null;
+  const filtered = filterResult?.ok ? filterText(filterResult) : null;
+  const preview = previewKind(response);
+  // A JSON content type with a body that is not JSON (a proxy's HTML error page) shows Raw.
+  const shownMode: BodyMode =
+    mode === "preview" && !preview ? "pretty" : mode === "pretty" && body.jsonMismatch ? "raw" : mode;
+  const shownText = filtered ?? (shownMode === "raw" ? (response.bodyText ?? "") : body.text);
+  const onFind = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "f" || !editor.current) return;
+    e.preventDefault();
+    editor.current.focus();
+    void editor.current.getAction("actions.find")?.run();
+  };
   return (
-    <div className="response">
+    <div className="response" onKeyDown={onFind}>
       <StatusLine
         result={result}
         note={note}
-        onCopyBody={textBody ? () => void copy(response.bodyText ?? "") : undefined}
+        onCopyBody={textBody ? () => void copy(filtered ?? response.bodyText ?? "") : undefined}
         onSaveBody={() => downloadBody(name ?? "response", response)}
       />
       {tabs}
@@ -225,9 +271,29 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
       {extra ??
         (current === "body" ? (
           <>
-            {textBody ? (
+            {(textBody || preview) && (
+              <BodyToolbar
+                mode={shownMode}
+                onMode={setMode}
+                filter={filter}
+                onFilter={setFilter}
+                filterError={filterResult && !filterResult.ok ? filterResult.error : undefined}
+                isJson={body.parsed.ok}
+                jsonMismatch={body.jsonMismatch}
+                canPreview={preview !== null}
+                canPretty={!body.jsonMismatch}
+              />
+            )}
+            {shownMode === "preview" && preview ? (
+              <BodyPreview response={response} kind={preview} />
+            ) : textBody ? (
               <div className="editor-box">
-                <CodeEditor value={body.text} language={body.language === "text" ? "plaintext" : body.language} readOnly />
+                <CodeEditor
+                  value={shownText}
+                  language={filtered !== null ? "json" : shownMode === "raw" ? "plaintext" : body.language === "text" ? "plaintext" : body.language}
+                  readOnly
+                  onReady={(e) => (editor.current = e)}
+                />
               </div>
             ) : (
               <p className="muted center">{body.text}</p>

@@ -11,17 +11,21 @@ export interface CodeEditorProps {
   onChange?: (value: string) => void;
   /** Editor height in CSS units; defaults to filling the parent. */
   height?: string;
+  /** Called with the editor once it exists (find widget, folding, value clicks). */
+  onReady?: (editor: monaco.editor.IStandaloneCodeEditor) => void;
 }
 
 /** A thin wrapper around a Monaco editor instance. */
-export function CodeEditor({ value, language, readOnly, onChange, height }: CodeEditorProps) {
+export function CodeEditor({ value, language, readOnly, onChange, height, onReady }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const changeHandler = useRef(onChange);
+  const readyHandler = useRef(onReady);
 
   useEffect(() => {
     changeHandler.current = onChange;
-  }, [onChange]);
+    readyHandler.current = onReady;
+  }, [onChange, onReady]);
 
   useEffect(() => {
     if (!host.current) return;
@@ -44,6 +48,7 @@ export function CodeEditor({ value, language, readOnly, onChange, height }: Code
     );
     const sub = instance.onDidChangeModelContent(() => changeHandler.current?.(instance.getValue()));
     editor.current = instance;
+    readyHandler.current?.(instance);
     return () => {
       sub.dispose();
       instance.getModel()?.dispose();
