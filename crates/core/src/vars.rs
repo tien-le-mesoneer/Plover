@@ -70,6 +70,31 @@ pub enum InterpolateError {
 pub struct VarStack {
     /// Lookup order: first layer that has the name wins.
     layers: Vec<ValueMap>,
+    /// Where each layer came from (same length as `layers`), for `entries`.
+    sources: Vec<VarSource>,
+}
+
+/// The scope a variable's value comes from, as the UI names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VarSource {
+    ProcessEnv,
+    Iteration,
+    Runtime,
+    Request,
+    Folder,
+    Environment,
+    Collection,
+}
+
+/// One variable as `{{name}}` would see it: the winning scope and the scopes it hides.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VarEntry {
+    pub name: String,
+    pub source: VarSource,
+    pub value: serde_json::Value,
+    /// Lower scopes that also define the name, highest first, each once.
+    pub shadows: Vec<VarSource>,
 }
 
 impl VarStack {
@@ -107,18 +132,35 @@ impl VarStack {
             Some(collection),
         );
         let mut folders = folders_outer_to_inner;
-        let mut layers = Vec::new();
+        let mut stack = VarStack::default();
+        let mut push = |source: VarSource, layer: ValueMap| {
+            stack.layers.push(layer);
+            stack.sources.push(source);
+        };
         for scope in PRECEDENCE {
             match scope {
-                Scope::Iteration => layers.extend(iteration.take().filter(|m| !m.is_empty())),
-                Scope::Runtime => layers.extend(runtime.take()),
-                Scope::Request => layers.extend(request.take()),
-                Scope::Folder => layers.extend(folders.drain(..).rev()),
-                Scope::Environment => layers.extend(environment.take()),
-                Scope::Collection => layers.extend(collection.take()),
+                Scope::Iteration => {
+                    if let Some(m) = iteration.take().filter(|m| !m.is_empty()) {
+                        push(VarSource::Iteration, m);
+                    }
+                }
+                Scope::Runtime => push(VarSource::Runtime, runtime.take().unwrap_or_default()),
+                Scope::Request => push(VarSource::Request, request.take().unwrap_or_default()),
+                Scope::Folder => {
+                    for f in folders.drain(..).rev() {
+                        push(VarSource::Folder, f);
+                    }
+                }
+                Scope::Environment => push(
+                    VarSource::Environment,
+                    environment.take().unwrap_or_default(),
+                ),
+                Scope::Collection => {
+                    push(VarSource::Collection, collection.take().unwrap_or_default())
+                }
             }
         }
-        VarStack { layers }
+        stack
     }
 
     /// Adds Bruno's `process: { env }` as the highest layer (interpolate-vars.js:64-70), so
@@ -131,8 +173,51 @@ impl VarStack {
                 serde_json::json!({ "env": serde_json::Value::Object(env.clone().into_iter().collect()) }),
             );
             self.layers.insert(0, process);
+            self.sources.insert(0, VarSource::ProcessEnv);
         }
         self
+    }
+
+    /// One entry per name, sorted by name: the winning value and source, and the lower
+    /// sources that also have it. Process env values are listed as `process.env.NAME`.
+    pub fn entries(&self) -> Vec<VarEntry> {
+        let mut out: Vec<VarEntry> = Vec::new();
+        let mut index: HashMap<String, usize> = HashMap::new();
+        for (layer, &source) in self.layers.iter().zip(&self.sources) {
+            let named: Vec<(String, &serde_json::Value)> = if source == VarSource::ProcessEnv {
+                layer
+                    .get("process")
+                    .and_then(|p| p.get("env"))
+                    .and_then(serde_json::Value::as_object)
+                    .into_iter()
+                    .flatten()
+                    .map(|(k, v)| (format!("process.env.{k}"), v))
+                    .collect()
+            } else {
+                layer.iter().map(|(k, v)| (k.clone(), v)).collect()
+            };
+            for (name, value) in named {
+                match index.get(&name) {
+                    Some(&i) => {
+                        let e = &mut out[i];
+                        if e.source != source && !e.shadows.contains(&source) {
+                            e.shadows.push(source);
+                        }
+                    }
+                    None => {
+                        index.insert(name.clone(), out.len());
+                        out.push(VarEntry {
+                            name,
+                            source,
+                            value: value.clone(),
+                            shadows: Vec::new(),
+                        });
+                    }
+                }
+            }
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        out
     }
 
     /// The text a top-level variable interpolates to.

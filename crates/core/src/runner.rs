@@ -1215,6 +1215,19 @@ pub fn resolved_url(
     Ok((url, masked))
 }
 
+/// The variables a send of `input` starts with, before any script runs: runtime and
+/// environment as `send_one` builds them, plus the process environment.
+pub fn preview_stack(
+    open: &OpenCollection,
+    input: &SendInput<'_>,
+) -> Result<crate::vars::VarStack, SendError> {
+    let collection = open.collection();
+    let CopyPrep { vars, .. } = prepare_copy(open, &collection, input)?;
+    Ok(vars
+        .var_stack()
+        .with_process_env(&crate::dotenv::process_env(&collection.root)))
+}
+
 struct CopyPrep {
     prepared: PreparedRequest,
     vars: ScriptVars,

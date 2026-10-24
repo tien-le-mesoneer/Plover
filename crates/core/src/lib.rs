@@ -23,5 +23,6 @@ mod serde_ms;
 pub mod session_host;
 pub mod store;
 pub mod time;
+pub mod var_scan;
 pub mod vars;
 pub mod workspace;
