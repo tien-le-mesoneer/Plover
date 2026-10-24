@@ -3,7 +3,7 @@
 //! wherever it appears in the run (a token a login response returned is masked in that
 //! body too, because a later request sends it as `Authorization`).
 
-use crate::run_record::{BodyDetail, PartDetail, ResultRecord, RunRecord};
+use crate::run_record::{BodyDetail, IterationRecord, PartDetail, ResultRecord, RunRecord};
 use crate::script::ScriptError;
 use crate::vars::ValueMap;
 
@@ -156,6 +156,26 @@ impl Masker {
     pub fn mask_record(&self, record: &mut RunRecord) {
         for r in &mut record.results {
             self.mask_result(r);
+        }
+        for i in &mut record.iterations {
+            self.mask_iteration(i);
+        }
+    }
+
+    /// String values of the row at any depth (data-file credentials are among the
+    /// secrets the caller passed in).
+    pub fn mask_iteration(&self, iteration: &mut IterationRecord) {
+        for value in iteration.data.values_mut() {
+            self.mask_value(value);
+        }
+    }
+
+    fn mask_value(&self, value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::String(s) => self.mask(s),
+            serde_json::Value::Array(items) => items.iter_mut().for_each(|v| self.mask_value(v)),
+            serde_json::Value::Object(map) => map.values_mut().for_each(|v| self.mask_value(v)),
+            _ => {}
         }
     }
 }

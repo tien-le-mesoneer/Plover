@@ -13,6 +13,7 @@ use crate::masking::Masker;
 use crate::resolve::{ResolvedBody, ResolvedPart, ResolvedRequest};
 use crate::runner::{RequestOutcome, RunEvent, RunReport, ScriptPhase};
 use crate::script::ScriptError;
+use crate::vars::ValueMap;
 
 /// Each stored request or response body keeps at most this many bytes.
 pub const MAX_DETAIL_BODY: usize = 1 << 20;
@@ -364,6 +365,9 @@ pub struct RunHeader {
 pub struct ResultRecord {
     /// Position in the run; a request run twice (`setNextRequest`) has two indices.
     pub index: usize,
+    /// Zero-based iteration of a data-driven run; 0 for a plain run.
+    #[serde(default)]
+    pub iteration_index: usize,
     /// Relative to the collection root, `/`-separated.
     pub file: String,
     pub name: String,
@@ -410,6 +414,18 @@ pub struct RunRecord {
     pub outcome: RunOutcome,
     pub report: RunReport,
     pub results: Vec<ResultRecord>,
+    /// The data-file row of each iteration reached, as it was when the iteration ended
+    /// (after `bru.runner.iterationData` changes); masked like everything else.
+    #[serde(default)]
+    pub iterations: Vec<IterationRecord>,
+}
+
+/// One iteration of a run and its data-file row (empty without a data file).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IterationRecord {
+    pub index: usize,
+    pub data: ValueMap,
 }
 
 /// Turns the events of one run into `ResultRecord`s.
@@ -423,6 +439,8 @@ pub struct RunRecorder {
     bodies_used: usize,
     bodies_exhausted: bool,
     start_secrets: Vec<String>,
+    iterations: Vec<IterationRecord>,
+    iteration: usize,
 }
 
 impl RunRecorder {
@@ -436,6 +454,8 @@ impl RunRecorder {
             bodies_used: 0,
             bodies_exhausted: false,
             start_secrets,
+            iterations: Vec::new(),
+            iteration: 0,
         }
     }
 
@@ -454,6 +474,13 @@ impl RunRecorder {
         let mut result = self.results.get(index)?.clone();
         Masker::new(&self.start_secrets, &self.results).mask_result(&mut result);
         Some(result)
+    }
+
+    /// Iteration `index` and its row, masked with the values known so far (for live events).
+    pub fn masked_iteration(&self, index: usize) -> Option<IterationRecord> {
+        let mut iteration = self.iterations.iter().find(|i| i.index == index)?.clone();
+        Masker::new(&self.start_secrets, &self.results).mask_iteration(&mut iteration);
+        Some(iteration)
     }
 
     /// The finished run, masked with the start and end secrets and every header value of
@@ -483,6 +510,7 @@ impl RunRecorder {
             outcome,
             report,
             results: self.results,
+            iterations: self.iterations,
         };
         masker.mask_record(&mut record);
         record
@@ -532,9 +560,21 @@ impl RunRecorder {
                     Some(reason.clone()),
                 ))
             }
-            RunEvent::Finished { .. }
-            | RunEvent::IterationStarted { .. }
-            | RunEvent::IterationFinished { .. } => None,
+            RunEvent::IterationStarted { index, data, .. } => {
+                self.iteration = *index;
+                self.iterations.push(IterationRecord {
+                    index: *index,
+                    data: data.clone(),
+                });
+                None
+            }
+            RunEvent::IterationFinished { index, data } => {
+                if let Some(i) = self.iterations.iter_mut().find(|i| i.index == *index) {
+                    i.data = data.clone();
+                }
+                None
+            }
+            RunEvent::Finished { .. } => None,
         }
     }
 
@@ -573,6 +613,7 @@ impl RunRecorder {
         let index = self.results.len();
         self.results.push(ResultRecord {
             index,
+            iteration_index: self.iteration,
             file,
             name,
             method,

@@ -27,6 +27,7 @@ fn record(root: &str, at_secs: u64) -> RunRecord {
             ..RunReport::default()
         },
         results: Vec::new(),
+        iterations: Vec::new(),
     }
 }
 

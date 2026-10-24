@@ -364,3 +364,73 @@ fn secret_strings_takes_scalars() {
     got.sort();
     assert_eq!(got, ["12345", "text", "true"]);
 }
+
+fn data_recorder(secrets: Vec<String>, row: serde_json::Value) -> RunRecorder {
+    let mut r = RunRecorder::new(
+        Path::new(ROOT),
+        RunHeader {
+            id: RunId::new(UNIX_EPOCH),
+            source: RunSource::Plv,
+            collection_root: ROOT.into(),
+            collection_name: "c".into(),
+            target: ".".into(),
+            env: None,
+            started_at_ms: 0,
+        },
+        secrets,
+    );
+    r.event(&RunEvent::IterationStarted {
+        index: 0,
+        total: 1,
+        data: row.as_object().unwrap().clone().into_iter().collect(),
+    });
+    r
+}
+
+#[test]
+fn credential_column_masked_in_json_body() {
+    let row = json!({"username":"alice-01","password":"pw-SECRET-1"});
+    let rows: Vec<ValueMap> = vec![row.as_object().unwrap().clone().into_iter().collect()];
+    let secrets = plover_core::data_file::credential_values(&rows);
+    let mut r = data_recorder(secrets, row);
+    push(
+        &mut r,
+        outcome(Exchange {
+            request_body: text(r#"{"u":"alice-01","p":"pw-SECRET-1"}"#),
+            ..Exchange::default()
+        }),
+    );
+    let record = r.finish(finished());
+    let body = body_text(&record.results[0].outcome.request.as_ref().unwrap().body);
+    assert_eq!(body, r#"{"u":"alice-01","p":"***"}"#);
+    assert_eq!(record.iterations[0].data["password"], json!("***"));
+    assert_eq!(record.iterations[0].data["username"], json!("alice-01"));
+}
+
+#[test]
+fn secret_value_in_row_masked() {
+    let row = json!({"tenant":"tok-AAAABBBBCCCC","n":{"deep":"x tok-AAAABBBBCCCC y"}});
+    let mut r = data_recorder(vec!["tok-AAAABBBBCCCC".into()], row);
+    push(
+        &mut r,
+        outcome(Exchange {
+            url: "http://h/t/tok-AAAABBBBCCCC",
+            ..Exchange::default()
+        }),
+    );
+    let record = r.finish(finished());
+    assert_eq!(record.iterations[0].data["tenant"], json!("***"));
+    assert_eq!(record.iterations[0].data["n"], json!({"deep":"x *** y"}));
+    assert_eq!(record.results[0].url, "http://h/t/***");
+}
+
+#[test]
+fn masked_iteration_live() {
+    let row = json!({"password":"pw-SECRET-1","user":"u"});
+    let rows: Vec<ValueMap> = vec![row.as_object().unwrap().clone().into_iter().collect()];
+    let r = data_recorder(plover_core::data_file::credential_values(&rows), row);
+    let live = r.masked_iteration(0).unwrap();
+    assert_eq!(live.data["password"], json!("***"));
+    assert_eq!(live.data["user"], json!("u"));
+    assert!(r.masked_iteration(1).is_none());
+}

@@ -20,6 +20,7 @@ fn text(t: &str) -> BodyDetail {
 fn record() -> RunRecord {
     let sent = ResultRecord {
         index: 0,
+        iteration_index: 0,
         file: "a.bru".into(),
         name: "a".into(),
         method: "POST".into(),
@@ -55,6 +56,7 @@ fn record() -> RunRecord {
     };
     let errored = ResultRecord {
         index: 1,
+        iteration_index: 0,
         file: "b.bru".into(),
         name: "b".into(),
         method: "GET".into(),
@@ -116,6 +118,7 @@ fn record() -> RunRecord {
             ..RunReport::default()
         },
         results: vec![sent, errored, text_body],
+        iterations: Vec::new(),
     }
 }
 

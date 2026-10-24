@@ -314,6 +314,7 @@ fn record_round_trips_json() {
             });
             ResultRecord {
                 index,
+                iteration_index: 0,
                 file: "a.bru".into(),
                 name: "a".into(),
                 method: "POST".into(),
@@ -335,6 +336,7 @@ fn record_round_trips_json() {
             ..RunReport::default()
         },
         results,
+        iterations: Vec::new(),
     };
     let json = serde_json::to_string(&record).unwrap();
     let back: RunRecord = serde_json::from_str(&json).unwrap();
@@ -351,4 +353,123 @@ fn run_ids_sort_by_start_time_within_a_second() {
     let mut sorted = ids.clone();
     sorted.sort();
     assert_eq!(sorted, ids);
+}
+
+fn row(v: serde_json::Value) -> plover_core::vars::ValueMap {
+    v.as_object().unwrap().clone().into_iter().collect()
+}
+
+fn passed(iteration: usize, path: &str) -> RunEvent {
+    RunEvent::Passed {
+        iteration,
+        path: Path::new(ROOT).join(path),
+        outcome: outcome(Some(200)),
+    }
+}
+
+#[test]
+fn results_carry_iteration() {
+    let mut r = recorder();
+    for i in 0..2 {
+        r.event(&RunEvent::IterationStarted {
+            index: i,
+            total: 2,
+            data: row(serde_json::json!({"id": i.to_string()})),
+        });
+        for p in ["a.bru", "b.bru"] {
+            r.event(&RunEvent::Started {
+                iteration: i,
+                path: Path::new(ROOT).join(p),
+                name: p.into(),
+                method: "GET".into(),
+                url: "http://h".into(),
+            });
+            r.event(&passed(i, p));
+        }
+        r.event(&RunEvent::IterationFinished {
+            index: i,
+            data: row(serde_json::json!({"id": i.to_string(), "k": "set"})),
+        });
+    }
+    let indices: Vec<_> = r.results().iter().map(|x| x.iteration_index).collect();
+    assert_eq!(indices, [0, 0, 1, 1]);
+    let record = r.finish(plover_core::run_record::RunEnd::Cancelled {
+        end_secrets: Vec::new(),
+    });
+    assert_eq!(record.iterations.len(), 2);
+    assert_eq!(record.iterations[1].index, 1);
+    assert_eq!(
+        record.iterations[1].data,
+        row(serde_json::json!({"id":"1","k":"set"}))
+    );
+}
+
+#[test]
+fn old_record_without_iterations_loads() {
+    let mut r = recorder();
+    r.event(&started("a.bru", "a"));
+    r.event(&passed(0, "a.bru"));
+    let record = r.finish(plover_core::run_record::RunEnd::Cancelled {
+        end_secrets: Vec::new(),
+    });
+    let mut json = serde_json::to_value(&record).unwrap();
+    json.as_object_mut().unwrap().remove("iterations");
+    json["results"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("iterationIndex");
+    let back: RunRecord = serde_json::from_value(json).unwrap();
+    assert!(back.iterations.is_empty());
+    assert_eq!(back.results[0].iteration_index, 0);
+}
+
+#[test]
+fn body_budget_spans_iterations() {
+    let mut r = recorder();
+    let big = "x".repeat(200 * 1024);
+    for i in 0..200 {
+        r.event(&RunEvent::IterationStarted {
+            index: i,
+            total: 200,
+            data: Default::default(),
+        });
+        for p in ["a.bru", "b.bru"] {
+            let mut o = outcome(Some(200));
+            o.response = Some(ResponseDetail {
+                status: 200,
+                status_text: "OK".into(),
+                headers: Vec::new(),
+                body: BodyDetail::Text {
+                    text: big.clone(),
+                    size: big.len(),
+                    truncated: false,
+                },
+                url: "http://h".into(),
+                size: big.len(),
+                size_complete: true,
+            });
+            r.event(&RunEvent::Passed {
+                iteration: i,
+                path: Path::new(ROOT).join(p),
+                outcome: o,
+            });
+        }
+    }
+    let results = r.results();
+    assert_eq!(results.len(), 400);
+    let last = results.last().unwrap();
+    assert!(matches!(
+        &last.outcome.response.as_ref().unwrap().body,
+        BodyDetail::Omitted { reason, .. } if reason == "run size limit"
+    ));
+    let kept = results
+        .iter()
+        .filter(|x| {
+            matches!(
+                x.outcome.response.as_ref().unwrap().body,
+                BodyDetail::Text { .. }
+            )
+        })
+        .count();
+    assert!(kept * 200 * 1024 <= MAX_RUN_BODIES, "{kept}");
 }
