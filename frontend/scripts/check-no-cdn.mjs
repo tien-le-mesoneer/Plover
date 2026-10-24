@@ -1,11 +1,12 @@
 // Fails if the built bundle references a CDN: the UI must work offline.
+// Usage: node scripts/check-no-cdn.mjs [dir]   (defaults to ../dist/)
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const FORBIDDEN = ["cdn.jsdelivr.net", "unpkg.com"];
+const FORBIDDEN = ["cdn.jsdelivr.net", "unpkg.com", "fonts.googleapis.com", "fonts.gstatic.com"];
 // fileURLToPath, not URL.pathname: on Windows pathname is "/D:/…", which breaks fs calls.
-const dist = fileURLToPath(new URL("../dist/", import.meta.url));
+const dist = process.argv[2] ? resolve(process.argv[2]) : fileURLToPath(new URL("../dist/", import.meta.url));
 
 function* files(dir) {
   for (const name of readdirSync(dir)) {

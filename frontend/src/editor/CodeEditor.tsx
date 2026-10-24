@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react";
 import { currentTheme, monaco } from "./monaco";
 
+/** The `--font-mono` stack from styles.css. */
+export const MONO_FONT = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+
 export interface CodeEditorProps {
   value: string;
   language: string;
@@ -30,6 +33,7 @@ export function CodeEditor({ value, language, readOnly, onChange, height }: Code
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
       fontSize: 13,
+      fontFamily: MONO_FONT,
       tabSize: 2,
       theme: currentTheme(),
     });

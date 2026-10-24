@@ -5,6 +5,7 @@ import { setApi } from "./api/instance";
 import { storeToken, takeLaunchCode, takeTokenFromLocation } from "./api/token";
 import App from "./App";
 import { StartupBoundary } from "./components/StartupBoundary";
+import "./assets/fonts/fonts.css";
 import "./styles.css";
 
 /** A launch code (`#code=`) is traded for the token; `#token=` or this tab's stored token also work. */

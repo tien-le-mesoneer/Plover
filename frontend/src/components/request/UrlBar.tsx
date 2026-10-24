@@ -65,7 +65,7 @@ export function UrlBar({ draft, dirty, sending, onEdit, onSend, onSave, onCurl, 
           }));
         }}
       />
-      <button type="submit" className="primary" disabled={sending} title="Send (Enter, Ctrl/Cmd+Enter)">
+      <button type="submit" className="send" disabled={sending} title="Send (Enter, Ctrl/Cmd+Enter)">
         {sending ? "Sending…" : "Send"}
       </button>
       <button type="button" disabled={!dirty} onClick={onSave} title="Save (Ctrl/Cmd+S)">

@@ -31,13 +31,14 @@ monaco.editor.defineTheme("plover-light", {
   base: "vs",
   inherit: true,
   rules: [],
-  colors: { "editor.background": "#ffffff", "editor.lineHighlightBackground": "#f6f7f9" },
+  // Same values as --bg / --bg-2 in styles.css (Monaco cannot read CSS variables).
+  colors: { "editor.background": "#ffffff", "editor.lineHighlightBackground": "#f6f7f8" },
 });
 monaco.editor.defineTheme("plover-dark", {
   base: "vs-dark",
   inherit: true,
   rules: [],
-  colors: { "editor.background": "#1b1d22", "editor.lineHighlightBackground": "#22252b" },
+  colors: { "editor.background": "#16181c", "editor.lineHighlightBackground": "#1d2025" },
 });
 
 const scheme = typeof window !== "undefined" ? window.matchMedia?.("(prefers-color-scheme: dark)") : undefined;
