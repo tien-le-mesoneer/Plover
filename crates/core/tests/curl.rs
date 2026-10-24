@@ -385,3 +385,236 @@ fn cmd_style_curl_never_yields_caret_url() {
         }
     }
 }
+
+// ---- writing
+
+mod writer {
+    use super::*;
+    use plover_core::curl::{CurlBody, CurlCommand, CurlPart, to_curl};
+    use plover_core::request::RequestSettings;
+    use plover_core::resolve::{
+        PreparedBody, PreparedRequest, ResolvedBody, ResolvedPart, ResolvedRequest,
+    };
+
+    fn cmd(method: Method, url: &str, headers: &[(&str, &str)], body: CurlBody) -> CurlCommand {
+        CurlCommand {
+            method,
+            url: url.to_owned(),
+            headers: h(headers),
+            basic_auth: None,
+            body,
+        }
+    }
+
+    #[test]
+    fn writes_posix_shell_format() {
+        let text = to_curl(&cmd(
+            Method::Get,
+            "https://example.test/a",
+            &[("a", "1"), ("b", "2")],
+            CurlBody::None,
+        ));
+        assert_eq!(
+            text,
+            "curl -X GET 'https://example.test/a' \\\n  -H 'a: 1' \\\n  -H 'b: 2'"
+        );
+    }
+
+    #[test]
+    fn single_quote_escaping() {
+        let text = to_curl(&cmd(
+            Method::Get,
+            "https://example.test/",
+            &[("x", "it's")],
+            CurlBody::None,
+        ));
+        assert!(text.contains("-H 'x: it'\\''s'"), "{text}");
+        let (req, _) = parse(&text);
+        assert_eq!(req.headers[0].value, "it's");
+    }
+
+    #[test]
+    fn form_uses_data_urlencode_per_field() {
+        let text = to_curl(&cmd(
+            Method::Post,
+            "https://example.test/f",
+            &[],
+            CurlBody::Form(vec![("a".into(), "1".into()), ("b".into(), "x y&z".into())]),
+        ));
+        assert!(text.contains("  --data-urlencode 'a=1'"), "{text}");
+        assert!(text.contains("  --data-urlencode 'b=x y&z'"), "{text}");
+    }
+
+    fn source(method: Method, headers: &[(&str, &str)], body: Body, auth: Auth) -> HttpRequest {
+        let mut req = HttpRequest::blank();
+        req.method = method;
+        req.url = "https://example.test/r?q=1".into();
+        req.query = vec![kv("q", "1")];
+        req.headers = headers.iter().map(|(n, v)| kv(n, v)).collect();
+        req.body = body;
+        req.auth = auth;
+        req
+    }
+
+    #[test]
+    fn round_trip_each_body_mode() {
+        let file = |name: &str, path: &str, ct: Option<&str>| MultipartField {
+            name: name.into(),
+            value: MultipartValue::Files(vec![path.into()]),
+            enabled: true,
+            content_type: ct.map(str::to_owned),
+        };
+        let text_field = |name: &str, value: &str| MultipartField {
+            name: name.into(),
+            value: MultipartValue::Text(value.into()),
+            enabled: true,
+            content_type: None,
+        };
+        let cases = vec![
+            source(Method::Get, &[("x", "1")], Body::None, Auth::None),
+            source(
+                Method::Post,
+                &[("Content-Type", "application/json")],
+                Body::Json("{\"a\": \"it's\"}".into()),
+                Auth::None,
+            ),
+            source(
+                Method::Put,
+                &[("Content-Type", "text/plain")],
+                Body::Text("line 1\nline 2".into()),
+                Auth::None,
+            ),
+            source(
+                Method::Post,
+                &[("Content-Type", "application/xml")],
+                Body::Xml("<a b='c'/>".into()),
+                Auth::None,
+            ),
+            source(
+                Method::Post,
+                &[],
+                Body::FormUrlEncoded(vec![kv("a", "1"), kv("b", "x y&z=%"), kv("c d", "e")]),
+                Auth::None,
+            ),
+            source(
+                Method::Post,
+                &[],
+                Body::Multipart(vec![
+                    text_field("name", "x"),
+                    text_field("semi", "a;type=b"),
+                    text_field("at", "@not-a-file"),
+                    file("f", "/tmp/a.png", Some("image/png")),
+                    file("g", "rel/b.txt", None),
+                ]),
+                Auth::None,
+            ),
+            source(
+                Method::Delete,
+                &[],
+                Body::None,
+                Auth::Basic {
+                    username: "alice".into(),
+                    password: "p:w'd".into(),
+                },
+            ),
+        ];
+        for src in cases {
+            let text = to_curl(&CurlCommand::from(&src));
+            let (back, notices) = parse(&text);
+            assert!(notices.is_empty(), "{text}\n{notices:?}");
+            assert_eq!(back.method, src.method, "{text}");
+            assert_eq!(back.url, src.url, "{text}");
+            assert_eq!(back.query, src.query, "{text}");
+            assert_eq!(back.headers, src.headers, "{text}");
+            assert_eq!(back.body, src.body, "{text}");
+            assert_eq!(back.auth, src.auth, "{text}");
+        }
+    }
+
+    #[test]
+    fn request_adds_default_content_type_and_bearer() {
+        let mut req = source(
+            Method::Post,
+            &[],
+            Body::Text("hi".into()),
+            Auth::Bearer {
+                token: "{{token}}".into(),
+            },
+        );
+        req.headers.push(KeyValue {
+            name: "off".into(),
+            value: "1".into(),
+            enabled: false,
+            local: false,
+        });
+        let cmd = CurlCommand::from(&req);
+        assert_eq!(
+            cmd.headers,
+            h(&[
+                ("Authorization", "Bearer {{token}}"),
+                ("content-type", "text/plain")
+            ])
+        );
+    }
+
+    #[test]
+    fn from_prepared_keeps_variables() {
+        let prepared = PreparedRequest {
+            method: Method::Post,
+            url: "{{host}}/a".into(),
+            headers: h(&[("x", "{{v}}")]),
+            body: PreparedBody::Form(vec![("a".into(), "{{b}}".into())]),
+            basic_auth: Some(("{{u}}".into(), "{{p}}".into())),
+            path_params: Vec::new(),
+            settings: RequestSettings::default(),
+        };
+        let cmd = CurlCommand::from(&prepared);
+        assert_eq!(cmd.url, "{{host}}/a");
+        assert_eq!(cmd.basic_auth, Some(("{{u}}".into(), "{{p}}".into())));
+        assert_eq!(cmd.body, CurlBody::Form(vec![("a".into(), "{{b}}".into())]));
+    }
+
+    #[test]
+    fn from_resolved_writes_bytes_and_files() {
+        let resolved = ResolvedRequest {
+            method: Method::Post,
+            url: "http://h/a".into(),
+            headers: h(&[("content-type", "application/json")]),
+            body: ResolvedBody::Bytes(b"{\"a\":1}".to_vec()),
+            settings: RequestSettings::default(),
+        };
+        assert_eq!(
+            CurlCommand::from(&resolved).body,
+            CurlBody::Raw("{\"a\":1}".into())
+        );
+        let multipart = ResolvedRequest {
+            body: ResolvedBody::Multipart(vec![
+                ResolvedPart::Text {
+                    name: "a".into(),
+                    value: "1".into(),
+                    content_type: None,
+                },
+                ResolvedPart::File {
+                    name: "f".into(),
+                    path: "/root/x.bin".into(),
+                    content_type: Some("application/octet-stream".into()),
+                },
+            ]),
+            ..resolved
+        };
+        assert_eq!(
+            CurlCommand::from(&multipart).body,
+            CurlBody::Multipart(vec![
+                CurlPart::Text {
+                    name: "a".into(),
+                    value: "1".into()
+                },
+                CurlPart::File {
+                    name: "f".into(),
+                    path: "/root/x.bin".into(),
+                    content_type: Some("application/octet-stream".into())
+                },
+            ])
+        );
+    }
+}

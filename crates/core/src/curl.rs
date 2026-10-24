@@ -7,6 +7,7 @@
 //! `shell-quote`.
 
 use crate::request::{Auth, Body, HttpRequest, KeyValue, Method, MultipartField, MultipartValue};
+use crate::resolve::{PreparedBody, PreparedRequest, ResolvedBody, ResolvedPart, ResolvedRequest};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedCurl {
@@ -914,4 +915,242 @@ impl Builder {
             notices: self.notices,
         })
     }
+}
+
+// ---- writing
+
+/// A request in the shape a curl command can carry.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CurlCommand {
+    pub method: Method,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub basic_auth: Option<(String, String)>,
+    pub body: CurlBody,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CurlBody {
+    None,
+    Raw(String),
+    Form(Vec<(String, String)>),
+    Multipart(Vec<CurlPart>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CurlPart {
+    Text {
+        name: String,
+        value: String,
+    },
+    File {
+        name: String,
+        path: String,
+        content_type: Option<String>,
+    },
+}
+
+/// The request's own headers, auth and body, without collection or folder scopes and
+/// with nothing interpolated. Unsupported auth and body modes are left out.
+impl From<&HttpRequest> for CurlCommand {
+    fn from(req: &HttpRequest) -> CurlCommand {
+        let mut headers: Vec<(String, String)> = Vec::new();
+        let mut basic_auth = None;
+        match &req.auth {
+            Auth::Bearer { token } => {
+                headers.push(("Authorization".into(), format!("Bearer {token}")))
+            }
+            Auth::Basic { username, password } => {
+                basic_auth = Some((username.clone(), password.clone()))
+            }
+            Auth::None | Auth::Inherit | Auth::Unsupported(_) => {}
+        }
+        for kv in req
+            .headers
+            .iter()
+            .filter(|h| h.enabled && !h.name.is_empty())
+        {
+            headers.retain(|(n, _)| *n != kv.name);
+            headers.push((kv.name.clone(), kv.value.clone()));
+        }
+        let default_type = match &req.body {
+            Body::Json(t) if !t.is_empty() => Some("application/json"),
+            Body::Text(_) => Some("text/plain"),
+            Body::Xml(_) => Some("application/xml"),
+            _ => None,
+        };
+        if let Some(ct) = default_type
+            && !headers
+                .iter()
+                .any(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+        {
+            headers.push(("content-type".into(), ct.into()));
+        }
+        let body = match &req.body {
+            Body::Json(t) if t.is_empty() => CurlBody::None,
+            Body::Json(t) | Body::Text(t) | Body::Xml(t) => CurlBody::Raw(t.clone()),
+            Body::FormUrlEncoded(items) => CurlBody::Form(
+                items
+                    .iter()
+                    .filter(|kv| kv.enabled)
+                    .map(|kv| (kv.name.clone(), kv.value.clone()))
+                    .collect(),
+            ),
+            Body::Multipart(fields) => CurlBody::Multipart(multipart_parts(fields)),
+            Body::None | Body::Unsupported(_) => CurlBody::None,
+        };
+        CurlCommand {
+            method: req.method.clone(),
+            url: req.url.clone(),
+            headers,
+            basic_auth,
+            body,
+        }
+    }
+}
+
+/// "As written": collection and folder headers and auth merged, nothing interpolated.
+impl From<&PreparedRequest> for CurlCommand {
+    fn from(req: &PreparedRequest) -> CurlCommand {
+        CurlCommand {
+            method: req.method.clone(),
+            url: req.url.clone(),
+            headers: req.headers.clone(),
+            basic_auth: req.basic_auth.clone(),
+            body: match &req.body {
+                PreparedBody::None => CurlBody::None,
+                PreparedBody::Text(t) => CurlBody::Raw(t.clone()),
+                PreparedBody::Form(items) => CurlBody::Form(items.clone()),
+                PreparedBody::Multipart(fields) => CurlBody::Multipart(multipart_parts(fields)),
+            },
+        }
+    }
+}
+
+/// "With variables filled in": what Send would put on the wire (basic auth is already
+/// an `Authorization` header).
+impl From<&ResolvedRequest> for CurlCommand {
+    fn from(req: &ResolvedRequest) -> CurlCommand {
+        CurlCommand {
+            method: req.method.clone(),
+            url: req.url.clone(),
+            headers: req.headers.clone(),
+            basic_auth: None,
+            body: match &req.body {
+                ResolvedBody::None => CurlBody::None,
+                ResolvedBody::Bytes(b) => CurlBody::Raw(String::from_utf8_lossy(b).into_owned()),
+                ResolvedBody::Form(items) => CurlBody::Form(items.clone()),
+                ResolvedBody::Multipart(parts) => CurlBody::Multipart(
+                    parts
+                        .iter()
+                        .map(|p| match p {
+                            ResolvedPart::Text { name, value, .. } => CurlPart::Text {
+                                name: name.clone(),
+                                value: value.clone(),
+                            },
+                            ResolvedPart::File {
+                                name,
+                                path,
+                                content_type,
+                            } => CurlPart::File {
+                                name: name.clone(),
+                                path: path.to_string_lossy().into_owned(),
+                                content_type: content_type.clone(),
+                            },
+                        })
+                        .collect(),
+                ),
+            },
+        }
+    }
+}
+
+fn multipart_parts(fields: &[MultipartField]) -> Vec<CurlPart> {
+    let mut parts = Vec::new();
+    for field in fields.iter().filter(|f| f.enabled) {
+        match &field.value {
+            MultipartValue::Text(value) => parts.push(CurlPart::Text {
+                name: field.name.clone(),
+                value: value.clone(),
+            }),
+            MultipartValue::Files(paths) => parts.extend(paths.iter().map(|path| CurlPart::File {
+                name: field.name.clone(),
+                path: path.clone(),
+                content_type: field.content_type.clone(),
+            })),
+        }
+    }
+    parts
+}
+
+/// A POSIX shell command: `curl -X METHOD 'url'`, then one option per line with ` \`
+/// continuations. Values are single-quoted.
+pub fn to_curl(cmd: &CurlCommand) -> String {
+    let mut lines = vec![format!(
+        "curl -X {} {}",
+        cmd.method.as_str(),
+        sh_quote(&cmd.url)
+    )];
+    for (name, value) in &cmd.headers {
+        lines.push(format!("-H {}", sh_quote(&format!("{name}: {value}"))));
+    }
+    if let Some((user, pass)) = &cmd.basic_auth {
+        lines.push(format!("-u {}", sh_quote(&format!("{user}:{pass}"))));
+    }
+    match &cmd.body {
+        CurlBody::None => {}
+        CurlBody::Raw(text) => lines.push(format!("--data-raw {}", sh_quote(text))),
+        CurlBody::Form(items) => {
+            for (name, value) in items {
+                // curl encodes only the part after the first `=`; other names go pre-encoded.
+                if !name.is_empty() && name.bytes().all(is_safe_form_name) {
+                    lines.push(format!(
+                        "--data-urlencode {}",
+                        sh_quote(&format!("{name}={value}"))
+                    ));
+                } else {
+                    lines.push(format!(
+                        "--data-raw {}",
+                        sh_quote(&format!("{}={}", url_encode(name), url_encode(value)))
+                    ));
+                }
+            }
+        }
+        CurlBody::Multipart(parts) => {
+            for part in parts {
+                match part {
+                    // `-F` reads `@`/`<` prefixes and `;type=` suffixes; `--form-string` does not.
+                    CurlPart::Text { name, value } => {
+                        let flag = if value.starts_with(['@', '<']) || value.contains(';') {
+                            "--form-string"
+                        } else {
+                            "-F"
+                        };
+                        lines.push(format!("{flag} {}", sh_quote(&format!("{name}={value}"))));
+                    }
+                    CurlPart::File {
+                        name,
+                        path,
+                        content_type,
+                    } => {
+                        let mut spec = format!("{name}=@{path}");
+                        if let Some(ct) = content_type {
+                            spec.push_str(&format!(";type={ct}"));
+                        }
+                        lines.push(format!("-F {}", sh_quote(&spec)));
+                    }
+                }
+            }
+        }
+    }
+    lines.join(" \\\n  ")
+}
+
+fn is_safe_form_name(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'[' | b']')
+}
+
+/// Single-quotes a shell word; `'` becomes `'\''`.
+fn sh_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
 }
