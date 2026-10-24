@@ -15,6 +15,8 @@ use crate::vars::{InterpolateError, InterpolateLimits, ValueMap, VarStack};
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ScriptVars {
+    /// The current data-file row (`bru.runner.iterationData`); empty outside data runs.
+    pub iteration: ValueMap,
     pub runtime: ValueMap,
     pub environment: ValueMap,
     pub collection: ValueMap,
@@ -26,6 +28,7 @@ impl ScriptVars {
     /// The interpolation stack these variables form (Phase 1 precedence).
     pub fn var_stack(&self) -> VarStack {
         VarStack::from_values(
+            self.iteration.clone(),
             self.runtime.clone(),
             self.request.clone(),
             vec![self.folder.clone()],
@@ -45,6 +48,16 @@ pub struct ScriptInfo {
     pub request_name: String,
     /// `bru.getProcessEnv` and `{{process.env.NAME}}`: the process environment and `.env`.
     pub process_env: ValueMap,
+    /// `bru.runner.iterationIndex` / `totalIterations`; `None` for a single send.
+    pub iteration: Option<IterationInfo>,
+}
+
+/// Where a script runs in a data-driven run: zero-based index and iteration count.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IterationInfo {
+    pub index: usize,
+    pub total: usize,
 }
 
 /// The request as scripts see it. Before the request is sent this is the prepared,
@@ -308,6 +321,7 @@ async fn run(
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct Layers {
+    iteration: ValueMap,
     runtime: ValueMap,
     request: ValueMap,
     folder: ValueMap,
@@ -325,6 +339,7 @@ pub(crate) fn interpolate_with_layers(
 ) -> Result<String, InterpolateError> {
     let layers: Layers = serde_json::from_str(layers_json).unwrap_or_default();
     VarStack::from_values(
+        layers.iteration,
         layers.runtime,
         layers.request,
         vec![layers.folder],

@@ -23,9 +23,9 @@ use crate::resolve::{
 };
 use crate::run_record::{RequestDetail, ResponseDetail, status_text};
 use crate::script::{
-    AssertResult, ConsoleLine, Flow, NextRequest, ScriptBody, ScriptContext, ScriptEngine,
-    ScriptError, ScriptInfo, ScriptLimits, ScriptRequest, ScriptResponse, ScriptVars, Segment,
-    TestResult, run_asserts, run_post_response_vars, run_script_with_host,
+    AssertResult, ConsoleLine, Flow, IterationInfo, NextRequest, ScriptBody, ScriptContext,
+    ScriptEngine, ScriptError, ScriptInfo, ScriptLimits, ScriptRequest, ScriptResponse, ScriptVars,
+    Segment, TestResult, run_asserts, run_post_response_vars, run_script_with_host,
 };
 use crate::session_host::{ScriptedRequest, SessionHost};
 use crate::store::{self, StoreError};
@@ -274,6 +274,9 @@ pub struct RunVars {
     pub environment: ValueMap,
     /// Collection variables, including `bru.setCollectionVar` changes.
     pub collection: ValueMap,
+    /// The current data-file row during a data-driven run, with script changes
+    /// (`bru.runner.iterationData.set`); empty otherwise.
+    pub iteration: ValueMap,
 }
 
 impl RunVars {
@@ -296,6 +299,7 @@ impl RunVars {
             .map(|s| string_values(&enabled_map(&s.vars_pre)))
             .unwrap_or_default();
         RunVars {
+            iteration: ValueMap::new(),
             runtime,
             environment,
             collection: collection_vars,
@@ -375,6 +379,7 @@ pub async fn run_with_state(
         engine: &engine,
         env_name: opts.env.as_deref(),
         process_env: crate::dotenv::process_env(&collection.root),
+        iteration: None,
     };
 
     let start = Instant::now();
@@ -560,6 +565,8 @@ struct Exec<'a> {
     env_name: Option<&'a str>,
     /// The process environment and `.env` (`{{process.env.NAME}}`, `bru.getProcessEnv`).
     process_env: ValueMap,
+    /// The iteration being run, in a run; `None` for a single send.
+    iteration: Option<IterationInfo>,
 }
 
 struct Executed {
@@ -687,12 +694,14 @@ impl Exec<'_> {
             }
         };
         vars.collection = state.collection.clone();
+        vars.iteration = state.iteration.clone();
         let info = ScriptInfo {
             env_name: self.env_name.map(str::to_owned),
             collection_name: self.collection.config.name.clone(),
             collection_path: self.collection.root.to_string_lossy().into_owned(),
             request_name: request.name.clone(),
             process_env: self.process_env.clone(),
+            iteration: self.iteration,
         };
 
         let host = SessionHost::new(self.session);
@@ -850,6 +859,7 @@ impl Exec<'_> {
 }
 
 fn save(state: &mut RunVars, vars: &ScriptVars) {
+    state.iteration = vars.iteration.clone();
     state.runtime = vars.runtime.clone();
     state.environment = vars.environment.clone();
     state.collection = vars.collection.clone();
@@ -1176,6 +1186,7 @@ pub async fn send_one_with(
         engine: &engine,
         env_name: input.env,
         process_env: crate::dotenv::process_env(&collection.root),
+        iteration: None,
     };
     let executed = exec
         .execute(&found, input.draft, &mut state, &mut |_, _| {})

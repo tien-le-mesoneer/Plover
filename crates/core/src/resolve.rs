@@ -104,6 +104,7 @@ pub fn initial_vars(
         folder.extend(string_values(&enabled_map(&scope.vars_pre)));
     }
     Ok(ScriptVars {
+        iteration: ValueMap::new(),
         runtime: ctx.runtime.clone(),
         environment: environment_values(ctx),
         collection: ctx

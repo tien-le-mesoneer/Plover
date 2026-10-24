@@ -11,6 +11,8 @@ pub type ValueMap = BTreeMap<String, serde_json::Value>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
+    /// The current data-file row in a data-driven run (`{{column}}`).
+    Iteration,
     Runtime,
     Request,
     Folder,
@@ -18,8 +20,11 @@ pub enum Scope {
     Collection,
 }
 
-/// Highest precedence first. Matches Bruno (`bruno-cli/src/runner/interpolate-vars.js`).
-pub const PRECEDENCE: [Scope; 5] = [
+/// Highest precedence first. Matches Bruno (`bruno-cli/src/runner/interpolate-vars.js`):
+/// data-file row values sit above runtime variables; `process.env` is added on top by
+/// `with_process_env`.
+pub const PRECEDENCE: [Scope; 6] = [
+    Scope::Iteration,
     Scope::Runtime,
     Scope::Request,
     Scope::Folder,
@@ -76,6 +81,7 @@ impl VarStack {
         collection: VarMap,
     ) -> VarStack {
         VarStack::from_values(
+            ValueMap::new(),
             string_values(&runtime),
             string_values(&request),
             folders_outer_to_inner.iter().map(string_values).collect(),
@@ -86,13 +92,15 @@ impl VarStack {
 
     /// Like `new`, with variables that may hold any JSON value.
     pub fn from_values(
+        iteration: ValueMap,
         runtime: ValueMap,
         request: ValueMap,
         folders_outer_to_inner: Vec<ValueMap>,
         environment: ValueMap,
         collection: ValueMap,
     ) -> VarStack {
-        let (mut runtime, mut request, mut environment, mut collection) = (
+        let (mut iteration, mut runtime, mut request, mut environment, mut collection) = (
+            Some(iteration),
             Some(runtime),
             Some(request),
             Some(environment),
@@ -102,6 +110,7 @@ impl VarStack {
         let mut layers = Vec::new();
         for scope in PRECEDENCE {
             match scope {
+                Scope::Iteration => layers.extend(iteration.take().filter(|m| !m.is_empty())),
                 Scope::Runtime => layers.extend(runtime.take()),
                 Scope::Request => layers.extend(request.take()),
                 Scope::Folder => layers.extend(folders.drain(..).rev()),
@@ -485,6 +494,30 @@ mod tests {
     }
 
     #[test]
+    fn iteration_row_beats_runtime_but_not_process_env() {
+        let one = |v: &str| {
+            let mut m = ValueMap::new();
+            m.insert("host".into(), serde_json::json!(v));
+            m
+        };
+        let stack = || {
+            VarStack::from_values(
+                one("row"),
+                one("runtime"),
+                one("request"),
+                vec![one("folder")],
+                one("env"),
+                one("collection"),
+            )
+        };
+        assert_eq!(stack().get("host").as_deref(), Some("row"));
+        let mut env = ValueMap::new();
+        env.insert("X".into(), serde_json::json!("p"));
+        let with_env = stack().with_process_env(&env);
+        assert_eq!(with_env.interpolate("{{process.env.X}}|{{host}}"), "p|row");
+    }
+
+    #[test]
     fn inner_folder_beats_outer() {
         let outer = map(&[("x", "outer")]);
         let inner = map(&[("x", "inner")]);
@@ -650,6 +683,7 @@ mod tests {
         runtime.insert("a.b".into(), serde_json::json!("exact"));
         runtime.insert("a".into(), serde_json::json!({ "b": "path" }));
         let stack = VarStack::from_values(
+            ValueMap::new(),
             runtime,
             ValueMap::new(),
             vec![],

@@ -16,23 +16,49 @@
   const SCOPES = ['runtime', 'environment', 'collection', 'folder', 'request'];
   const vars = input.vars || {};
   for (const scope of SCOPES) vars[scope] = vars[scope] || {};
+  // The data-file row (bru.runner.iterationData). Not a SCOPE: bru.interpolate and
+  // bru.getVar don't see it, but request interpolation and assert right-hand sides do.
+  vars.iteration = vars.iteration || {};
   const info = input.info || {};
 
   // Values go as JSON so `{{obj.path}}` can walk objects (lodash `get`, like Bruno).
-  const layersJson = () => {
+  const layersJson = (withRow) => {
     const layers = {};
     for (const scope of SCOPES) layers[scope] = vars[scope];
+    if (withRow) layers.iteration = vars.iteration;
     layers.process_env = info.processEnv || {};
     return JSON.stringify(layers);
   };
   // bru.js `interpolate`: strings are interpolated, objects via their JSON, anything else as is.
-  const interpolate = (value) => {
+  const interpolateWith = (withRow) => (value) => {
     if (!value) return value;
-    if (typeof value === 'object') return JSON.parse(g.__plvInterpolate(JSON.stringify(value), layersJson()));
+    if (typeof value === 'object') return JSON.parse(g.__plvInterpolate(JSON.stringify(value), layersJson(withRow)));
     if (typeof value !== 'string') return value;
-    return g.__plvInterpolate(value, layersJson());
+    return g.__plvInterpolate(value, layersJson(withRow));
   };
+  const interpolate = interpolateWith(false);
+  // Assert right-hand sides (assert-runtime.js `evaluateRhsOperand`) see the row too.
+  const interpolateWithRow = interpolateWith(true);
   plv.interpolate = interpolate;
+
+  // bru.js IterationDataManager, over vars.iteration so changes go back to the runner.
+  const iterationData = {
+    set: (key, value) => {
+      vars.iteration[key] = value;
+    },
+    // The QuickJS shim (shims/bru.js) hands out copies, so later changes don't show.
+    get: (key) => {
+      const value = key ? vars.iteration[key] : vars.iteration;
+      return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+    },
+    has: (key) => key in vars.iteration,
+    stringify: () => JSON.stringify(vars.iteration),
+    unset: (key) => {
+      // Bruno only deletes truthy values.
+      if (vars.iteration[key]) delete vars.iteration[key];
+    }
+  };
+  const iterationInfo = info.iteration || null;
 
   const VARIABLE_NAME = /^[\w-.]*$/;
   const assertValidVariableName = (key) => {
@@ -108,7 +134,10 @@
       stopExecution: () => {
         flow.stopExecution = true;
       },
-      setNextRequest
+      setNextRequest,
+      iterationData,
+      iterationIndex: iterationInfo ? iterationInfo.index : undefined,
+      totalIterations: iterationInfo ? iterationInfo.total : undefined
     },
     sleep: (ms) => new Promise((resolve) => g.setTimeout(resolve, ms)),
 
@@ -792,16 +821,16 @@
     if (UNARY.includes(operator)) return undefined;
     if (operator === 'in' || operator === 'notIn') {
       if (rhs.startsWith('[') && rhs.endsWith(']')) rhs = rhs.substring(1, rhs.length - 1);
-      return rhs.split(',').map((v) => evaluateTemplateLiteral(interpolate(v.trim()), scope));
+      return rhs.split(',').map((v) => evaluateTemplateLiteral(interpolateWithRow(v.trim()), scope));
     }
     if (operator === 'between') {
-      return rhs.split(',').map((v) => evaluateTemplateLiteral(interpolate(v.trim()), scope)).slice(0, 2);
+      return rhs.split(',').map((v) => evaluateTemplateLiteral(interpolateWithRow(v.trim()), scope)).slice(0, 2);
     }
     if (operator === 'matches' || operator === 'notMatches') {
       if (rhs.startsWith('/') && rhs.endsWith('/')) rhs = rhs.substring(1, rhs.length - 1);
-      return interpolate(rhs);
+      return interpolateWithRow(rhs);
     }
-    return evaluateTemplateLiteral(interpolate(rhs), scope);
+    return evaluateTemplateLiteral(interpolateWithRow(rhs), scope);
   };
   const assertResults = [];
   plv.runAsserts = async () => {
