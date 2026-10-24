@@ -12,14 +12,25 @@
 
 **Starts after:** the run-history work (`main`, `docs/superpowers/plans/2026-10-23-run-history.md`) and the curl/HAR work (`feat/import-curl-har`, `docs/superpowers/plans/2026-10-23-import-curl-har.md`) are merged. **Exception: quick open (Task 3) can be built any time**, even before those merges; it only adds `QuickOpen.tsx`, `lib/fuzzy.ts` and two shortcut lines. The style/layout plan (`docs/superpowers/plans/2026-10-24-ui-style-and-layout.md`) touches the same `UrlBar.tsx` and `KeyValueTable.tsx`; build whichever plan comes second on top of the first, never in parallel branches.
 
-**Pending user decision (not blocking this plan):** the Send button colour, owned by the style/layout plan's `--color-send` token. The Cancel button here is a neutral outline in both cases.
+**Verified on `a8577f0`** (after run history, curl/HAR, data-driven runs and the style/layout plan). Differences from the first draft, applied below:
+
+- API error bodies are `{"error": "<code>", "message": …}`; the frontend's `ApiError.code` reads `error`. There is no `ApiError::conflict` helper: use `ApiError::new(StatusCode::CONFLICT, "cancelled", …)`.
+- The server has no `tokio-util`. The cancel registry holds `Arc<tokio::sync::Notify>` (`notify_one` keeps a permit, so a cancel that lands before the `select!` polls still counts).
+- Server tests use the in-memory secret vault (`AppState::new`); the "keychain secret" test stores its value with `PUT …/environments/{name}/secrets`, so no keychain item is written.
+- `crates/server/src/api/vars.rs` already exists (`set_runtime_var`); Task 5 adds the `/vars` handler to it.
+- `preview_stack` goes in `runner.rs` next to `prepare_copy` and `locate_request` (they are private there), returns `Result<VarStack, SendError>`, and reuses `prepare_copy`'s vars plus `dotenv::process_env`.
+- Folder variables are merged into one `ScriptVars.folder` map, so the hover says "Folder" without a path.
+- `VarSource` also has `Iteration` (never in `/vars`; previews have no data row). Process env entries are named `process.env.<NAME>` and always masked; the frontend looks up the exact placeholder first, then its root name, like `VarStack::lookup`.
+- `masking::collect_header` is private; Task 5 adds `pub fn credential_values` over it.
+- The style plan is in: `--warn`, `--err`, `--var-defined-bg` exist, `UrlBar` has Send plus an `actions` slot (`RequestMenu`), the Send colour is emerald-700. Run tabs are a separate `RunTab` list, so Esc only cancels request tabs.
+- `Modal` stops Escape propagation; App's window listener also skips when `e.defaultPrevented` or an `[aria-modal="true"]` dialog is open.
 
 ## Global Constraints
 
 - Core's send pipeline (`runner::send_one`, `Exec::execute`, `ScriptEngine::run`) does not change for cancel. Cancel works by dropping the future.
 - A cancelled send keeps no runtime or environment variable changes. Cookies stored by responses that arrived before the cancel stay (C1; pinned by a test, not rolled back).
 - Cancel route is idempotent: unknown or finished `send_id` → `204`.
-- Errors: cancelled send → HTTP 409 `code: "cancelled"`; duplicate `send_id` in flight → 409 `code: "duplicate_send"` (C11).
+- Errors: cancelled send → HTTP 409 `error: "cancelled"`; duplicate `send_id` in flight → 409 `error: "duplicate_send"` (C11).
 - `/vars` never runs scripts, sends requests or writes files.
 - Masked in `/vars` (`value: null, masked: true`): environment secrets (`vars:secret` names), every `process.env` value, and runtime values that were also sent in an `Authorization`, `Proxy-Authorization` or `Cookie` header during this server session (exact match, values ≥ 8 characters, the run-history collection rule). The set of sent values lives in memory per collection, never on disk. Other values are shown, cut to 1 KiB (`truncated: true`). No reveal button.
 - Underlines: `defined` subtle tint (`--var-defined-bg`), `setLater` amber dotted, `undefined` red wavy. Scripts and tests editors are not decorated.
@@ -61,12 +72,12 @@ No code. Skip for Task 3 when it is built early.
 - Produces:
   ```rust
   // state.rs
-  pub type SendRegistry = Mutex<HashMap<(String /* collection id */, String /* send id */), CancellationToken>>;
+  pub type SendRegistry = Mutex<HashMap<(String /* collection id */, String /* send id */), Arc<Notify>>>;
   // AppState: pub sends: Arc<SendRegistry>
   // dto.rs
   pub struct SendBody { /* existing */ pub send_id: Option<String> }
   ```
-  `POST /collections/{id}/send/{send_id}/cancel` → `204`. `send_id` must match `^[A-Za-z0-9-]{1,64}$` (else 400 `bad_send_id`). The registry entry is removed by a drop guard when the send ends any way (ok, error, cancel, client disconnect). The choice of `CancellationToken` (tokio-util) vs `oneshot` is the builder's; the type above names the token version.
+  `POST /collections/{id}/send/{send_id}/cancel` → `204`. `send_id` must match `^[A-Za-z0-9-]{1,64}$` (else 400 `bad_send_id`). The registry entry is removed by a drop guard when the send ends any way (ok, error, cancel, client disconnect). 
 
 - [ ] **Step 1: Write the failing tests** in `crates/server/tests/cancel.rs` (wiremock with `set_delay`, server on a temp state dir):
   - `cancel_stops_slow_send_quickly`: send with `send_id: "s1"` to a mock delayed 10 s; cancel after 100 ms → the send returns 409 `cancelled` within 200 ms of the cancel.
@@ -140,7 +151,7 @@ No code. Skip for Task 3 when it is built early.
 ### Task 4: Labelled variable layers and the `setLater` scan in core
 
 **Files:**
-- Modify: `crates/core/src/vars.rs` (labels, `entries`), `crates/core/src/resolve.rs` (a public way to build the stack `send_one` uses, without running scripts), `crates/core/src/lib.rs`
+- Modify: `crates/core/src/vars.rs` (labels, `entries`), `crates/core/src/runner.rs` (`preview_stack`, beside `prepare_copy`), `crates/core/src/lib.rs`
 - Create: `crates/core/src/var_scan.rs`
 - Test: `crates/core/tests/vars.rs` (extend), `crates/core/tests/var_scan.rs`
 
@@ -148,16 +159,16 @@ No code. Skip for Task 3 when it is built early.
 - Produces:
   ```rust
   // vars.rs
-  pub enum VarSource { ProcessEnv, Runtime, Request, Folder, Environment, Collection } // serde camelCase
+  pub enum VarSource { ProcessEnv, Iteration, Runtime, Request, Folder, Environment, Collection } // serde camelCase
   pub struct VarEntry { pub name: String, pub source: VarSource, pub value: serde_json::Value, pub shadows: Vec<VarSource> }
   impl VarStack {
       /// One entry per name, winning source first by precedence (process env on top when set).
       pub fn entries(&self) -> Vec<VarEntry>;
   }
-  // resolve.rs
-  /// The stack a send of `item` (or a scratch draft when `item` is None) would start with,
-  /// before scripts run: runtime and environment exactly as `send_one` builds them.
-  pub fn preview_stack(open: &OpenCollection, item: Option<&str>, draft: Option<&HttpRequest>, env: Option<&str>) -> Result<VarStack, ResolveError>;
+  // runner.rs
+  /// The stack a send of `input` would start with, before scripts run: runtime and
+  /// environment exactly as `send_one` builds them, plus process env.
+  pub fn preview_stack(open: &OpenCollection, input: &SendInput<'_>) -> Result<VarStack, SendError>;
   // var_scan.rs
   pub struct SetLater { pub name: String, pub by: String /* item id of the first setter */ }
   pub fn scan_set_later(collection: &Collection) -> Vec<SetLater>;
@@ -181,7 +192,7 @@ No code. Skip for Task 3 when it is built early.
 
 **Files:**
 - Modify: `crates/core/src/workspace.rs` (`OpenCollection` keeps `sent_credentials` and the cached `set_later`), `crates/core/src/masking.rs` (expose the header collection rule), `crates/server/src/api/requests.rs` (record sent credential values after each send), `crates/server/src/api/runs.rs` (same for each run result), `crates/server/src/api/dto.rs`, `crates/server/src/api/mod.rs`
-- Create: `crates/server/src/api/vars.rs`
+- Modify: `crates/server/src/api/vars.rs` (exists; add the handler)
 - Regenerate: `frontend/src/api/types.ts`
 - Test: `crates/server/tests/vars.rs` (new)
 
