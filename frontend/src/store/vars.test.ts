@@ -51,12 +51,15 @@ describe("variable cache", () => {
   });
 
   it("refresh_after_send", async () => {
-    useTabs.setState({ tabs: [tab({ sending: true })] });
+    // Runtime variables are per collection: a send refreshes every tab of it.
+    const other = tab({ key: "c1:b.bru", item: "b.bru" });
+    useTabs.setState({ tabs: [tab({ sending: true }), other] });
     await flush();
     vars.mockClear();
-    useTabs.setState({ tabs: [tab({ sending: false })] });
+    useTabs.setState({ tabs: [tab({ sending: false }), other] });
     await flush();
-    expect(vars).toHaveBeenCalledTimes(1);
+    expect(vars).toHaveBeenCalledTimes(2);
+    expect(vars).toHaveBeenCalledWith("c1", expect.objectContaining({ item: "b.bru" }));
   });
 
   it("refresh_on_env_change", async () => {

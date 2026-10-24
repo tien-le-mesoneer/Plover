@@ -48,9 +48,11 @@ export function watchVars(): () => void {
 
   const onTabs = (tabs: Tab[], before: Tab[]) => {
     const old = new Map(before.map((t) => [t.key, t]));
+    // A finished send may have changed runtime variables for its whole collection.
+    const sent = new Set(tabs.filter((t) => old.get(t.key)?.sending && !t.sending).map((t) => t.collectionId));
     for (const t of tabs) {
       const prev = old.get(t.key);
-      if (!prev || (prev.sending && !t.sending)) refresh(t.key);
+      if (!prev || sent.has(t.collectionId)) refresh(t.key);
       else if (prev.draft.varsPre !== t.draft.varsPre) {
         clearTimeout(timers.get(t.key));
         timers.set(
