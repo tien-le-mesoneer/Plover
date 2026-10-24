@@ -2,7 +2,7 @@
 //! loaded tree, one HTTP session (cookie jar) and runtime variables. Secret
 //! environment values live in a `SecretVault` (OS keychain or memory), never on disk.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
@@ -12,6 +12,7 @@ use crate::collection::{Collection, LoadError};
 use crate::executor::{ExecError, ExecOptions, Session};
 use crate::secrets::{SecretBackend, SecretError, SecretKey, SecretVault};
 use crate::store::ContentHash;
+use crate::var_scan::{SetLater, scan_set_later};
 use crate::vars::{ValueMap, VarMap};
 
 /// First 16 hex characters of the SHA-256 of the canonical collection root.
@@ -65,7 +66,15 @@ pub struct OpenCollection {
     secret_names: Mutex<BTreeMap<String, BTreeSet<String>>>,
     /// Environment variables scripts set (`bru.setEnvVar`), per environment, in memory only.
     env_changes: Mutex<BTreeMap<String, ValueMap>>,
+    /// Credential header values sent during this server session (memory only), so the
+    /// variable hover can mask runtime values that held them.
+    sent_credentials: Mutex<HashSet<String>>,
+    /// `scan_set_later` of the collection snapshot it was computed for.
+    set_later: Mutex<Option<SetLaterCache>>,
 }
+
+/// A `scan_set_later` result and the collection snapshot it was computed from.
+type SetLaterCache = (Arc<Collection>, Arc<Vec<SetLater>>);
 
 impl OpenCollection {
     /// A snapshot of the loaded collection; cheap to clone, safe to hold across awaits.
@@ -74,6 +83,41 @@ impl OpenCollection {
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    /// Remembers credential values a send or run put in its request headers.
+    pub fn note_sent_credentials(&self, values: Vec<String>) {
+        if values.is_empty() {
+            return;
+        }
+        self.sent_credentials
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend(values);
+    }
+
+    pub fn sent_credentials(&self) -> HashSet<String> {
+        self.sent_credentials
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Names scripts set at runtime, rescanned when the collection was reloaded.
+    pub fn set_later(&self) -> Arc<Vec<SetLater>> {
+        let collection = self.collection();
+        let mut cached = self
+            .set_later
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some((of, found)) = cached.as_ref()
+            && Arc::ptr_eq(of, &collection)
+        {
+            return found.clone();
+        }
+        let found = Arc::new(scan_set_later(&collection));
+        *cached = Some((collection, found.clone()));
+        found
     }
 
     pub fn root(&self) -> PathBuf {
@@ -419,6 +463,8 @@ impl Workspace {
             secrets: self.secrets.clone(),
             secret_names: Mutex::default(),
             env_changes: Mutex::default(),
+            sent_credentials: Mutex::default(),
+            set_later: Mutex::default(),
         });
         self.collections
             .write()

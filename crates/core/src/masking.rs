@@ -206,6 +206,17 @@ fn has_masked_header(r: &ResultRecord) -> bool {
         .any(|(name, _)| is_masked_header(name))
 }
 
+/// Credential values sent in `headers` (whole `Authorization`, `Proxy-Authorization` and
+/// `Cookie` values, the part after the scheme, each cookie value), 8 characters or more;
+/// the same rule run records are masked by.
+pub fn credential_values(headers: &[(String, String)]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (name, value) in headers {
+        collect_header(name, value, &mut out);
+    }
+    out
+}
+
 /// The whole value of a credential header and its credential parts: the token after the
 /// scheme (`Bearer x`), each cookie value (not `Set-Cookie` attributes).
 fn collect_header(name: &str, value: &str, out: &mut Vec<String>) {

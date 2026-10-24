@@ -413,8 +413,14 @@ async fn run_task(
     let events = tx.clone();
     let id = run_id.clone();
     let live = app.live.clone();
+    let sent_by = open.clone();
     let mut accepted = false;
     let mut on_event = move |event: &RunEvent| {
+        if let RunEvent::Passed { outcome, .. } | RunEvent::Failed { outcome, .. } = event
+            && let Some(detail) = &outcome.request
+        {
+            sent_by.note_sent_credentials(plover_core::masking::credential_values(&detail.headers));
+        }
         if !accepted {
             accepted = true;
             let _ = events.send(RunEventDto::Accepted {

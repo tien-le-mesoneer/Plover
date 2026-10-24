@@ -4,6 +4,7 @@ use axum::Json;
 use axum::extract::State;
 use base64::Engine;
 use plover_core::executor::ResponseSummary;
+use plover_core::masking::credential_values;
 use plover_core::request::HttpRequest;
 use plover_core::runner::{SendInput, send_one};
 use plover_core::store::{self, ContentHash};
@@ -114,6 +115,9 @@ pub async fn send(
         },
         None => sending.await?,
     };
+    if let Some(detail) = &sent.outcome.request {
+        open.note_sent_credentials(credential_values(&detail.headers));
+    }
     let (tests, asserts, console, script_error) = outcome_lists(&sent.outcome);
     Ok(Json(SendResultDto {
         response: sent.response.map(response_dto),

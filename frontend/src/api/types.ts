@@ -371,6 +371,34 @@ item: string | null, draft: HttpRequestDto | null, env: string | null, };
 
 export type RuntimeVarBody = { value: unknown, };
 
+export type VarsBody = { item: string | null, draft: HttpRequestDto | null, env: string | null, };
+
+export type VarDto = { name: string, 
+/**
+ * `processEnv`, `iteration`, `runtime`, `request`, `folder`, `environment` or `collection`.
+ */
+source: string, 
+/**
+ * `null` when masked.
+ */
+value: string | null, masked: boolean, truncated: boolean, 
+/**
+ * Lower scopes that also define the name.
+ */
+shadows: Array<string>, };
+
+export type SetLaterDto = { name: string, 
+/**
+ * The first request or folder file whose scripts set it.
+ */
+by: string, };
+
+export type VarsDto = { vars: Array<VarDto>, 
+/**
+ * Names no scope defines yet that scripts set at runtime.
+ */
+setLater: Array<SetLaterDto>, };
+
 export type ResolvedUrlDto = { url: string, 
 /**
  * Some secret value was replaced.
