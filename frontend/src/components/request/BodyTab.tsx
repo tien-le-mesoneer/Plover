@@ -16,9 +16,11 @@ interface Props {
   onChange: (body: BodyDto) => void;
   /** Switch modes; each mode keeps its own content (see `switchBodyMode`). */
   onModeChange: (mode: Exclude<BodyDto["mode"], "unsupported">) => void;
+  /** The request tab: `{{variables}}` in the body are underlined and explained. */
+  tabKey?: string;
 }
 
-export function BodyTab({ body, onChange, onModeChange }: Props) {
+export function BodyTab({ body, onChange, onModeChange, tabKey }: Props) {
   if (body.mode === "unsupported") {
     return (
       <p className="muted">
@@ -41,11 +43,12 @@ export function BodyTab({ body, onChange, onModeChange }: Props) {
             value={body.text}
             language={body.mode === "text" ? "plaintext" : body.mode}
             onChange={(text) => onChange({ ...body, text })}
+            varTabKey={tabKey}
           />
         </div>
       )}
       {body.mode === "formUrlEncoded" && (
-        <KeyValueTable rows={body.fields} onChange={(fields) => onChange({ ...body, fields })} />
+        <KeyValueTable varTabKey={tabKey} rows={body.fields} onChange={(fields) => onChange({ ...body, fields })} />
       )}
       {body.mode === "multipartForm" && (
         <MultipartTable fields={body.fields} onChange={(fields) => onChange({ ...body, fields })} />

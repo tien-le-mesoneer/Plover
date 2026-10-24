@@ -1,5 +1,9 @@
 import { useEffect, useRef } from "react";
+import { useTabs } from "../store/tabs";
+import { useVars } from "../store/vars";
+import { useWorkspace } from "../store/workspace";
 import { currentTheme, monaco } from "./monaco";
+import { varDecorations, varHoverAt } from "./varDecorations";
 
 /** The `--font-mono` stack from styles.css. */
 export const MONO_FONT = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -20,10 +24,61 @@ export interface CodeEditorProps {
   onPick?: (offset: number, at: { x: number; y: number }) => void;
   /** 1-based start lines of regions to fold each time the value is set (large JSON arrays). */
   foldLines?: number[];
+  /** The request tab whose `{{variables}}` this editor underlines and explains (bodies only). */
+  varTabKey?: string;
+}
+
+/** Body editor models whose `{{variables}}` are explained, by model URI → request tab key. */
+const varModels = new Map<string, string>();
+let varHoverReady = false;
+
+/** One hover provider per body language, shared by all editors (Monaco providers are global). */
+function ensureVarHover() {
+  if (varHoverReady) return;
+  varHoverReady = true;
+  for (const language of ["json", "plaintext", "xml"]) {
+    monaco.languages.registerHoverProvider(language, {
+      provideHover(model, position) {
+        const key = varModels.get(model.uri.toString());
+        if (!key) return null;
+        const tab = useTabs.getState().tabs.find((t) => t.key === key);
+        const env = tab ? (useWorkspace.getState().activeEnv[tab.collectionId] ?? null) : null;
+        const hover = varHoverAt(model, model.getOffsetAt(position), useVars.getState().byTab[key], env);
+        return hover ? { range: hover.range, contents: [{ value: hover.markdown }] } : null;
+      },
+    });
+  }
+}
+
+/** Repaints after edits (debounced) and when the tab's `/vars` answer changes. */
+function decorateVars(instance: monaco.editor.IStandaloneCodeEditor, tabKey: string): () => void {
+  const model = instance.getModel();
+  if (!model) return () => {};
+  ensureVarHover();
+  const uri = model.uri.toString();
+  varModels.set(uri, tabKey);
+  const marks = instance.createDecorationsCollection();
+  const paint = () => marks.set(varDecorations(model, useVars.getState().byTab[tabKey]));
+  paint();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const edits = instance.onDidChangeModelContent(() => {
+    clearTimeout(timer);
+    timer = setTimeout(paint, 100);
+  });
+  const unsubscribe = useVars.subscribe((s, prev) => {
+    if (s.byTab[tabKey] !== prev.byTab[tabKey]) paint();
+  });
+  return () => {
+    clearTimeout(timer);
+    edits.dispose();
+    unsubscribe();
+    marks.clear();
+    varModels.delete(uri);
+  };
 }
 
 /** A thin wrapper around a Monaco editor instance. */
-export function CodeEditor({ value, language, readOnly, onChange, height, onReady, onPick, foldLines }: CodeEditorProps) {
+export function CodeEditor({ value, language, readOnly, onChange, height, onReady, onPick, foldLines, varTabKey }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const changeHandler = useRef(onChange);
@@ -88,7 +143,9 @@ export function CodeEditor({ value, language, readOnly, onChange, height, onRead
       : undefined;
     editor.current = instance;
     readyHandler.current?.(instance);
+    const stopVars = varTabKey ? decorateVars(instance, varTabKey) : undefined;
     return () => {
+      stopVars?.();
       sub.dispose();
       clicks.dispose();
       enter?.dispose();

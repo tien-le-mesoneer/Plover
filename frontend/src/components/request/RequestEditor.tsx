@@ -219,6 +219,7 @@ export function RequestEditor({ tab }: { tab: Tab }) {
             )}
             {section === "Body" && (
               <BodyTab
+                tabKey={tab.key}
                 body={draft.body}
                 onChange={(body) => onEdit((d) => ({ ...d, body }))}
                 onModeChange={(mode) => onEdit((d) => switchBodyMode(d, mode))}
