@@ -1,10 +1,28 @@
 import { useCallback, useEffect, useRef } from "react";
+import { useTabs } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
-import { LogoMark, PlusIcon } from "./icons";
+import { LogoMark, NewRequestIcon, PlusIcon } from "./icons";
 import { OpenCollectionPopover } from "./OpenCollectionPopover";
 
-/** "◆ Plover" and the "+" (Open collection, Cmd/Ctrl+O) above the sidebar. */
+/** The collection a new request goes to: the active tab's, else the active collection. */
+function targetCollection(): string | null {
+  const { tabs, active } = useTabs.getState();
+  const fromTab = tabs.find((t) => t.key === active)?.collectionId;
+  const { collections, activeCollection } = useWorkspace.getState();
+  const available = (id: string | null | undefined) =>
+    id && collections.some((c) => c.id === id && c.available) ? id : null;
+  return available(fromTab) ?? available(activeCollection) ?? collections.find((c) => c.available)?.id ?? null;
+}
+
+/**
+ * "◆ Plover", "New request" (an unsaved scratch tab in the current collection) and the
+ * "+" (Open collection, Cmd/Ctrl+O) above the sidebar.
+ */
 export function SidebarHeader() {
+  // Subscribed so the button enables as soon as a collection is open.
+  useWorkspace((s) => s.collections);
+  useTabs((s) => s.active);
+  const target = targetCollection();
   const pickerOpen = useWorkspace((s) => s.pickerOpen);
   const setPickerOpen = useWorkspace((s) => s.setPickerOpen);
   const plus = useRef<HTMLButtonElement>(null);
@@ -27,6 +45,16 @@ export function SidebarHeader() {
         <LogoMark /> Plover
       </span>
       <span className="spacer" />
+      <button
+        type="button"
+        className="icon"
+        title={target ? "New request" : "Open a collection first"}
+        aria-label="New request"
+        disabled={!target}
+        onClick={() => target && useTabs.getState().newScratch(target)}
+      >
+        <NewRequestIcon />
+      </button>
       <button
         ref={plus}
         type="button"

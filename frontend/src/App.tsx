@@ -10,6 +10,7 @@ import { EnvSelector } from "./components/EnvSelector";
 import { RequestEditor } from "./components/request/RequestEditor";
 import { RequestTabs } from "./components/RequestTabs";
 import { RunPanel } from "./components/RunPanel";
+import { SaveRequestDialog } from "./components/SaveRequestDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SidebarHeader } from "./components/SidebarHeader";
 import { useRuns } from "./store/runs";
@@ -18,7 +19,7 @@ import { startUp } from "./store/startup";
 import { useWorkspace } from "./store/workspace";
 
 export default function App({ hasToken }: { hasToken: boolean }) {
-  const { tabs, active, save, send } = useTabs();
+  const { tabs, active, requestSave, send, saveDialog, closeSaveDialog } = useTabs();
   const { collections, activeEnv, error, clearError, capabilities, openInBrowser, activeCollection } =
     useWorkspace();
   const anyDirty = useTabs((s) => s.tabs.some((t) => s.isDirty(t.key)));
@@ -75,7 +76,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
       const key = e.key.toLowerCase();
       if (key === "s") {
         e.preventDefault();
-        if (active) void save(active);
+        if (active) requestSave(active);
       } else if (key === "enter") {
         if (!active) return;
         e.preventDefault();
@@ -94,7 +95,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("plover:send", onSend);
     };
-  }, [active, save, send]);
+  }, [active, requestSave, send]);
 
   if (!hasToken) {
     return (
@@ -122,6 +123,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
         )}
         <EnvSelector collectionId={collectionId} />
       </header>
+      {saveDialog && <SaveRequestDialog tabKey={saveDialog} onClose={closeSaveDialog} />}
       {confirmReload && (
         <Modal title="Reload window" onDismiss={() => setConfirmReload(false)}>
           <h3>Discard unsaved changes?</h3>

@@ -37,7 +37,7 @@ function hasCode(draft: HttpRequestDto, section: Section): boolean {
 
 export function RequestEditor({ tab }: { tab: Tab }) {
   const [section, setSection] = useState<Section>(tab.draft.body.mode === "none" ? "Params" : "Body");
-  const { edit, save, send, isDirty, resolveConflict } = useTabs();
+  const { edit, requestSave, send, isDirty, resolveConflict } = useTabs();
   const onEdit = (f: (d: HttpRequestDto) => HttpRequestDto) => edit(tab.key, f);
   const draft = tab.draft;
 
@@ -49,7 +49,7 @@ export function RequestEditor({ tab }: { tab: Tab }) {
         sending={tab.sending}
         onEdit={onEdit}
         onSend={() => void send(tab.key)}
-        onSave={() => void save(tab.key)}
+        onSave={() => requestSave(tab.key)}
       />
       {tab.conflict && (
         <Banner

@@ -7,7 +7,9 @@ export function closeTabWithConfirm(key: string): boolean {
   const { tabs, isDirty, close } = useTabs.getState();
   const tab = tabs.find((t) => t.key === key);
   if (!tab) return false;
-  if (isDirty(key) && !window.confirm(`Discard unsaved changes to "${tab.draft.name}"?`)) return false;
+  const question =
+    tab.item === null ? "Discard this request?" : `Discard unsaved changes to "${tab.draft.name}"?`;
+  if (isDirty(key) && !window.confirm(question)) return false;
   close(key);
   return true;
 }

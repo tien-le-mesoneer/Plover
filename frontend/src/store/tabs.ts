@@ -25,6 +25,11 @@ export interface Tab {
 export interface TabsState {
   tabs: Tab[];
   active: string | null;
+  /** The scratch tab whose "Save request" dialog is open. */
+  saveDialog: string | null;
+  /** Save, or for a scratch tab open the dialog that picks its folder and name. */
+  requestSave(key: string): void;
+  closeSaveDialog(): void;
   open(collectionId: string, item: string): Promise<void>;
   close(key: string): void;
   activate(key: string): void;
@@ -88,6 +93,18 @@ export const useTabs = create<TabsState>()((set, get) => {
   return {
     tabs: [],
     active: null,
+    saveDialog: null,
+
+    requestSave(key) {
+      const tab = find(key);
+      if (!tab) return;
+      if (tab.item === null) set({ saveDialog: key });
+      else void get().save(key).catch(() => {});
+    },
+
+    closeSaveDialog() {
+      set({ saveDialog: null });
+    },
 
     async open(collectionId, item) {
       const key = tabKey(collectionId, item);
