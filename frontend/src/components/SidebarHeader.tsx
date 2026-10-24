@@ -1,10 +1,30 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useTabs } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
-import { LogoMark, PlusIcon } from "./icons";
+import { ImportIcon, LogoMark, NewRequestIcon, PlusIcon } from "./icons";
+import { ImportHarDialog } from "./ImportHarDialog";
 import { OpenCollectionPopover } from "./OpenCollectionPopover";
 
-/** "◆ Plover" and the "+" (Open collection, Cmd/Ctrl+O) above the sidebar. */
+/** The collection a new request goes to: the active tab's, else the active collection. */
+function targetCollection(): string | null {
+  const { tabs, active } = useTabs.getState();
+  const fromTab = tabs.find((t) => t.key === active)?.collectionId;
+  const { collections, activeCollection } = useWorkspace.getState();
+  const available = (id: string | null | undefined) =>
+    id && collections.some((c) => c.id === id && c.available) ? id : null;
+  return available(fromTab) ?? available(activeCollection) ?? collections.find((c) => c.available)?.id ?? null;
+}
+
+/**
+ * "◆ Plover", "New request" (an unsaved scratch tab in the current collection) and the
+ * "+" (Open collection, Cmd/Ctrl+O) above the sidebar.
+ */
 export function SidebarHeader() {
+  // Subscribed so the button enables as soon as a collection is open.
+  useWorkspace((s) => s.collections);
+  useTabs((s) => s.active);
+  const target = targetCollection();
+  const [importing, setImporting] = useState<string | null>(null);
   const pickerOpen = useWorkspace((s) => s.pickerOpen);
   const setPickerOpen = useWorkspace((s) => s.setPickerOpen);
   const plus = useRef<HTMLButtonElement>(null);
@@ -28,6 +48,27 @@ export function SidebarHeader() {
       </span>
       <span className="spacer" />
       <button
+        type="button"
+        className="icon"
+        title={target ? "New request" : "Open a collection first"}
+        aria-label="New request"
+        disabled={!target}
+        onClick={() => target && useTabs.getState().newScratch(target)}
+      >
+        <NewRequestIcon />
+      </button>
+      <button
+        type="button"
+        className="icon"
+        title={target ? "Import HAR…" : "Open a collection first"}
+        aria-label="Import HAR"
+        aria-haspopup="dialog"
+        disabled={!target}
+        onClick={() => setImporting(target)}
+      >
+        <ImportIcon />
+      </button>
+      <button
         ref={plus}
         type="button"
         className="icon"
@@ -41,6 +82,7 @@ export function SidebarHeader() {
         <PlusIcon />
       </button>
       {pickerOpen && <OpenCollectionPopover anchor={plus} onClose={close} />}
+      {importing && <ImportHarDialog collectionId={importing} onClose={() => setImporting(null)} />}
     </div>
   );
 }

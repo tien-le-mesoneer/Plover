@@ -53,7 +53,10 @@ function snapshot(): Record<string, UiStateDto> {
   const out: Record<string, UiStateDto> = {};
   for (const c of collections) {
     if (!c.available) continue;
-    const own = tabs.filter((t) => t.collectionId === c.id);
+    // Scratch tabs are never remembered: a pasted token must not reach disk.
+    const own = tabs.filter(
+      (t): t is typeof t & { item: string } => t.collectionId === c.id && t.item !== null,
+    );
     out[c.id] = {
       tabs: own.map((t) => t.item),
       // Only the globally active tab is marked, so a restore re-selects it.

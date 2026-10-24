@@ -178,4 +178,108 @@ describe("tabs store", () => {
     }));
     expect(useTabs.getState().isDirty(key)).toBe(true);
   });
+
+  it("newScratch opens Untitled GET tab", () => {
+    const key = useTabs.getState().newScratch("c1");
+    const tab = useTabs.getState().tabs.find((t) => t.key === key)!;
+    expect(key).toMatch(/^c1:scratch:\d+$/);
+    expect(tab.item).toBeNull();
+    expect(tab.draft.name).toBe("Untitled");
+    expect(tab.draft.method).toBe("GET");
+    expect(tab.draft.auth).toEqual({ mode: "inherit" });
+    expect(useTabs.getState().active).toBe(key);
+    expect(useTabs.getState().isDirty(key)).toBe(false);
+    expect(useTabs.getState().hasScratchContent()).toBe(false);
+    useTabs.getState().edit(key, (d) => ({ ...d, url: "http://x" }));
+    expect(useTabs.getState().isDirty(key)).toBe(true);
+    expect(useTabs.getState().hasScratchContent()).toBe(true);
+    expect(useTabs.getState().newScratch("c1")).not.toBe(key);
+  });
+
+  it("send on scratch passes item null and draft", async () => {
+    const api = mockApi({
+      send: vi.fn(async () => ({
+        response: null,
+        tests: [],
+        asserts: [],
+        console: [],
+        scriptError: null,
+        scriptedRequests: [],
+        skipped: null,
+      })),
+    });
+    setApi(api);
+    const key = useTabs.getState().newScratch("c1");
+    useTabs.getState().edit(key, (d) => ({ ...d, url: "http://x/s" }));
+    await useTabs.getState().send(key);
+    expect(api.send).toHaveBeenCalledWith("c1", null, expect.objectContaining({ url: "http://x/s" }), null);
+  });
+
+  it("saveScratch creates request and rekeys tab", async () => {
+    const created = { ...request("http://x/orders"), name: "GET orders" };
+    const api = mockApi({
+      createRequest: vi.fn(async () => ({ item: "f/GET orders.bru", request: created, hash: "h1" })),
+    });
+    setApi(api);
+    const key = useTabs.getState().newScratch("c1");
+    useTabs.getState().edit(key, (d) => ({ ...d, url: "http://x/orders" }));
+    expect(await useTabs.getState().saveScratch(key, "f", "GET orders")).toBe("saved");
+    expect(api.createRequest).toHaveBeenCalledWith(
+      "c1",
+      "f",
+      "GET orders",
+      expect.objectContaining({ url: "http://x/orders" }),
+    );
+    const tab = useTabs.getState().tabs[0]!;
+    expect(tab.key).toBe("c1:f/GET orders.bru");
+    expect(tab.item).toBe("f/GET orders.bru");
+    expect(tab.hash).toBe("h1");
+    expect(useTabs.getState().active).toBe(tab.key);
+    expect(useTabs.getState().isDirty(tab.key)).toBe(false);
+  });
+
+  it("saveScratch exists keeps tab and returns exists", async () => {
+    const api = mockApi({
+      createRequest: vi.fn(async () => {
+        throw new ApiError(409, "exists", { error: "exists", message: "m" }, "m");
+      }),
+    });
+    setApi(api);
+    const key = useTabs.getState().newScratch("c1");
+    useTabs.getState().edit(key, (d) => ({ ...d, url: "http://x" }));
+    expect(await useTabs.getState().saveScratch(key, "", "a")).toBe("exists");
+    expect(useTabs.getState().tabs[0]!.key).toBe(key);
+    expect(useTabs.getState().tabs[0]!.draft.url).toBe("http://x");
+  });
+
+  it("applyCurl keeps name scripts tests and returns previous draft", async () => {
+    setApi(mockApi());
+    await useTabs.getState().open("c1", "a.bru");
+    const key = useTabs.getState().active!;
+    useTabs.getState().edit(key, (d) => ({ ...d, scriptPre: "x()", tests: "t()" }));
+    const before = useTabs.getState().tabs[0]!.draft;
+    const parsed = {
+      ...request("https://api.test/p?q=1"),
+      name: "",
+      method: "POST",
+      query: [{ name: "q", value: "1", enabled: true, local: false }],
+      headers: [{ name: "a", value: "b", enabled: true, local: false }],
+      body: { mode: "json" as const, text: "{}" },
+      auth: { mode: "basic" as const, username: "u", password: "p" },
+    };
+    const previous = useTabs.getState().applyCurl(key, parsed);
+    expect(previous).toEqual(before);
+    const draft = useTabs.getState().tabs[0]!.draft;
+    expect(draft).toMatchObject({
+      name: "r",
+      method: "POST",
+      url: "https://api.test/p?q=1",
+      query: parsed.query,
+      headers: parsed.headers,
+      body: parsed.body,
+      auth: parsed.auth,
+      scriptPre: "x()",
+      tests: "t()",
+    });
+  });
 });

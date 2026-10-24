@@ -157,3 +157,29 @@ pub struct HttpRequest {
     pub asserts: Vec<KeyValue>,
     pub settings: RequestSettings,
 }
+
+impl HttpRequest {
+    /// An unnamed `GET` request with no URL that inherits its auth, like a new Bruno request.
+    pub fn blank() -> HttpRequest {
+        HttpRequest {
+            name: String::new(),
+            seq: 0.0,
+            kind: "http".to_owned(),
+            method: Method::Get,
+            url: String::new(),
+            query: Vec::new(),
+            path_params: Vec::new(),
+            headers: Vec::new(),
+            body: Body::None,
+            other_bodies: Vec::new(),
+            auth: Auth::Inherit,
+            vars_pre: Vec::new(),
+            vars_post: Vec::new(),
+            script_pre: None,
+            script_post: None,
+            tests: None,
+            asserts: Vec::new(),
+            settings: RequestSettings::default(),
+        }
+    }
+}

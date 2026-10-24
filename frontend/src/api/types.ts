@@ -180,7 +180,11 @@ export type SavedRequestDto = { request: HttpRequestDto, hash: string, };
 
 export type HashDto = { hash: string, };
 
-export type SendBody = { item: string, draft: HttpRequestDto | null, env: string | null, };
+export type SendBody = { 
+/**
+ * The request file; `null` sends `draft` as a scratch request (collection scope only).
+ */
+item: string | null, draft: HttpRequestDto | null, env: string | null, };
 
 export type SaveEnvironmentBody = { vars: Array<KeyValueDto>, hash: string, };
 
@@ -188,7 +192,12 @@ export type SecretsBody = {
 /**
  * Merged into the current values: a string sets a secret, `null` clears it.
  */
-values: { [key in string]: string | null }, };
+values: { [key in string]: string | null }, 
+/**
+ * Also add the names that get a value to the file's `vars:secret` block, so they are
+ * known after a restart ("Move to secret" on a pasted curl).
+ */
+declare?: boolean, };
 
 export type SecretStateDto = { name: string, 
 /**
@@ -303,3 +312,71 @@ export type ClientReadyBody = { error?: string, };
 export type SessionTokenDto = { token: string, };
 
 export type ServerEvent = { "type": "collection_opened", id: string, } | { "type": "reload_requested" };
+
+export type CurlParseBody = { text: string, };
+
+export type CurlNoticeDto = { option: string, reason: string, };
+
+export type CurlParsedDto = { request: HttpRequestDto, notices: Array<CurlNoticeDto>, };
+
+export type CopyCurlBody = { 
+/**
+ * The request file; `null` for a scratch request (then `draft` is required).
+ */
+item: string | null, draft: HttpRequestDto | null, env: string | null, 
+/**
+ * Fill in variables for `env` (no scripts run); otherwise copy as written.
+ */
+resolve: boolean, };
+
+export type CurlTextDto = { text: string, 
+/**
+ * A secret value of the environment appears in `text`.
+ */
+containsSecret: boolean, 
+/**
+ * What was left out because Plover cannot send it.
+ */
+omitted: Array<string>, };
+
+export type CreateRequestBody = { 
+/**
+ * The folder ID (`""` is the collection root).
+ */
+folder: string, 
+/**
+ * The display name; the file name is made from it.
+ */
+name: string, request: HttpRequestDto, };
+
+export type CreatedRequestDto = { item: string, request: HttpRequestDto, hash: string, };
+
+export type HarPreviewBody = { 
+/**
+ * The HAR file's text.
+ */
+har: string, };
+
+export type HarRowDto = { index: number, method: string, url: string, host: string, status: number | null, mime: string, size: number | null, hasSecrets: boolean, 
+/**
+ * Why the row is hidden and unticked by default; `null` when it is shown.
+ */
+hidden: "image" | "script" | "style" | "font" | "media" | "sourceMap" | "preflight" | "dataUrl" | "extension" | "webSocket" | null, duplicates: number, };
+
+export type HarImportBody = { har: string, entries: number[], folder: string, newFolder: string | null, env: string | null, };
+
+export type HarPlanDto = { env: string, secretNames: Array<string>, requestNames: Array<string>, notices: Array<string>, };
+
+export type HarImportResultDto = { 
+/**
+ * Item IDs of the request files written.
+ */
+items: Array<string>, 
+/**
+ * Secret variables created (names only).
+ */
+secretNames: Array<string>, env: string, notices: Array<string>, 
+/**
+ * The step that failed; what was written before it stays.
+ */
+failedAt: string | null, };

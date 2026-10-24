@@ -3,8 +3,11 @@
 pub mod app_state;
 pub mod bru;
 pub mod collection;
+pub mod credentials;
+pub mod curl;
 pub mod dotenv;
 pub mod executor;
+pub mod har;
 pub mod masking;
 pub mod persist;
 pub mod report;

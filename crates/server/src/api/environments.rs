@@ -71,6 +71,12 @@ pub async fn set_secrets(
             "environment `{name}` not found"
         )));
     }
+    let declared: Vec<String> = body
+        .values
+        .iter()
+        .filter(|(_, v)| v.is_some())
+        .map(|(k, _)| k.clone())
+        .collect();
     let warnings = open.update_secrets(&name, body.values).map_err(|e| {
         ApiError::new(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -78,5 +84,9 @@ pub async fn set_secrets(
             e.to_string(),
         )
     })?;
+    if body.declare == Some(true) && !declared.is_empty() {
+        store::add_secret_names(&open.root(), &name, &declared)?;
+        open.reload()?;
+    }
     Ok(Json(SecretsResultDto { warnings }))
 }

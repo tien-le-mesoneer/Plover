@@ -424,7 +424,7 @@ async fn send_uses_stored_secret() {
     let outcome = plover_core::runner::send_one(
         &open,
         plover_core::runner::SendInput {
-            item_id: "ping.bru",
+            item_id: Some("ping.bru"),
             draft: None,
             env: Some("local"),
         },

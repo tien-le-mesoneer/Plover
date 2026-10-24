@@ -190,7 +190,7 @@ async fn send_one_uses_draft_and_secrets() {
     let res = send_one(
         &open,
         SendInput {
-            item_id: "r.bru",
+            item_id: Some("r.bru"),
             draft: Some(&draft),
             env: Some("local"),
         },
@@ -355,5 +355,192 @@ fn list_keeps_open_order() {
             .map(|&i| ["alpha", "beta", "gamma"][i].to_owned())
             .collect();
         assert_eq!(listed, expected);
+    }
+}
+
+// ---- creating requests, folders and secret names
+
+mod create {
+    use super::*;
+    use plover_core::bru::model::{EnvironmentFile, RequestFile};
+    use plover_core::collection::Collection;
+    use plover_core::request::{HttpRequest, Method};
+
+    fn get(url: &str) -> HttpRequest {
+        let mut req = HttpRequest::blank();
+        req.url = url.to_owned();
+        req
+    }
+
+    #[test]
+    fn create_request_writes_bruno_readable_file() {
+        let (_dir, root) = fixture_copy();
+        let (item, stored) = store::create_request(
+            &root,
+            "echo",
+            "GET orders",
+            &get("https://example.test/orders"),
+        )
+        .unwrap();
+        assert_eq!(item, "echo/GET orders.bru");
+        assert_eq!(stored.value.name, "GET orders");
+        let read = store::read_request(&root, &item).unwrap();
+        assert_eq!(read.value.method, Method::Get);
+        assert_eq!(read.value.url, "https://example.test/orders");
+        assert_eq!(read.hash, stored.hash);
+        let text = fs::read_to_string(root.join(&item)).unwrap();
+        RequestFile::parse(&text).unwrap();
+        assert!(text.starts_with("meta {\n  name: GET orders\n"), "{text}");
+        let collection = Collection::load(&root).unwrap();
+        assert!(
+            collection
+                .requests_under(&root.join("echo"))
+                .iter()
+                .any(|r| r.path == root.join(&item))
+        );
+    }
+
+    #[test]
+    fn create_request_at_root() {
+        let (_dir, root) = fixture_copy();
+        let (item, _) = store::create_request(&root, "", "new one", &get("x")).unwrap();
+        assert_eq!(item, "new one.bru");
+        assert!(root.join("new one.bru").is_file());
+    }
+
+    #[test]
+    fn create_request_existing_name_is_exists_error() {
+        let (_dir, root) = fixture_copy();
+        let before = fs::read(root.join("ping.bru")).unwrap();
+        let err = store::create_request(&root, "", "ping", &get("x")).unwrap_err();
+        assert!(matches!(err, StoreError::Exists(_)), "{err:?}");
+        assert_eq!(fs::read(root.join("ping.bru")).unwrap(), before);
+    }
+
+    #[test]
+    fn create_request_next_seq_in_folder() {
+        let (_dir, root) = fixture_copy();
+        fs::create_dir(root.join("seqs")).unwrap();
+        for (name, seq) in [("a", 1.0), ("b", 5.0)] {
+            let mut req = get("x");
+            req.seq = seq;
+            store::create_request(&root, "seqs", name, &req).unwrap();
+        }
+        let (_, stored) = store::create_request(&root, "seqs", "c", &get("x")).unwrap();
+        assert_eq!(stored.value.seq, 6.0);
+        let (_, first) = store::create_request(&root, "", "lonely", &get("x")).unwrap();
+        assert!(first.value.seq >= 1.0);
+    }
+
+    #[test]
+    fn create_request_rejects_escape() {
+        let (_dir, root) = fixture_copy();
+        for folder in ["../x", "/tmp", "a/../.."] {
+            let err = store::create_request(&root, folder, "n", &get("x")).unwrap_err();
+            assert!(
+                matches!(err, StoreError::OutsideRoot(_)),
+                "{folder}: {err:?}"
+            );
+        }
+        let err = store::create_request(&root, "", "  ", &get("x")).unwrap_err();
+        assert!(matches!(err, StoreError::Parse(_)), "{err:?}");
+    }
+
+    #[test]
+    fn create_request_sanitizes_file_name_keeps_display_name() {
+        let (_dir, root) = fixture_copy();
+        let (item, stored) = store::create_request(&root, "", "GET a/b:c", &get("x")).unwrap();
+        assert_eq!(item, "GET a-b-c.bru");
+        assert_eq!(stored.value.name, "GET a/b:c");
+    }
+
+    #[test]
+    fn create_folder_then_request_inside() {
+        let (_dir, root) = fixture_copy();
+        let folder = store::create_folder(&root, "echo", "captured").unwrap();
+        assert_eq!(folder, "echo/captured");
+        assert!(root.join("echo/captured").is_dir());
+        assert!(!root.join("echo/captured/folder.bru").exists());
+        let (item, _) = store::create_request(&root, &folder, "r", &get("x")).unwrap();
+        assert_eq!(item, "echo/captured/r.bru");
+        let err = store::create_folder(&root, "echo", "captured").unwrap_err();
+        assert!(matches!(err, StoreError::Exists(_)), "{err:?}");
+        let err = store::create_folder(&root, "..", "x").unwrap_err();
+        assert!(matches!(err, StoreError::OutsideRoot(_)), "{err:?}");
+    }
+
+    #[test]
+    fn add_secret_names_creates_env_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(
+            root.join("bruno.json"),
+            r#"{"version":"1","name":"t","type":"collection"}"#,
+        )
+        .unwrap();
+        store::add_secret_names(root, "Imported", &["authToken".into(), "cookie".into()]).unwrap();
+        let text = fs::read_to_string(root.join("environments/Imported.bru")).unwrap();
+        let env = EnvironmentFile::parse(&text).unwrap();
+        let names: Vec<&str> = env.secrets.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["authToken", "cookie"]);
+        assert!(env.secrets.iter().all(|s| s.enabled));
+        let collection = Collection::load(root).unwrap();
+        assert!(collection.environment("Imported").is_some());
+    }
+
+    #[test]
+    fn add_secret_names_keeps_other_blocks_and_order() {
+        let (_dir, root) = fixture_copy();
+        let path = root.join("environments/Local.bru");
+        let before = fs::read_to_string(&path).unwrap();
+        let old = EnvironmentFile::parse(&before).unwrap();
+        let mut existing: Vec<String> = old.secrets.iter().map(|s| s.name.clone()).collect();
+        let hash = store::add_secret_names(&root, "Local", &["authToken".into()]).unwrap();
+        let after = fs::read_to_string(&path).unwrap();
+        assert_eq!(hash, ContentHash::of(after.as_bytes()));
+        let env = EnvironmentFile::parse(&after).unwrap();
+        assert_eq!(env.vars, old.vars);
+        existing.push("authToken".into());
+        let names: Vec<String> = env.secrets.iter().map(|s| s.name.clone()).collect();
+        assert_eq!(names, existing);
+        let (removed, added) = changed_lines(&before, &after);
+        if old.secrets.is_empty() {
+            assert_eq!(removed, 0);
+            assert!(added <= 4, "added {added}");
+        } else {
+            // The old last name gains a `,` and the new name follows it.
+            assert_eq!((removed, added), (1, 2));
+        }
+        // Adding the same name again writes nothing.
+        let again = store::add_secret_names(&root, "Local", &["authToken".into()]).unwrap();
+        assert_eq!(again, hash);
+        assert_eq!(fs::read_to_string(&path).unwrap(), after);
+        let err = store::add_secret_names(&root, "../x", &["a".into()]).unwrap_err();
+        assert!(matches!(err, StoreError::OutsideRoot(_)), "{err:?}");
+    }
+
+    #[test]
+    fn sanitize_name_matches_bruno() {
+        assert_eq!(store::sanitize_name("a/b:c"), "a-b-c");
+        assert_eq!(store::sanitize_name(" -x. "), "x");
+        assert_eq!(store::sanitize_name("GET a?b*c|d"), "GET a-b-c-d");
+        assert_eq!(store::sanitize_name("tab\there"), "tab-here");
+        assert_eq!(store::sanitize_name("CON"), "CON-");
+        assert_eq!(store::sanitize_name("lpt1"), "lpt1-");
+        assert_eq!(store::sanitize_name("CONSOLE"), "CONSOLE");
+        let long = store::sanitize_name(&"é".repeat(300));
+        assert!(long.len() <= 200, "{}", long.len());
+        assert!(!long.is_empty());
+        assert_eq!(store::sanitize_name("..."), "");
+    }
+
+    #[test]
+    fn unique_file_name_numbers_collisions() {
+        let (_dir, root) = fixture_copy();
+        assert_eq!(store::unique_file_name(&root, "fresh"), "fresh");
+        assert_eq!(store::unique_file_name(&root, "ping"), "ping 2");
+        fs::write(root.join("ping 2.bru"), "").unwrap();
+        assert_eq!(store::unique_file_name(&root, "ping"), "ping 3");
+        assert_eq!(store::unique_file_name(&root, "PING"), "PING 3");
     }
 }

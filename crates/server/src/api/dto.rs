@@ -474,7 +474,9 @@ pub struct HashDto {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SendBody {
-    pub item: String,
+    /// The request file; `null` sends `draft` as a scratch request (collection scope only).
+    #[serde(default)]
+    pub item: Option<String>,
     #[serde(default)]
     pub draft: Option<HttpRequestDto>,
     #[serde(default)]
@@ -493,6 +495,11 @@ pub struct SaveEnvironmentBody {
 pub struct SecretsBody {
     /// Merged into the current values: a string sets a secret, `null` clears it.
     pub values: BTreeMap<String, Option<String>>,
+    /// Also add the names that get a value to the file's `vars:secret` block, so they are
+    /// known after a restart ("Move to secret" on a pasted curl).
+    #[serde(default)]
+    #[ts(optional)]
+    pub declare: Option<bool>,
 }
 
 /// The file content found on disk when a save conflicts.
@@ -900,6 +907,150 @@ pub struct SessionTokenDto {
     pub token: String,
 }
 
+// ---- import from cURL and HAR, scratch requests
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CurlParseBody {
+    pub text: String,
+}
+
+/// An option of a pasted curl command that is not part of the filled-in request.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CurlNoticeDto {
+    pub option: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CurlParsedDto {
+    pub request: HttpRequestDto,
+    pub notices: Vec<CurlNoticeDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyCurlBody {
+    /// The request file; `null` for a scratch request (then `draft` is required).
+    #[serde(default)]
+    pub item: Option<String>,
+    #[serde(default)]
+    pub draft: Option<HttpRequestDto>,
+    #[serde(default)]
+    pub env: Option<String>,
+    /// Fill in variables for `env` (no scripts run); otherwise copy as written.
+    #[serde(default)]
+    pub resolve: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CurlTextDto {
+    pub text: String,
+    /// A secret value of the environment appears in `text`.
+    pub contains_secret: bool,
+    /// What was left out because Plover cannot send it.
+    pub omitted: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRequestBody {
+    /// The folder ID (`""` is the collection root).
+    pub folder: String,
+    /// The display name; the file name is made from it.
+    pub name: String,
+    pub request: HttpRequestDto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedRequestDto {
+    pub item: String,
+    pub request: HttpRequestDto,
+    pub hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct HarPreviewBody {
+    /// The HAR file's text.
+    pub har: String,
+}
+
+/// One row of the HAR import dialog (identical requests share a row).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct HarRowDto {
+    #[ts(type = "number")]
+    pub index: usize,
+    pub method: String,
+    pub url: String,
+    pub host: String,
+    pub status: Option<u16>,
+    pub mime: String,
+    #[ts(type = "number | null")]
+    pub size: Option<u64>,
+    pub has_secrets: bool,
+    /// Why the row is hidden and unticked by default; `null` when it is shown.
+    #[ts(
+        type = "\"image\" | \"script\" | \"style\" | \"font\" | \"media\" | \"sourceMap\" | \"preflight\" | \"dataUrl\" | \"extension\" | \"webSocket\" | null"
+    )]
+    pub hidden: Option<String>,
+    #[ts(type = "number")]
+    pub duplicates: usize,
+}
+
+/// What to import: entry indexes, the folder to import into (`""` is the root) with an
+/// optional new subfolder, and the environment for the secrets (`null`: `Imported`).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct HarImportBody {
+    pub har: String,
+    #[ts(type = "number[]")]
+    pub entries: Vec<usize>,
+    #[serde(default)]
+    pub folder: String,
+    #[serde(default)]
+    pub new_folder: Option<String>,
+    #[serde(default)]
+    pub env: Option<String>,
+}
+
+/// The import a `HarImportBody` would do, without writing anything. Names only.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct HarPlanDto {
+    pub env: String,
+    pub secret_names: Vec<String>,
+    pub request_names: Vec<String>,
+    pub notices: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct HarImportResultDto {
+    /// Item IDs of the request files written.
+    pub items: Vec<String>,
+    /// Secret variables created (names only).
+    pub secret_names: Vec<String>,
+    pub env: String,
+    pub notices: Vec<String>,
+    /// The step that failed; what was written before it stays.
+    pub failed_at: Option<String>,
+}
+
+impl From<&plover_core::curl::CurlNotice> for CurlNoticeDto {
+    fn from(n: &plover_core::curl::CurlNotice) -> Self {
+        CurlNoticeDto {
+            option: n.option.clone(),
+            reason: n.reason.clone(),
+        }
+    }
+}
+
 pub fn typescript_bindings() -> String {
     use ts_rs::Config;
     let cfg = Config::default();
@@ -951,6 +1102,18 @@ pub fn typescript_bindings() -> String {
         ClientReadyBody::decl(&cfg),
         SessionTokenDto::decl(&cfg),
         crate::events::ServerEvent::decl(&cfg),
+        CurlParseBody::decl(&cfg),
+        CurlNoticeDto::decl(&cfg),
+        CurlParsedDto::decl(&cfg),
+        CopyCurlBody::decl(&cfg),
+        CurlTextDto::decl(&cfg),
+        CreateRequestBody::decl(&cfg),
+        CreatedRequestDto::decl(&cfg),
+        HarPreviewBody::decl(&cfg),
+        HarRowDto::decl(&cfg),
+        HarImportBody::decl(&cfg),
+        HarPlanDto::decl(&cfg),
+        HarImportResultDto::decl(&cfg),
     ];
     let mut out = String::from(
         "// Generated from crates/server/src/api by ts-rs. Do not edit.\n\

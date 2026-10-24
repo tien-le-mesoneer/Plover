@@ -237,8 +237,9 @@ to test. Every call is to the local server, so the extra round trip does not mat
     same value is reused. A different value gets the next free number, never an
     overwrite. A name already used by a plain (non-secret) variable is skipped the
     same way.
-  - The dialog lists the secret variables it will create, with names only, never
-    values.
+  - The dialog lists the secret variables it will create **before the import**
+    (*user decision*), with names only, never values. The names come from a dry-run
+    plan endpoint that writes nothing and gives the same names the import will use.
 - **Credential fields in request bodies move into secrets** (user decision).
   - A fixed list that the dialog shows (*Claude's call* on the list): `password`,
     `passwd`, `client_secret`, `secret`, `token`, `access_token`, `refresh_token`,

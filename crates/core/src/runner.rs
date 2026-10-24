@@ -937,8 +937,9 @@ fn replace_body(response: &mut ResponseSummary, ctx: &mut ScriptContext, body: &
 }
 
 pub struct SendInput<'a> {
-    /// `/`-separated path of the request file relative to the collection root.
-    pub item_id: &'a str,
+    /// `/`-separated path of the request file relative to the collection root. `None` is a
+    /// scratch request: `draft` sent with the collection's scope only (no folder applies).
+    pub item_id: Option<&'a str>,
     /// Unsaved edits to send instead of the file's request, with the file's scopes.
     pub draft: Option<&'a HttpRequest>,
     pub env: Option<&'a str>,
@@ -972,6 +973,169 @@ pub enum SendError {
 /// Sends one request of an open collection with its session, runtime variables,
 /// in-memory secrets and remembered script changes to the environment. A pre-request
 /// script error is an `Ok` outcome without a response (`outcome.script_error`).
+/// The request to send or copy: file `item_id` with `draft` (when given) in place of its
+/// request and its folders kept, or, for `item_id: None`, a stand-in for `draft` at the
+/// collection root with no folders. `slot` holds a stand-in item.
+pub fn locate_request<'a>(
+    collection: &'a Collection,
+    item_id: Option<&str>,
+    draft: Option<&HttpRequest>,
+    slot: &'a mut Option<Item>,
+) -> Result<RequestRef<'a>, SendError> {
+    let Some(item_id) = item_id else {
+        let draft =
+            draft.ok_or_else(|| SendError::NotFound("scratch request needs a draft".into()))?;
+        // Never written: only a stand-in path for scripts and the resolver.
+        let item = slot.insert(Item::Request {
+            path: collection.root.join(SCRATCH_FILE),
+            file: Box::new(RequestFile {
+                doc: crate::bru::syntax::BruDocument::new(),
+                request: draft.clone(),
+            }),
+        });
+        let Item::Request { path, .. } = &*item else {
+            unreachable!("the stand-in is a request item")
+        };
+        return Ok(RequestRef {
+            path,
+            item,
+            folders: Vec::new(),
+        });
+    };
+    let path = store::resolve_item_path(&collection.root, item_id)?;
+    let found = collection
+        .requests_under(&path)
+        .into_iter()
+        .find(|r| r.path == path)
+        .ok_or_else(|| SendError::NotFound(item_id.to_owned()))?;
+    let (Some(draft), Item::Request { path, file }) = (draft, found.item) else {
+        return Ok(found);
+    };
+    let item = slot.insert(Item::Request {
+        path: path.clone(),
+        file: Box::new(RequestFile {
+            doc: file.doc.clone(),
+            request: draft.clone(),
+        }),
+    });
+    Ok(RequestRef {
+        path: found.path,
+        item,
+        folders: found.folders,
+    })
+}
+
+/// A request written as a curl command (see [`copy_as_curl`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CopiedCurl {
+    pub text: String,
+    /// A secret value of the environment appears in `text`.
+    pub contains_secret: bool,
+    /// Parts left out because Plover cannot send them (`auth mode \`oauth2\``).
+    pub omitted: Vec<String>,
+}
+
+/// Writes the request `input` names as a curl command. With `resolve: false` it is the
+/// request as written: collection and folder headers and auth merged, `{{variables}}`
+/// kept. With `resolve: true` variables are filled in for `input.env` the way Send fills
+/// them, but no script runs.
+pub fn copy_as_curl(
+    open: &OpenCollection,
+    input: SendInput<'_>,
+    resolve: bool,
+) -> Result<CopiedCurl, SendError> {
+    use crate::request::{Auth, Body};
+    let collection = open.collection();
+    let environment = match input.env {
+        Some(name) => Some(
+            collection
+                .environment(name)
+                .ok_or_else(|| SendError::UnknownEnvironment(name.to_owned()))?,
+        ),
+        None => None,
+    };
+    let mut slot = None;
+    let found = locate_request(&collection, input.item_id, input.draft, &mut slot)?;
+    let Item::Request { file, .. } = found.item else {
+        return Err(SendError::Unsupported("not a request".into()));
+    };
+    let mut request = file.request.clone();
+    let mut omitted = Vec::new();
+    if let Auth::Unsupported(mode) = &request.auth {
+        omitted.push(format!("auth mode `{mode}`"));
+        request.auth = Auth::None;
+    }
+    if let Body::Unsupported(mode) = &request.body {
+        omitted.push(format!("body mode `{mode}`"));
+        request.body = Body::None;
+    }
+    let overrides = input.env.map(|e| open.env_overrides(e)).unwrap_or_default();
+    let runtime = open.runtime();
+    let ctx = ResolveContext {
+        collection: &collection,
+        environment,
+        env_overrides: &overrides,
+        runtime: &runtime,
+    };
+    let item_id = input.item_id.map(|_| found.path);
+    let folders = found.folders.clone();
+    let stand_in = |request: &HttpRequest| Item::Request {
+        path: item_id.map_or_else(|| collection.root.join(SCRATCH_FILE), Path::to_path_buf),
+        file: Box::new(RequestFile {
+            doc: file.doc.clone(),
+            request: request.clone(),
+        }),
+    };
+    let mut item = stand_in(&request);
+    let r = |item: &Item| -> Result<(PreparedRequest, ScriptVars), ResolveError> {
+        let Item::Request { path, .. } = item else {
+            unreachable!("the stand-in is a request item")
+        };
+        let r = RequestRef {
+            path,
+            item,
+            folders: folders.clone(),
+        };
+        Ok((prepare(&ctx, &r)?, initial_vars(&ctx, &r)?))
+    };
+    let (prepared, vars) = match r(&item) {
+        // An auth mode inherited from a folder or the collection that Plover cannot send.
+        Err(ResolveError::Unsupported(what)) if what.starts_with("auth mode") => {
+            omitted.push(what);
+            request.auth = Auth::None;
+            item = stand_in(&request);
+            r(&item).map_err(SendError::Resolve)?
+        }
+        other => other.map_err(SendError::Resolve)?,
+    };
+    let command = if resolve {
+        let resolved = finalize(
+            &prepared,
+            &vars.var_stack(),
+            &collection.root,
+            &InterpolateLimits::default(),
+        )
+        .map_err(SendError::Resolve)?;
+        crate::curl::CurlCommand::from(&resolved)
+    } else {
+        crate::curl::CurlCommand::from(&prepared)
+    };
+    let text = crate::curl::to_curl(&command);
+    let contains_secret = input.env.is_some_and(|env| {
+        open.secrets(env)
+            .values()
+            .any(|v| v.len() >= 4 && text.contains(v.as_str()))
+    });
+    Ok(CopiedCurl {
+        text,
+        contains_secret,
+        omitted,
+    })
+}
+
+/// The stand-in file name of a scratch request (see [`SendInput::item_id`]).
+pub const SCRATCH_FILE: &str = ".plover-scratch.bru";
+
 pub async fn send_one(
     open: &OpenCollection,
     input: SendInput<'_>,
@@ -993,12 +1157,8 @@ pub async fn send_one_with(
         ),
         None => None,
     };
-    let path = store::resolve_item_path(&collection.root, input.item_id)?;
-    let found = collection
-        .requests_under(&path)
-        .into_iter()
-        .find(|r| r.path == path)
-        .ok_or_else(|| SendError::NotFound(input.item_id.to_owned()))?;
+    let mut slot = None;
+    let found = locate_request(&collection, input.item_id, input.draft, &mut slot)?;
     if let Err(not_runnable) = check_runnable(&found) {
         return Err(match not_runnable {
             NotRunnable::Skip(reason) => SendError::Unsupported(reason),

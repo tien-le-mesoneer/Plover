@@ -118,6 +118,22 @@ collection closes it (it stays under Recent). This state lives in `state.json` i
 `~/.config/plover` (Linux), or in `PLOVER_STATE_DIR`; it holds paths and layout only,
 never secrets. `plv run` reads and writes only its `runs/` folder.
 
+**From curl, scratch requests and HAR files** (UI only):
+
+- Paste a `curl …` command into the URL bar and it fills method, URL, query, headers,
+  body, basic auth and multipart fields. Options Plover cannot copy (`-k`, proxies,
+  client certificates, `--resolve`, unknown flags) are listed in the banner, never
+  dropped silently; **Undo** restores the request, and **Move to secret** stores a
+  pasted `Authorization` or `Cookie` value as a secret of the selected environment.
+- **New request** (above the sidebar) opens an unsaved tab that sends with the
+  collection's headers, auth and scripts. It is never written to disk until you save it
+  into a folder, and is not remembered across restarts.
+- **Copy as cURL** (next to Save) copies a request as written, or with variables filled
+  in for the selected environment (it asks first when the command contains a secret).
+- **Import HAR** (above the sidebar) turns a recorded browser session into requests and
+  moves every credential into secret variables. See
+  [Capture a browser flow and import it](docs/capture-with-claude.md).
+
 Shortcuts: `⌘/Ctrl+O` open collection, `⌘/Ctrl+P` filter requests (`Esc` clears),
 `⌘/Ctrl+Enter` send, `⌘/Ctrl+S` save, arrow keys in the sidebar tree and tab strips,
 `Esc` closes dialogs. `⌘/Ctrl+W` closes a request tab in the desktop app (browsers

@@ -2,10 +2,12 @@
 
 mod app_state;
 mod collections;
+mod curl;
 pub mod dto;
 mod environments;
 mod extract;
 mod history;
+mod import;
 mod native;
 mod requests;
 mod session;
@@ -58,7 +60,16 @@ pub fn routes() -> Router<AppState> {
             "/collections/{id}/requests",
             get(requests::read).put(requests::save),
         )
+        .route("/collections/{id}/requests/new", post(requests::create))
         .route("/collections/{id}/send", post(requests::send))
+        .route("/curl/parse", post(curl::parse))
+        .route("/collections/{id}/curl", post(curl::copy))
+        .route(
+            "/collections/{id}/import/har/preview",
+            post(import::preview_har),
+        )
+        .route("/collections/{id}/import/har/plan", post(import::plan_har))
+        .route("/collections/{id}/import/har", post(import::import_har))
         .route(
             "/collections/{id}/runs",
             get(history::list).delete(history::clear),
@@ -98,6 +109,7 @@ impl From<StoreError> for ApiError {
                 ApiError::new(StatusCode::BAD_REQUEST, "bad_item", e.to_string())
             }
             StoreError::NotFound(_) => ApiError::not_found(e.to_string()),
+            StoreError::Exists(_) => ApiError::new(StatusCode::CONFLICT, "exists", e.to_string()),
             StoreError::Parse(_) => ApiError::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "parse_error",

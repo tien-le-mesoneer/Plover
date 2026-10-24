@@ -7,7 +7,9 @@ export function closeTabWithConfirm(key: string): boolean {
   const { tabs, isDirty, close } = useTabs.getState();
   const tab = tabs.find((t) => t.key === key);
   if (!tab) return false;
-  if (isDirty(key) && !window.confirm(`Discard unsaved changes to "${tab.draft.name}"?`)) return false;
+  const question =
+    tab.item === null ? "Discard this request?" : `Discard unsaved changes to "${tab.draft.name}"?`;
+  if (isDirty(key) && !window.confirm(question)) return false;
   close(key);
   return true;
 }
@@ -53,7 +55,7 @@ export function RequestTabs() {
             aria-keyshortcuts="Delete"
             tabIndex={selected ? 0 : -1}
             className={`tab ${selected ? "active" : ""}`}
-            title={t.item}
+            title={t.item ?? "Unsaved request"}
             onClick={() => activate(t.key)}
             onKeyDown={(e) => onKeyDown(e, index)}
             onAuxClick={(e) => e.button === 1 && closeTabWithConfirm(t.key)}

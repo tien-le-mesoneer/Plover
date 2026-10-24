@@ -48,7 +48,12 @@ export interface WorkspaceState {
    * Sends only the given names (`null` clears), then refreshes which secrets are set
    * (and where) and the capabilities. Resolves to warnings for values kept in memory.
    */
-  setSecrets(id: string, name: string, values: Record<string, string | null>): Promise<string[]>;
+  setSecrets(
+    id: string,
+    name: string,
+    values: Record<string, string | null>,
+    declare?: boolean,
+  ): Promise<string[]>;
   /** Opens this session in the default browser (desktop only). */
   openInBrowser(): Promise<void>;
   /** A collection the desktop shell opened: add and select it, keeping tabs and drafts. */
@@ -247,8 +252,10 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => {
       }
     },
 
-    async setSecrets(id, name, values) {
-      const { warnings } = await api().setSecrets(id, name, values);
+    async setSecrets(id, name, values, declare) {
+      const { warnings } = declare
+        ? await api().setSecrets(id, name, values, true)
+        : await api().setSecrets(id, name, values);
       const [environments, capabilities] = await Promise.all([api().environments(id), api().capabilities()]);
       set((s) => ({ environments: { ...s.environments, [id]: environments }, capabilities }));
       return warnings;
