@@ -345,3 +345,33 @@ folder: string,
 name: string, request: HttpRequestDto, };
 
 export type CreatedRequestDto = { item: string, request: HttpRequestDto, hash: string, };
+
+export type HarPreviewBody = { 
+/**
+ * The HAR file's text.
+ */
+har: string, };
+
+export type HarRowDto = { index: number, method: string, url: string, host: string, status: number | null, mime: string, size: number | null, hasSecrets: boolean, 
+/**
+ * Why the row is hidden and unticked by default; `null` when it is shown.
+ */
+hidden: "image" | "script" | "style" | "font" | "media" | "sourceMap" | "preflight" | "dataUrl" | "extension" | "webSocket" | null, duplicates: number, };
+
+export type HarImportBody = { har: string, entries: number[], folder: string, newFolder: string | null, env: string | null, };
+
+export type HarPlanDto = { env: string, secretNames: Array<string>, requestNames: Array<string>, notices: Array<string>, };
+
+export type HarImportResultDto = { 
+/**
+ * Item IDs of the request files written.
+ */
+items: Array<string>, 
+/**
+ * Secret variables created (names only).
+ */
+secretNames: Array<string>, env: string, notices: Array<string>, 
+/**
+ * The step that failed; what was written before it stays.
+ */
+failedAt: string | null, };

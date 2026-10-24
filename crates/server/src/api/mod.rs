@@ -7,6 +7,7 @@ pub mod dto;
 mod environments;
 mod extract;
 mod history;
+mod import;
 mod native;
 mod requests;
 mod session;
@@ -63,6 +64,12 @@ pub fn routes() -> Router<AppState> {
         .route("/collections/{id}/send", post(requests::send))
         .route("/curl/parse", post(curl::parse))
         .route("/collections/{id}/curl", post(curl::copy))
+        .route(
+            "/collections/{id}/import/har/preview",
+            post(import::preview_har),
+        )
+        .route("/collections/{id}/import/har/plan", post(import::plan_har))
+        .route("/collections/{id}/import/har", post(import::import_har))
         .route(
             "/collections/{id}/runs",
             get(history::list).delete(history::clear),
