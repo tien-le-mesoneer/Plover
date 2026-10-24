@@ -11,21 +11,28 @@ export interface CodeEditorProps {
   onChange?: (value: string) => void;
   /** Editor height in CSS units; defaults to filling the parent. */
   height?: string;
-  /** Called with the editor once it exists (find widget, folding, value clicks). */
+  /** Called with the editor once it exists (find widget, folding). */
   onReady?: (editor: monaco.editor.IStandaloneCodeEditor) => void;
+  /**
+   * A click on the text, or Enter in a read-only editor: the offset in the text and the
+   * screen point under it (for a menu).
+   */
+  onPick?: (offset: number, at: { x: number; y: number }) => void;
 }
 
 /** A thin wrapper around a Monaco editor instance. */
-export function CodeEditor({ value, language, readOnly, onChange, height, onReady }: CodeEditorProps) {
+export function CodeEditor({ value, language, readOnly, onChange, height, onReady, onPick }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const changeHandler = useRef(onChange);
   const readyHandler = useRef(onReady);
+  const pickHandler = useRef(onPick);
 
   useEffect(() => {
     changeHandler.current = onChange;
     readyHandler.current = onReady;
-  }, [onChange, onReady]);
+    pickHandler.current = onPick;
+  }, [onChange, onReady, onPick]);
 
   useEffect(() => {
     if (!host.current) return;
@@ -47,10 +54,38 @@ export function CodeEditor({ value, language, readOnly, onChange, height, onRead
       window.dispatchEvent(new Event("plover:send")),
     );
     const sub = instance.onDidChangeModelContent(() => changeHandler.current?.(instance.getValue()));
+    const pick = (position: monaco.Position | null) => {
+      const model = instance.getModel();
+      const handler = pickHandler.current;
+      if (!model || !position || !handler) return;
+      const point = instance.getScrolledVisiblePosition(position);
+      const box = instance.getDomNode()?.getBoundingClientRect();
+      handler(model.getOffsetAt(position), {
+        x: (box?.left ?? 0) + (point?.left ?? 0),
+        y: (box?.top ?? 0) + (point?.top ?? 0) + (point?.height ?? 0),
+      });
+    };
+    const clicks = instance.onMouseUp((e) => {
+      if (e.target.type === monaco.editor.MouseTargetType.CONTENT_TEXT && instance.getSelection()?.isEmpty()) {
+        pick(e.target.position);
+      }
+    });
+    // Enter on a value opens the same menu from the keyboard (read-only editors only).
+    // addAction, not addCommand: commands are shared by all editors on the page.
+    const enter = readOnly
+      ? instance.addAction({
+          id: "plover.pickValue",
+          label: "Value actions",
+          keybindings: [monaco.KeyCode.Enter],
+          run: () => pick(instance.getPosition()),
+        })
+      : undefined;
     editor.current = instance;
     readyHandler.current?.(instance);
     return () => {
       sub.dispose();
+      clicks.dispose();
+      enter?.dispose();
       instance.getModel()?.dispose();
       instance.dispose();
       editor.current = null;

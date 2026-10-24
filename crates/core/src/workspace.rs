@@ -101,6 +101,15 @@ impl OpenCollection {
         *self.runtime.lock().unwrap_or_else(PoisonError::into_inner) = vars;
     }
 
+    /// Sets one runtime variable, as `bru.setVar(name, value)` would; the next send or
+    /// run sees it.
+    pub fn set_runtime_var(&self, name: &str, value: serde_json::Value) {
+        self.runtime
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(name.to_owned(), value);
+    }
+
     /// Applies what one send or run changed in the runtime variables (`before` → `after`):
     /// values it set or changed, and names it deleted. Changes other sends or runs made
     /// meanwhile are kept.

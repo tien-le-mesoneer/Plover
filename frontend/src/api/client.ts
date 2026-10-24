@@ -105,6 +105,8 @@ export interface ApiClient {
   copyCurl(id: string, body: CopyCurlBody): Promise<CurlTextDto>;
   /** The URL Send would use, variables filled in and secret values masked. */
   resolvedUrl(id: string, body: ResolvedUrlBody): Promise<ResolvedUrlDto>;
+  /** Sets a runtime variable like `bru.setVar`; the next send sees it. */
+  setRuntimeVar(collectionId: string, name: string, value: unknown): Promise<void>;
   /** Shows a request file in the file manager (desktop only). */
   reveal(collection: string, item: string): Promise<void>;
   /** Writes a new request file; rejects with code `exists` when the name is taken. */
@@ -265,6 +267,7 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     copyCurl: (id, body) => call("POST", `${collections(id)}/curl`, body),
     resolvedUrl: (id, body) => call("POST", `${collections(id)}/resolved-url`, body),
     reveal: (collection, item) => call("POST", "/native/reveal", { collection, item }),
+    setRuntimeVar: (id, name, value) => call("PUT", `${collections(id)}/runtime-vars/${enc(name)}`, { value }),
     createRequest: (id, folder, name, request) =>
       call("POST", `${collections(id)}/requests/new`, { folder, name, request }),
     previewHar: (id, har) => call("POST", `${collections(id)}/import/har/preview`, { har }),

@@ -1168,6 +1168,7 @@ pub fn typescript_bindings() -> String {
         CurlParsedDto::decl(&cfg),
         CopyCurlBody::decl(&cfg),
         ResolvedUrlBody::decl(&cfg),
+        super::vars::RuntimeVarBody::decl(&cfg),
         ResolvedUrlDto::decl(&cfg),
         RevealBody::decl(&cfg),
         CurlTextDto::decl(&cfg),

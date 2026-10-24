@@ -46,6 +46,8 @@ export function RunResultDetail({ runId }: { runId: string }) {
               sending={false}
               request={data.request}
               bodyNote={bodyNote(data.responseBody)}
+              name={data.name}
+              collectionId={run.collectionId}
             />
           </>
         ))}

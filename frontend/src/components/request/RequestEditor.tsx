@@ -223,6 +223,7 @@ export function RequestEditor({ tab }: { tab: Tab }) {
             result={tab.result}
             sending={tab.sending}
             name={draft.name}
+            collectionId={tab.collectionId}
             onOpenScript={() => setSection("Script")}
           />
         </section>

@@ -6,6 +6,8 @@ import { Banner } from "./Banner";
 import { downloadBody } from "../lib/download";
 import { formatSize, header, prettyBody } from "../lib/format";
 import { evaluateJsonPath, filterText, type JsonPathResult } from "../lib/jsonpath";
+import { jsonPathAt, type ValueAt } from "../lib/jsonPathAt";
+import { ValueMenu } from "./response/ValueMenu";
 import { BodyPreview, previewKind } from "./response/BodyPreview";
 import { BodyToolbar, type BodyMode } from "./response/BodyToolbar";
 import { ConsoleOutput } from "./response/ConsoleOutput";
@@ -35,6 +37,8 @@ interface Props {
   bodyNote?: string;
   /** The request's name, for "Save body to file". */
   name?: string;
+  /** For "Save as runtime variable" in the value menu. */
+  collectionId?: string;
 }
 
 /** A stored request body: text, form or multipart fields, or a note. */
@@ -127,7 +131,7 @@ function bodyView(response: SendResultDto["response"]): BodyView | null {
   return { language: pretty.language, text: pretty.text, parsed, jsonMismatch: jsonType && text !== null && !parsed.ok };
 }
 
-export function ResponseViewer({ result, sending, onOpenScript, request, bodyNote, name }: Props) {
+export function ResponseViewer({ result, sending, onOpenScript, request, bodyNote, name, collectionId }: Props) {
   const failedChecks = result ? testSummary(result.tests, result.asserts) : { passed: 0, total: 0 };
   const hasFailures = failedChecks.passed < failedChecks.total;
   const [view, setView] = useState<View>(hasFailures ? "tests" : "body");
@@ -136,6 +140,7 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
   const [mode, setMode] = useState<BodyMode>("pretty");
   const [filter, setFilter] = useState("");
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const [picked, setPicked] = useState<{ at: { x: number; y: number }; value: ValueAt } | null>(null);
   const bodyInfo = useMemo(() => bodyView(result?.response ?? null), [result]);
 
   // A new result with failing checks opens the Tests tab, so the failure is not
@@ -239,6 +244,17 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
   const shownMode: BodyMode =
     mode === "preview" && !preview ? "pretty" : mode === "pretty" && body.jsonMismatch ? "raw" : mode;
   const shownText = filtered ?? (shownMode === "raw" ? (response.bodyText ?? "") : body.text);
+  // The value menu works on the pretty (or filtered) JSON text that is shown.
+  const pickable = body.parsed.ok && (filtered !== null || shownMode === "pretty");
+  const onPick = (offset: number, at: { x: number; y: number }) => {
+    if (!pickable) return;
+    const value = jsonPathAt(shownText, offset);
+    if (value) setPicked({ at, value });
+  };
+  const closePicked = () => {
+    setPicked(null);
+    editor.current?.focus();
+  };
   const onFind = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "f" || !editor.current) return;
     e.preventDefault();
@@ -293,12 +309,25 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
                   language={filtered !== null ? "json" : shownMode === "raw" ? "plaintext" : body.language === "text" ? "plaintext" : body.language}
                   readOnly
                   onReady={(e) => (editor.current = e)}
+                  onPick={onPick}
                 />
               </div>
             ) : (
               <p className="muted center">{body.text}</p>
             )}
             <PinnedHeaders headers={response.headers} onCopy={(v) => void copy(v)} />
+            {picked && (
+              <ValueMenu
+                at={picked.at}
+                path={picked.value.path}
+                value={picked.value.value}
+                collectionId={collectionId ?? null}
+                pathDisabled={filtered !== null ? "Paths are relative to the filtered result" : undefined}
+                onCopy={(text) => void copy(text)}
+                onSaved={(n) => void copy(`{{${n}}}`, `Saved {{${n}}}`)}
+                onClose={closePicked}
+              />
+            )}
           </>
         ) : (
           <HeadersTable headers={response.headers} onCopy={(v) => void copy(v)} />

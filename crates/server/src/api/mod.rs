@@ -12,6 +12,7 @@ mod import;
 mod native;
 mod requests;
 mod session;
+mod vars;
 pub use requests::MAX_INLINE_BODY;
 pub mod runs;
 
@@ -64,6 +65,10 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/collections/{id}/requests/new", post(requests::create))
         .route("/collections/{id}/send", post(requests::send))
+        .route(
+            "/collections/{id}/runtime-vars/{name}",
+            put(vars::set_runtime_var),
+        )
         .route("/curl/parse", post(curl::parse))
         .route("/collections/{id}/curl", post(curl::copy))
         .route("/collections/{id}/resolved-url", post(curl::resolved))

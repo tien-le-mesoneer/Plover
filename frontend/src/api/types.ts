@@ -365,6 +365,8 @@ export type ResolvedUrlBody = {
  */
 item: string | null, draft: HttpRequestDto | null, env: string | null, };
 
+export type RuntimeVarBody = { value: unknown, };
+
 export type ResolvedUrlDto = { url: string, 
 /**
  * Some secret value was replaced.

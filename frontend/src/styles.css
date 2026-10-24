@@ -237,6 +237,12 @@ button.copy { display: inline-flex; align-items: center; gap: 4px; padding: 2px 
 .segmented button[aria-checked="true"] { background: var(--fg); color: var(--bg); }
 .segmented button:focus-visible { outline-offset: -3px; }
 .jsonpath { flex: 1; min-width: 160px; max-width: 360px; font-family: var(--font-mono); font-size: var(--fs-dense); }
+.value-menu { position: fixed; z-index: 30; min-width: 220px; max-width: 360px; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 4px; }
+.value-menu > button { text-align: left; border: 0; background: none; padding: 6px 8px; }
+.value-menu > button:hover:not(:disabled), .value-menu > button:focus-visible { background: var(--bg-2); }
+.value-menu-path { font-size: 12px; color: var(--muted); padding: 2px 8px 4px; overflow-wrap: anywhere; }
+.value-menu-form { display: flex; flex-direction: column; gap: 6px; padding: 4px 8px; }
+.value-menu-form label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
 .body-preview { flex: 1; min-height: 240px; width: 100%; border: 0; background: var(--bg); }
 .body-preview-image { max-width: 100%; max-height: 60vh; object-fit: contain; margin: 8px; align-self: flex-start; }
 .pinned-headers { list-style: none; margin: 0; padding: 4px 8px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; flex: none; }
