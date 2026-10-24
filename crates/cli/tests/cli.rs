@@ -32,8 +32,13 @@ fn collection(host: &str) -> tempfile::TempDir {
     dir
 }
 
+/// `plv` with history kept in a temporary state directory, never the user's.
 fn bru_rs() -> Command {
-    Command::cargo_bin("plv").unwrap()
+    static STATE: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    let state = STATE.get_or_init(|| tempfile::tempdir().unwrap());
+    let mut cmd = Command::cargo_bin("plv").unwrap();
+    cmd.env("PLOVER_STATE_DIR", state.path());
+    cmd
 }
 
 async fn server() -> MockServer {

@@ -285,7 +285,7 @@ User decision: the renderers live in core from this task on, so the app's Export
   - `concurrent_plv_runs` (spec test list): two `plv run` processes on the same collection at once → both IDs listed, both load.
   - `unknown_or_malformed_id`: `plv runs show ../x` and an unknown valid ID → exit 2 with `run <id> not found` / `invalid run ID`.
 - [ ] **Step 2: Run** `cargo test -p plover-cli --test history` → FAIL.
-- [ ] **Step 3: Implement.** No state dir (`default_dir()` is `None`) → no history, one warning. A save error is a warning; it never changes the exit code. `plv runs` prints ID, local start time, source, env, `passed/failed/skipped`, duration, newest first; empty → `No runs saved for <name>`.
+- [ ] **Step 3: Implement.** No state dir (`default_dir()` is `None`) → no history, one warning. A save error is a warning; it never changes the exit code. `plv runs` prints ID, start time (UTC, since core has no time-zone data), source, env, `passed/failed/skipped`, duration, newest first; empty → `No runs saved for <name>`.
 - [ ] **Step 4: Run** the gate → PASS.
 - [ ] **Step 5: Commit** `feat(cli): save runs to history and add plv runs`.
 

@@ -3,6 +3,8 @@
 
 mod print;
 
+use std::ffi::OsStr;
+use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -12,10 +14,12 @@ use plover_core::collection::Collection;
 use plover_core::executor::{ExecOptions, Session};
 use plover_core::masking::secret_strings;
 use plover_core::report::{self, ReportFilter};
+use plover_core::run_history::{HistoryError, RunHistory};
 use plover_core::run_record::{RunEnd, RunHeader, RunId, RunRecord, RunRecorder, RunSource};
 use plover_core::runner::{self, Persist, RunOptions, RunVars};
 use plover_core::script::ScriptLimits;
 use plover_core::vars::{ValueMap, VarMap};
+use plover_core::workspace::CollectionId;
 
 #[derive(Parser)]
 #[command(name = "plv", version, about = "Run Bruno-compatible API collections")]
@@ -30,6 +34,91 @@ enum Command {
     Run(RunArgs),
     /// Start the local web UI on 127.0.0.1.
     Serve(ServeArgs),
+    /// List, show or clear saved runs.
+    Runs(RunsArgs),
+}
+
+#[derive(clap::Args)]
+#[command(args_conflicts_with_subcommands = true)]
+struct RunsArgs {
+    #[command(subcommand)]
+    action: Option<RunsAction>,
+    /// Collection whose runs to list (default: the current directory).
+    dir: Option<PathBuf>,
+}
+
+#[derive(Subcommand)]
+enum RunsAction {
+    /// Print a saved run and write its reports, without sending anything.
+    Show(ShowArgs),
+    /// Delete a collection's saved runs.
+    Clear(ClearArgs),
+}
+
+#[derive(clap::Args)]
+struct ShowArgs {
+    /// The run ID, as `plv runs` lists it.
+    id: String,
+    #[command(flatten)]
+    reports: ReportArgs,
+}
+
+#[derive(clap::Args)]
+struct ClearArgs {
+    /// The collection (default: the current directory).
+    dir: Option<PathBuf>,
+    /// Do not ask for confirmation.
+    #[arg(long)]
+    yes: bool,
+}
+
+/// Report files and Bruno's `--reporter-skip-*` flags.
+#[derive(clap::Args)]
+struct ReportArgs {
+    /// Write a JUnit XML report to this file.
+    #[arg(long, value_name = "FILE")]
+    reporter_junit: Option<PathBuf>,
+    /// Write a JSON report to this file.
+    #[arg(long, value_name = "FILE")]
+    reporter_json: Option<PathBuf>,
+    /// Write a self-contained HTML report to this file.
+    #[arg(long, value_name = "FILE")]
+    reporter_html: Option<PathBuf>,
+    #[command(flatten)]
+    skip: SkipArgs,
+}
+
+impl ReportArgs {
+    /// Fails when a report's directory does not exist, before anything runs.
+    fn check_dirs(&self) -> Result<(), String> {
+        for report in [
+            &self.reporter_junit,
+            &self.reporter_json,
+            &self.reporter_html,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            let dir = report.parent().filter(|d| !d.as_os_str().is_empty());
+            if dir.is_some_and(|d| !d.is_dir()) {
+                return Err(format!(
+                    "output directory {} does not exist",
+                    dir.unwrap_or(Path::new(".")).display()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn write(&self, record: &RunRecord) -> Result<(), String> {
+        write_reports(
+            record,
+            &self.skip.filter(),
+            self.reporter_junit.as_deref(),
+            self.reporter_json.as_deref(),
+            self.reporter_html.as_deref(),
+        )
+    }
 }
 
 #[derive(clap::Args)]
@@ -66,17 +155,14 @@ struct RunArgs {
     /// Do not follow HTTP redirects.
     #[arg(long)]
     no_follow_redirects: bool,
-    /// Write a JUnit XML report to this file.
-    #[arg(long, value_name = "FILE")]
-    reporter_junit: Option<PathBuf>,
-    /// Write a JSON report to this file.
-    #[arg(long, value_name = "FILE")]
-    reporter_json: Option<PathBuf>,
-    /// Write a self-contained HTML report to this file.
-    #[arg(long, value_name = "FILE")]
-    reporter_html: Option<PathBuf>,
     #[command(flatten)]
-    skip: SkipArgs,
+    reports: ReportArgs,
+    /// Save this run to the run history even when `CI` is set.
+    #[arg(long, conflicts_with = "no_history")]
+    history: bool,
+    /// Do not save this run to the run history.
+    #[arg(long)]
+    no_history: bool,
     /// Wait this many milliseconds after each request except the last (Bruno `--delay`),
     /// e.g. to stay under a server's rate limit.
     #[arg(long, value_name = "MS")]
@@ -181,6 +267,7 @@ where
         match cli.command {
             Command::Run(args) => run(args).await,
             Command::Serve(args) => serve(args).await,
+            Command::Runs(args) => runs(args),
         }
     });
     match result {
@@ -196,22 +283,7 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
     if !args.path.exists() {
         return Err(format!("{} does not exist", args.path.display()));
     }
-    for report in [
-        &args.reporter_junit,
-        &args.reporter_json,
-        &args.reporter_html,
-    ]
-    .into_iter()
-    .flatten()
-    {
-        let dir = report.parent().filter(|d| !d.as_os_str().is_empty());
-        if dir.is_some_and(|d| !d.is_dir()) {
-            return Err(format!(
-                "output directory {} does not exist",
-                dir.unwrap_or(Path::new(".")).display()
-            ));
-        }
-    }
+    args.reports.check_dirs()?;
     let root = Collection::find_root(&args.path).map_err(|e| e.to_string())?;
     let collection = Collection::load(&root).map_err(|e| e.to_string())?;
     let keychain = match (&args.env, args.use_keychain) {
@@ -283,18 +355,115 @@ async fn run(args: RunArgs) -> Result<ExitCode, String> {
         report,
         end_secrets: secrets(&state),
     });
-    write_reports(
-        &record,
-        &args.skip.filter(),
-        args.reporter_junit.as_deref(),
-        args.reporter_json.as_deref(),
-        args.reporter_html.as_deref(),
-    )?;
+    args.reports.write(&record)?;
+    if history_enabled(
+        args.history,
+        args.no_history,
+        std::env::var_os("CI").as_deref(),
+    ) {
+        save_run(&record);
+    }
     Ok(if report.failed > 0 {
         ExitCode::from(EXIT_FAILED)
     } else {
         ExitCode::SUCCESS
     })
+}
+
+/// `true` unless `CI` is set to a truthy value; `--history` and `--no-history` win.
+fn history_enabled(force: bool, disable: bool, ci: Option<&OsStr>) -> bool {
+    if force || disable {
+        return force;
+    }
+    let ci = ci.map(|v| v.to_string_lossy().trim().to_ascii_lowercase());
+    matches!(ci.as_deref(), None | Some("" | "0" | "false"))
+}
+
+/// Saves the run; a failure only warns, so the run's result and exit code stay.
+fn save_run(record: &RunRecord) {
+    let Some(dir) = plover_core::app_state::default_dir() else {
+        eprintln!("warning: no state directory, the run is not saved to history");
+        return;
+    };
+    match RunHistory::at(&dir).save(record) {
+        Ok(()) => eprintln!("Saved run {}", record.header.id),
+        Err(e) => eprintln!("warning: cannot save run history: {e}"),
+    }
+}
+
+fn history() -> Result<RunHistory, String> {
+    plover_core::app_state::default_dir()
+        .map(|dir| RunHistory::at(&dir))
+        .ok_or_else(|| "no state directory (set PLOVER_STATE_DIR)".to_owned())
+}
+
+/// The collection at `dir` (default `.`): its history key and name.
+fn collection_of(dir: Option<&Path>) -> Result<(CollectionId, String), String> {
+    let root = Collection::find_root(dir.unwrap_or(Path::new("."))).map_err(|e| e.to_string())?;
+    let id = CollectionId::for_root(&root).map_err(|e| e.to_string())?;
+    let name = Collection::load(&root)
+        .map(|c| c.config.name)
+        .unwrap_or_else(|_| {
+            root.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        });
+    Ok((id, name))
+}
+
+fn runs(args: RunsArgs) -> Result<ExitCode, String> {
+    match args.action {
+        None => {
+            let (id, name) = collection_of(args.dir.as_deref())?;
+            let metas = history()?.list(&id);
+            if metas.is_empty() {
+                println!("No runs saved for {name}");
+            } else {
+                print::run_list(&metas);
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Some(RunsAction::Show(show)) => {
+            let Some(id) = RunId::parse(&show.id) else {
+                eprintln!("error: invalid run ID `{}`", show.id);
+                return Ok(ExitCode::from(EXIT_SETUP));
+            };
+            show.reports.check_dirs()?;
+            let record = match history()?.find(&id) {
+                Ok(record) => record,
+                Err(e @ (HistoryError::NotFound(_) | HistoryError::Unreadable { .. })) => {
+                    eprintln!("error: {e}");
+                    return Ok(ExitCode::from(EXIT_SETUP));
+                }
+                Err(e) => return Err(e.to_string()),
+            };
+            print::run_record(&record);
+            show.reports.write(&record)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Some(RunsAction::Clear(clear)) => {
+            let (id, name) = collection_of(clear.dir.as_deref())?;
+            let history = history()?;
+            let count = history.list(&id).len();
+            if !clear.yes {
+                let stdin = std::io::stdin();
+                if !stdin.is_terminal() {
+                    eprintln!("error: not a terminal; pass --yes to delete the runs of {name}");
+                    return Ok(ExitCode::from(EXIT_SETUP));
+                }
+                eprint!("Delete {count} runs of {name}? [y/N] ");
+                let mut answer = String::new();
+                stdin.read_line(&mut answer).map_err(|e| e.to_string())?;
+                if !matches!(answer.trim(), "y" | "Y" | "yes") {
+                    eprintln!("Nothing deleted");
+                    return Ok(ExitCode::SUCCESS);
+                }
+            }
+            let deleted = history.clear(&id).map_err(|e| e.to_string())?;
+            println!("Deleted {deleted} runs of {name}");
+            Ok(ExitCode::SUCCESS)
+        }
+    }
 }
 
 /// Which run this is: the collection, what ran, and when it started.

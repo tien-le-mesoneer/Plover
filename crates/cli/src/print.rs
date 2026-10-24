@@ -2,6 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
+use std::time::{Duration, UNIX_EPOCH};
+
+use plover_core::run_history::RunMeta;
+use plover_core::run_record::{ResultStatus, RunRecord};
 use plover_core::runner::{RequestOutcome, RunEvent, RunReport, ScriptPhase};
 
 pub struct Printer {
@@ -132,6 +136,102 @@ pub fn summary(report: &RunReport) {
         report.asserts_passed + report.asserts_failed,
         report.elapsed.as_millis()
     );
+}
+
+fn started(ms: u64) -> String {
+    let iso = plover_core::time::iso_utc(UNIX_EPOCH + Duration::from_millis(ms));
+    // `2025-10-22T12:00:00.123` → `2025-10-22 12:00:00`
+    format!(
+        "{} UTC",
+        iso.replace('T', " ").split('.').next().unwrap_or_default()
+    )
+}
+
+/// `plv runs`: newest first.
+pub fn run_list(metas: &[RunMeta]) {
+    println!(
+        "{:<23}  {:<23}  {:<6} {:<12} {:>17}  TIME",
+        "ID", "STARTED", "SOURCE", "ENV", "PASSED/FAILED/SKIP"
+    );
+    for m in metas {
+        let r = &m.report;
+        let counts = format!("{}/{}/{}", r.passed, r.failed, r.skipped);
+        let cancelled = if m.outcome.as_str() == "cancelled" {
+            "  cancelled"
+        } else {
+            ""
+        };
+        println!(
+            "{:<23}  {:<23}  {:<6} {:<12} {:>17}  {}ms{cancelled}",
+            m.header.id,
+            started(m.header.started_at_ms),
+            m.header.source.as_str(),
+            m.header.env.as_deref().unwrap_or("-"),
+            counts,
+            r.elapsed.as_millis()
+        );
+    }
+}
+
+/// `plv runs show`: the run as `plv run` summarised it (values masked).
+pub fn run_record(record: &RunRecord) {
+    let h = &record.header;
+    println!(
+        "Run {} · {} · {} · {} · {} · {}",
+        h.id,
+        h.collection_name,
+        h.target,
+        h.env.as_deref().unwrap_or("no environment"),
+        started(h.started_at_ms),
+        h.source.as_str()
+    );
+    for r in &record.results {
+        let o = &r.outcome;
+        match r.status {
+            ResultStatus::Skipped => println!(
+                "- {}: {}",
+                r.file,
+                r.skip_reason.as_deref().unwrap_or("skipped")
+            ),
+            ResultStatus::Error => {
+                println!("✗ {}: {}", r.file, r.error.as_deref().unwrap_or("error"))
+            }
+            status => {
+                let mark = if status == ResultStatus::Pass {
+                    '✓'
+                } else {
+                    '✗'
+                };
+                println!(
+                    "{mark} {:<7} {}  {}  {}ms  {}",
+                    r.method,
+                    r.name,
+                    o.status.unwrap_or_default(),
+                    o.elapsed.as_millis(),
+                    format_size(o.size)
+                );
+                for a in o.asserts.iter().filter(|a| !a.passed) {
+                    println!(
+                        "    ✗ assert {}: {}: {}",
+                        a.lhs,
+                        a.rhs,
+                        a.error.as_deref().unwrap_or("failed")
+                    );
+                }
+                for t in o.tests.iter().filter(|t| !t.passed) {
+                    println!(
+                        "    ✗ {}: {}",
+                        t.name,
+                        t.error.as_deref().unwrap_or("failed")
+                    );
+                }
+            }
+        }
+    }
+    if record.outcome.as_str() == "cancelled" {
+        println!("Run was cancelled");
+    }
+    summary(&record.report);
 }
 
 fn format_size(bytes: usize) -> String {

@@ -16,6 +16,15 @@ fn write(root: &Path, rel: &str, text: &str) {
     fs::write(p, text).unwrap();
 }
 
+/// `plv` with history kept in a temporary state directory, never the user's.
+fn plv() -> Command {
+    static STATE: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    let state = STATE.get_or_init(|| tempfile::tempdir().unwrap());
+    let mut cmd = Command::cargo_bin("plv").unwrap();
+    cmd.env("PLOVER_STATE_DIR", state.path());
+    cmd
+}
+
 fn request(name: &str, seq: u32, url: &str, blocks: &str) -> String {
     format!(
         "meta {{\n  name: {name}\n  type: http\n  seq: {seq}\n}}\n\nget {{\n  url: {url}\n  body: none\n  auth: none\n}}\n{blocks}"
@@ -131,8 +140,7 @@ async fn junit_matches_bruno_layout() {
     let out = dir.path().join("out");
     fs::create_dir(&out).unwrap();
     let junit = out.join("results.xml");
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(dir.path())
         .arg("--reporter-junit")
@@ -189,8 +197,7 @@ async fn json_report_counts() {
     let server = MockServer::start().await;
     let dir = collection(&server).await;
     let json_path = dir.path().join("results.json");
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(dir.path())
         .arg("--reporter-json")
@@ -237,8 +244,7 @@ async fn json_report_counts() {
 async fn cli_prints_tests_and_summary() {
     let server = MockServer::start().await;
     let dir = collection(&server).await;
-    let out = Command::cargo_bin("plv")
-        .unwrap()
+    let out = plv()
         .arg("run")
         .arg(dir.path())
         .arg("--verbose")
@@ -267,12 +273,7 @@ async fn cli_prints_tests_and_summary() {
 async fn console_hidden_without_verbose() {
     let server = MockServer::start().await;
     let dir = collection(&server).await;
-    let out = Command::cargo_bin("plv")
-        .unwrap()
-        .arg("run")
-        .arg(dir.path())
-        .assert()
-        .code(1);
+    let out = plv().arg("run").arg(dir.path()).assert().code(1);
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).into_owned();
     assert!(!stdout.contains("from a"), "{stdout}");
 }
@@ -281,8 +282,7 @@ async fn console_hidden_without_verbose() {
 async fn missing_report_directory_is_a_setup_error() {
     let server = MockServer::start().await;
     let dir = collection(&server).await;
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(dir.path().join("c.bru"))
         .arg("--reporter-junit")
@@ -305,8 +305,7 @@ async fn script_limits_flags() {
             "\nscript:pre-request {\n  while (true) {}\n}\n",
         ),
     );
-    let out = Command::cargo_bin("plv")
-        .unwrap()
+    let out = plv()
         .arg("run")
         .arg(dir.path().join("slow.bru"))
         .arg("--script-timeout-ms")
@@ -342,8 +341,7 @@ async fn junit_reports_post_response_script_errors_like_bruno() {
         ),
     );
     let junit = root.join("junit.xml");
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(root)
         .arg("--reporter-junit")
@@ -390,8 +388,7 @@ async fn requests_that_never_ran_are_named_by_meta_name() {
         &request("r4", 4, &format!("{}/b", server.uri()), ""),
     );
     let json_path = root.join("results.json");
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(root)
         .arg("--reporter-json")
@@ -428,8 +425,7 @@ async fn junit_pre_request_errors_match_bruno() {
     );
     let junit = root.join("junit.xml");
     let json_path = root.join("results.json");
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(root)
         .arg("--reporter-junit")
@@ -467,22 +463,19 @@ async fn accepts_bruno_run_flags_used_by_existing_scripts() {
     let root = dir.path();
     // `bru run bruno -r --env Dev --sandbox safe --delay 0`: -r and --sandbox safe are
     // what Plover always does.
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(root.join("a.bru"))
         .args(["-r", "--sandbox", "safe", "--delay", "0"])
         .assert()
         .code(1); // a.bru has one failing test
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(root)
         .arg("--recursive")
         .assert()
         .code(1);
-    let out = Command::cargo_bin("plv")
-        .unwrap()
+    let out = plv()
         .arg("run")
         .arg(root)
         .args(["--sandbox", "developer"])
@@ -498,8 +491,7 @@ async fn html_report_is_self_contained_and_escaped() {
     let dir = collection(&server).await;
     let root = dir.path();
     let html_path = root.join("report.html");
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .arg("run")
         .arg(root)
         .arg("--reporter-html")
@@ -585,8 +577,7 @@ async fn detail_collection(server: &MockServer) -> tempfile::TempDir {
 
 fn plv_run(root: &Path, extra: &[&str]) -> assert_cmd::assert::Assert {
     let state = tempfile::tempdir().unwrap();
-    Command::cargo_bin("plv")
-        .unwrap()
+    plv()
         .env("PLOVER_STATE_DIR", state.path())
         .env_remove("CI")
         .arg("run")

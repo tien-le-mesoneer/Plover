@@ -39,8 +39,10 @@ async fn phase3_chain_passes() {
         .await;
     let out_dir = tempfile::tempdir().unwrap();
     let junit = out_dir.path().join("junit.xml");
+    let state = tempfile::tempdir().unwrap();
     let out = Command::cargo_bin("plv")
         .unwrap()
+        .env("PLOVER_STATE_DIR", state.path())
         .arg("run")
         .arg(fixture())
         .args(["--env", "local", "--env-var"])

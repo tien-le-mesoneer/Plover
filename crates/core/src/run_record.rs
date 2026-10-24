@@ -458,6 +458,10 @@ impl RunRecorder {
                 end_secrets,
             ),
         };
+        let report = RunReport {
+            elapsed: whole_ms(report.elapsed),
+            ..report
+        };
         let mut secrets = self.start_secrets;
         secrets.extend(end_secrets);
         let masker = Masker::new(&secrets, &self.results);
@@ -540,6 +544,9 @@ impl RunRecorder {
             (String::new(), stem, String::new())
         });
         let mut outcome = outcome.clone();
+        // Stored runs keep whole milliseconds; live reports use the same values.
+        outcome.elapsed = whole_ms(outcome.elapsed);
+        outcome.duration = whole_ms(outcome.duration);
         if let Some(request) = outcome.request.as_mut() {
             self.budget(&mut request.body);
         }
@@ -588,6 +595,10 @@ pub enum RunEnd {
     Cancelled {
         end_secrets: Vec<String>,
     },
+}
+
+fn whole_ms(d: Duration) -> Duration {
+    Duration::from_millis(u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 /// Counts for a run that did not report its own (cancelled).
