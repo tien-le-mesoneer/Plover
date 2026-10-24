@@ -2,6 +2,7 @@
 
 mod app_state;
 mod collections;
+mod curl;
 pub mod dto;
 mod environments;
 mod extract;
@@ -59,6 +60,8 @@ pub fn routes() -> Router<AppState> {
             get(requests::read).put(requests::save),
         )
         .route("/collections/{id}/send", post(requests::send))
+        .route("/curl/parse", post(curl::parse))
+        .route("/collections/{id}/curl", post(curl::copy))
         .route(
             "/collections/{id}/runs",
             get(history::list).delete(history::clear),

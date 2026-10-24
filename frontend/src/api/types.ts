@@ -303,3 +303,29 @@ export type ClientReadyBody = { error?: string, };
 export type SessionTokenDto = { token: string, };
 
 export type ServerEvent = { "type": "collection_opened", id: string, } | { "type": "reload_requested" };
+
+export type CurlParseBody = { text: string, };
+
+export type CurlNoticeDto = { option: string, reason: string, };
+
+export type CurlParsedDto = { request: HttpRequestDto, notices: Array<CurlNoticeDto>, };
+
+export type CopyCurlBody = { 
+/**
+ * The request file; `null` for a scratch request (then `draft` is required).
+ */
+item: string | null, draft: HttpRequestDto | null, env: string | null, 
+/**
+ * Fill in variables for `env` (no scripts run); otherwise copy as written.
+ */
+resolve: boolean, };
+
+export type CurlTextDto = { text: string, 
+/**
+ * A secret value of the environment appears in `text`.
+ */
+containsSecret: boolean, 
+/**
+ * What was left out because Plover cannot send it.
+ */
+omitted: Array<string>, };

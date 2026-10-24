@@ -900,6 +900,63 @@ pub struct SessionTokenDto {
     pub token: String,
 }
 
+// ---- import from cURL and HAR, scratch requests
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CurlParseBody {
+    pub text: String,
+}
+
+/// An option of a pasted curl command that is not part of the filled-in request.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CurlNoticeDto {
+    pub option: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CurlParsedDto {
+    pub request: HttpRequestDto,
+    pub notices: Vec<CurlNoticeDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyCurlBody {
+    /// The request file; `null` for a scratch request (then `draft` is required).
+    #[serde(default)]
+    pub item: Option<String>,
+    #[serde(default)]
+    pub draft: Option<HttpRequestDto>,
+    #[serde(default)]
+    pub env: Option<String>,
+    /// Fill in variables for `env` (no scripts run); otherwise copy as written.
+    #[serde(default)]
+    pub resolve: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CurlTextDto {
+    pub text: String,
+    /// A secret value of the environment appears in `text`.
+    pub contains_secret: bool,
+    /// What was left out because Plover cannot send it.
+    pub omitted: Vec<String>,
+}
+
+impl From<&plover_core::curl::CurlNotice> for CurlNoticeDto {
+    fn from(n: &plover_core::curl::CurlNotice) -> Self {
+        CurlNoticeDto {
+            option: n.option.clone(),
+            reason: n.reason.clone(),
+        }
+    }
+}
+
 pub fn typescript_bindings() -> String {
     use ts_rs::Config;
     let cfg = Config::default();
@@ -951,6 +1008,11 @@ pub fn typescript_bindings() -> String {
         ClientReadyBody::decl(&cfg),
         SessionTokenDto::decl(&cfg),
         crate::events::ServerEvent::decl(&cfg),
+        CurlParseBody::decl(&cfg),
+        CurlNoticeDto::decl(&cfg),
+        CurlParsedDto::decl(&cfg),
+        CopyCurlBody::decl(&cfg),
+        CurlTextDto::decl(&cfg),
     ];
     let mut out = String::from(
         "// Generated from crates/server/src/api by ts-rs. Do not edit.\n\
