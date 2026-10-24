@@ -98,15 +98,54 @@ and Console; **History** in the run panel lists saved runs (app and `plv`) and o
   - only the exact text is matched, not URL-encoded, base64 or JSON-escaped forms;
   - binary (non-UTF-8) bodies are not searched; values from `process.env` are not masked.
 
+**Data-driven runs.** Run a collection or folder once per row of a CSV or JSON file, or
+a number of times, with Bruno CLI's flags:
+
+```bash
+plv run coll --env local --csv-file-path rows.csv      # one iteration per row
+plv run coll --env local --json-file-path rows.json    # an array of objects
+plv run coll --env local --iteration-count 5           # five times, no file
+```
+
+- `{{column}}` reads the current row in URLs, headers, bodies and assert right-hand
+  sides, above runtime variables (as in Bruno); `bru.getVar` and `bru.interpolate` do
+  not see row values. Scripts get `bru.runner.iterationData` (`get`, `set`, `has`,
+  `unset`, `stringify`), `bru.runner.iterationIndex` and `bru.runner.totalIterations`.
+- Runtime variables and cookies carry over between iterations; `--delay` is not applied
+  after the last request of an iteration; `setNextRequest(null)` ends one iteration and
+  `stopExecution()` ends the run.
+- The file path is relative to the current directory. A file sets the count to its
+  rows; `--iteration-count` with a file prints `--iteration-count ignored: …`.
+- Unlike Bruno, which runs nothing and exits 0, these stop with exit 2 before anything is
+  sent: a missing file, zero rows, a file over 16 MiB, a JSON top level that is not an
+  array of objects, a CSV row with the wrong number of fields (`rows.csv:7: expected 4
+  fields, found 3`), or both file flags together.
+- `--parallel` is accepted but iterations still run one after another (with a warning).
+- Values of credential-named columns (`password`, `passwd`, `client_secret`, `secret`,
+  `token`, `access_token`, `refresh_token`, `id_token`, `api_key`, `apikey`,
+  `assertion`, `client_assertion`) are masked everywhere: history, reports, `--verbose`
+  output and the app.
+- Reports: the JSON report has one `{ iterationIndex, summary, results }` entry per
+  iteration (like Bruno); the HTML report has an "Iteration N of M" section with the
+  row; JUnit stays one flat list with Bruno's suite names.
+
+In the app, **Run with data…** in the run panel takes a CSV/JSON file (shown as its row
+count and column names only, never kept) or an iteration count; results are grouped by
+iteration. **Export** in the run panel saves a finished, cancelled or saved run as
+HTML, JSON or JUnit, byte for byte what `plv runs show <id> --reporter-*` writes (the
+desktop app uses a save dialog).
+
 **Replacing `bru run`.** Existing `bru run` commands work with `plv run` for these flags:
 
 | Bruno flag | In Plover |
 |---|---|
 | `--env`, `--env-var`, `--insecure`, `--verbose`, `--delay`, `--reporter-junit`, `--reporter-json`, `--reporter-html` | Supported, same meaning |
+| `--csv-file-path`, `--json-file-path`, `--iteration-count` | Supported, same meaning; broken or empty files stop with exit 2 (see **Data-driven runs**) |
+| `--parallel` | Accepted; iterations run one after another |
 | `--reporter-skip-all-headers`, `--reporter-skip-headers <NAME>…`, `--reporter-skip-request-body`, `--reporter-skip-response-body`, `--reporter-skip-body` | Supported, same meaning (applied after masking) |
 | `-r` / `--recursive` | Accepted; Plover always runs folders recursively (Bruno without `-r` runs only a folder's direct requests) |
 | `--sandbox safe` | Accepted; Plover always runs scripts like Bruno's safe mode. `--sandbox developer` is rejected. |
-| `--bail`, `--tests-only`, `--tags`, `--exclude-tags`, `--env-file`, `--global-env`, `--csv-file-path`, `--json-file-path`, `--iteration-count`, `--parallel`, `--cacert`, `--client-cert-config`, `--noproxy`, `-o`/`--format`, `--disable-cookies` | Not supported yet: `plv` stops with an "unexpected argument" error (exit 2) rather than ignoring them |
+| `--bail`, `--tests-only`, `--tags`, `--exclude-tags`, `--env-file`, `--global-env`, `--cacert`, `--client-cert-config`, `--noproxy`, `-o`/`--format`, `--disable-cookies` | Not supported yet: `plv` stops with an "unexpected argument" error (exit 2) rather than ignoring them |
 
 In the web UI and the desktop app, **+** next to the Plover name (`⌘/Ctrl+O`) opens a
 collection: paste a path, pick a recent one, or browse (desktop). **Collections are

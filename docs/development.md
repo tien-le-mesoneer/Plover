@@ -150,3 +150,19 @@ and checks the server, then exits. It prints one line:
 
 It waits `PLOVER_DESKTOP_SMOKE_TIMEOUT_SECS` (default 20; CI uses 90 for a cold
 WebView2). Set `PLOVER_STATE_DIR` to a temp directory.
+
+## Bruno comparison (data-driven runs)
+
+`crates/cli/tests/bruno_compat.rs` runs `fixtures/data-driven` with
+`--csv-file-path rows.csv` and `--json-file-path rows.json` through Bruno CLI 4.3.0 and
+`plv` against the same local mock, and compares the per-iteration results (iteration
+indices, interpolated URLs, statuses, tests, asserts, summary counts). It is skipped
+unless `BRU_BIN` points at a `bru` executable:
+
+```bash
+npm install --prefix /tmp/brunocli @usebruno/cli@4.3.0
+BRU_BIN=/tmp/brunocli/node_modules/.bin/bru cargo test -p plover-cli --test bruno_compat
+```
+
+Known differences it ignores: Bruno's transport headers (`User-Agent`, `Host`, …) and
+`uid`s in its report, its extra summary keys, and Plover masking the `password` column.

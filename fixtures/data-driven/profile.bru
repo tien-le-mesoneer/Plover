@@ -1,0 +1,18 @@
+meta {
+  name: profile
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{host}}/users/{{username}}?plan={{plan}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("iteration " + bru.runner.iterationIndex + " of " + bru.runner.totalIterations, function () {
+    expect(res.status).to.equal(200);
+    expect(bru.runner.iterationData.has("username")).to.equal(true);
+  });
+}

@@ -1,0 +1,4 @@
+[
+  { "username": "user-one", "password": "pw-fake-0001", "plan": "free" },
+  { "username": "user-two", "password": "pw-fake-0002", "plan": "team" }
+]
