@@ -7,6 +7,7 @@ pub mod dotenv;
 pub mod executor;
 pub mod masking;
 pub mod persist;
+pub mod report;
 pub mod request;
 pub mod resolve;
 pub mod run_history;

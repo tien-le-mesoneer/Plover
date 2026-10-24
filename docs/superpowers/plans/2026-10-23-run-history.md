@@ -240,20 +240,20 @@ User decision: the renderers live in core from this task on, so the app's Export
   pub fn json::render(record: &RunRecord, filter: &ReportFilter) -> serde_json::Value;
   pub fn html::render(record: &RunRecord, filter: &ReportFilter) -> String;
   pub fn junit::render(record: &RunRecord) -> String;
-  // print.rs
-  impl Printer { pub fn result(&mut self, r: &ResultRecord) }   // replaces per-event printing
+  // print.rs: unchanged. Printer keeps printing per event (Printer::event), because the
+  // terminal shows the raw error text while records keep Bruno's report text.
   pub fn summary(report: &RunReport);
   ```
 - New `plv run` flags, Bruno's names and meaning (`sanitize-results.js`): `--reporter-skip-all-headers`, `--reporter-skip-headers <NAME>...`, `--reporter-skip-request-body`, `--reporter-skip-response-body`, `--reporter-skip-body` (= both).
 
-- [ ] **Step 1: Write the failing tests** in `crates/cli/tests/report.rs` (extend the existing `collection` fixture with a request sending `Authorization: Bearer tok-AAAABBBBCCCC` and a JSON response `{"id":1}`):
+- [ ] **Step 1: Write the failing tests** in `crates/cli/tests/report.rs` (a new `detail_collection` fixture, so the existing fixture's counts stay, with a request sending `Authorization: Bearer tok-AAAABBBBCCCC` and a JSON response `{"id":1}`):
   - `json_report_has_bruno_request_and_response`: result entry has `request.{method,url,headers,data}` and `response.{status,statusText,headers,data,url,responseTime,duration,size}`; `headers` is an object (repeated names become arrays); `response.data` is `{"id":1}` as JSON (Bruno `parseDataFromResponse`: parsed whenever `JSON.parse` of the BOM-stripped text succeeds, else the string); the errored request has `response.status == "error"` and `size == 0`.
   - `reports_are_masked` (user decision): JSON, HTML and JUnit files contain `***` and not `tok-AAAABBBBCCCC`.
   - `skip_flags_match_bruno`: `--reporter-skip-all-headers` → `{}` headers; `--reporter-skip-headers x-r` removes only `x-r` (case-insensitive); `--reporter-skip-body` removes `request.data` and `response.data` keys.
   - `html_has_details_and_no_script`: the HTML has one `<details>` per sent result with header tables and `<pre>` bodies, and no `<script`.
   - Existing report tests keep passing unchanged except the removed "minus headers" note.
 - [ ] **Step 2: Run** `cargo test -p plover-core --test report` and `cargo test -p plover-cli --test report` → FAIL.
-- [ ] **Step 3: Implement.** `plv run` builds a `RunRecorder` (header source `Plv`, target = root-relative path or `.`), switches from `runner::run` to `RunVars::start` + `run_with_state` so end secrets are known, prints each recorded result via `Printer::result` (unmasked, as today), then `finish(RunEnd::Finished { report, end_secrets })` and renders all reports from the masked record with `plover_core::report::{json,html,junit}::render`; the CLI only maps flags to `ReportFilter` and writes the files. Start/end secrets: `masking::secret_strings(&runner::secret_values(environment, &state.environment))`. Delete `Collector`, `RequestRecord`, `RecordStatus` and the moved helpers; update the `json.rs` module comment.
+- [ ] **Step 3: Implement.** `plv run` builds a `RunRecorder` (header source `Plv`, target = root-relative path or `.`), switches from `runner::run` to `RunVars::start` + `run_with_state` so end secrets are known, prints each event via `Printer::event` (unmasked, as today), then `finish(RunEnd::Finished { report, end_secrets })` and renders all reports from the masked record with `plover_core::report::{json,html,junit}::render`; the CLI only maps flags to `ReportFilter` and writes the files. Start/end secrets: `masking::secret_strings(&runner::secret_values(environment, &state.environment))`. Delete `Collector`, `RequestRecord`, `RecordStatus` and the moved helpers; update the `json.rs` module comment.
 - [ ] **Step 4: Run** the gate → PASS.
 - [ ] **Step 5: Commit** `feat(core): render masked reports in core with request and response detail`.
 

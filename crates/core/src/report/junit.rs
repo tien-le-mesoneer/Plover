@@ -2,20 +2,19 @@
 //! one `<testsuite>` per request, one `<testcase>` per assert and test.
 
 use std::fmt::Write;
-use std::time::SystemTime;
+use std::time::{Duration, UNIX_EPOCH};
 
-use plover_core::time::iso_utc;
+use crate::run_record::{POST_RESPONSE_SCRIPT_ERROR, ResultStatus, RunRecord};
+use crate::time::iso_utc;
 
-use super::{POST_RESPONSE_SCRIPT_ERROR, RecordStatus, RequestRecord};
-
-pub fn render(records: &[RequestRecord]) -> String {
-    let timestamp = iso_utc(SystemTime::now());
+pub fn render(record: &RunRecord) -> String {
+    let timestamp = iso_utc(UNIX_EPOCH + Duration::from_millis(record.header.started_at_ms));
     let hostname = std::env::var("HOSTNAME")
         .ok()
         .filter(|h| !h.is_empty())
         .unwrap_or_else(|| "localhost".to_owned());
     let mut out = String::from("<?xml version=\"1.0\"?>\n<testsuites>\n");
-    for r in records {
+    for r in &record.results {
         let classname = r.file.strip_suffix(".bru").unwrap_or(&r.file);
         let run_duration = r.duration().as_secs_f64();
         let mut cases = Vec::new();
@@ -37,11 +36,11 @@ pub fn render(records: &[RequestRecord]) -> String {
         };
         let mut body = String::new();
         let (errors, tests, skipped) = match r.status {
-            RecordStatus::Skipped => (0, total, 1),
-            RecordStatus::Error => (1, 1, 0),
+            ResultStatus::Skipped => (0, total, 1),
+            ResultStatus::Error => (1, 1, 0),
             _ => (0, total, 0),
         };
-        if r.status == RecordStatus::Error {
+        if r.status == ResultStatus::Error {
             let _ = write!(
                 body,
                 "    <testcase name=\"Test suite has no errors\" status=\"fail\" classname=\"{}\" time=\"{:.3}\">\n      <error type=\"error\" message=\"{}\"/>\n    </testcase>\n",
@@ -70,7 +69,7 @@ pub fn render(records: &[RequestRecord]) -> String {
                 }
             }
         }
-        if r.status == RecordStatus::Skipped {
+        if r.status == ResultStatus::Skipped {
             body.push_str("    <skipped message=\"Request Skipped\"/>\n");
         }
         let _ = write!(
