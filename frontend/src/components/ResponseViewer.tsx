@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { BodyDetailDto, RequestDetailDto, ScriptErrorDto, SendResultDto } from "../api/types";
 import { CodeEditor } from "../editor/CodeEditor";
 import type { monaco } from "../editor/monaco";
+import { formatElapsed } from "../lib/elapsed";
 import { Banner } from "./Banner";
 import { foldTargets, renderSlice } from "../lib/body";
 import { downloadBody } from "../lib/download";
@@ -40,6 +41,8 @@ interface Props {
   name?: string;
   /** For "Save as runtime variable" in the value menu. */
   collectionId?: string;
+  /** The last send was cancelled after this long. */
+  cancelledAfterMs?: number;
 }
 
 /** A stored request body: text, form or multipart fields, or a note. */
@@ -132,7 +135,7 @@ function bodyView(response: SendResultDto["response"]): BodyView | null {
   return { language: pretty.language, text: pretty.text, parsed, jsonMismatch: jsonType && text !== null && !parsed.ok };
 }
 
-export function ResponseViewer({ result, sending, onOpenScript, request, bodyNote, name, collectionId }: Props) {
+export function ResponseViewer({ result, sending, onOpenScript, request, bodyNote, name, collectionId, cancelledAfterMs }: Props) {
   const failedChecks = result ? testSummary(result.tests, result.asserts) : { passed: 0, total: 0 };
   const hasFailures = failedChecks.passed < failedChecks.total;
   const [view, setView] = useState<View>(hasFailures ? "tests" : "body");
@@ -159,6 +162,13 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
       <p className="muted center" aria-busy="true">
         Sending…
       </p>
+    );
+  }
+  if (!result && cancelledAfterMs !== undefined) {
+    return (
+      <Banner kind="info" role="status">
+        Cancelled after {formatElapsed(cancelledAfterMs)}
+      </Banner>
     );
   }
   if (!result) return <p className="muted center">Send the request to see the response.</p>;

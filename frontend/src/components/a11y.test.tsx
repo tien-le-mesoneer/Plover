@@ -137,3 +137,14 @@ describe("run with data dialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe("cancel button", () => {
+  it("has an accessible name and takes focus while a send runs", async () => {
+    const { UrlBar } = await import("./request/UrlBar");
+    const draft = { ...request, url: "http://example.test", method: "GET" } as HttpRequestDto;
+    render(<UrlBar draft={draft} sending sendStartedAt={Date.now()} onEdit={() => {}} onSend={() => {}} onCancel={() => {}} />);
+    const button = screen.getByRole("button", { name: "Cancel request" });
+    button.focus();
+    expect(document.activeElement).toBe(button);
+  });
+});

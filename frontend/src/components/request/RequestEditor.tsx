@@ -41,7 +41,7 @@ function hasCode(draft: HttpRequestDto, section: Section): boolean {
 
 export function RequestEditor({ tab }: { tab: Tab }) {
   const [section, setSection] = useState<Section>(tab.draft.body.mode === "none" ? "Params" : "Body");
-  const { edit, send, resolveConflict } = useTabs();
+  const { edit, send, cancel, resolveConflict } = useTabs();
   const onEdit = (f: (d: HttpRequestDto) => HttpRequestDto) => edit(tab.key, f);
   const draft = tab.draft;
   const envName = useWorkspace((s) => s.activeEnv[tab.collectionId] ?? null);
@@ -90,8 +90,10 @@ export function RequestEditor({ tab }: { tab: Tab }) {
       <UrlBar
         draft={draft}
         sending={tab.sending}
+        sendStartedAt={tab.sendStartedAt}
         onEdit={onEdit}
         onSend={() => void send(tab.key)}
+        onCancel={() => void cancel(tab.key)}
         onCurl={(text) => void onCurl(text)}
         actions={<RequestMenu tabKey={tab.key} />}
       />
@@ -222,6 +224,7 @@ export function RequestEditor({ tab }: { tab: Tab }) {
           <ResponseViewer
             result={tab.result}
             sending={tab.sending}
+            cancelledAfterMs={tab.cancelledAfterMs}
             name={draft.name}
             collectionId={tab.collectionId}
             onOpenScript={() => setSection("Script")}

@@ -239,6 +239,7 @@ describe("import and scratch calls", () => {
     await api.planHar("c1", har);
     await api.importHar("c1", har);
     await api.send("c1", null, draft, null);
+    await api.cancelSend("c1", "s-1");
     const calls = (fetch.mock.calls as unknown as [string, RequestInit][]).map(([u, i]) => [
       `${i.method} ${u}`,
       JSON.parse(i.body as string),
@@ -250,7 +251,8 @@ describe("import and scratch calls", () => {
       ["POST /api/collections/c1/import/har/preview", { har: "{}" }],
       ["POST /api/collections/c1/import/har/plan", har],
       ["POST /api/collections/c1/import/har", har],
-      ["POST /api/collections/c1/send", { item: null, draft, env: null }],
+      ["POST /api/collections/c1/send", { item: null, draft, env: null, sendId: null }],
+      ["POST /api/collections/c1/send/s-1/cancel", {}],
     ]);
   });
 });

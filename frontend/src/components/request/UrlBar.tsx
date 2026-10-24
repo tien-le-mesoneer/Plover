@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { HttpRequestDto } from "../../api/types";
+import { formatElapsed } from "../../lib/elapsed";
 import { syncPathParams, syncQueryFromUrl } from "../../lib/url";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "CONNECT", "TRACE"];
@@ -7,8 +8,12 @@ const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "CO
 interface Props {
   draft: HttpRequestDto;
   sending: boolean;
+  /** When the running send started (`Date.now()`), for the Cancel timer. */
+  sendStartedAt?: number;
   onEdit: (f: (d: HttpRequestDto) => HttpRequestDto) => void;
   onSend: () => void;
+  /** Stops the running send (the Cancel button that replaces Send while sending). */
+  onCancel?: () => void;
   /** A pasted `curl …` command, instead of pasting it as the URL. */
   onCurl?: (text: string) => void;
   /** Controls after Send (the `⋯` request menu). */
@@ -18,7 +23,7 @@ interface Props {
 const CURL = /^\s*curl\s/i;
 
 /** Method · URL · Send (the only coloured button on the screen) · request menu. Save is ⌘S or the menu. */
-export function UrlBar({ draft, sending, onEdit, onSend, onCurl, actions }: Props) {
+export function UrlBar({ draft, sending, sendStartedAt, onEdit, onSend, onCancel, onCurl, actions }: Props) {
   const methods = METHODS.includes(draft.method) ? METHODS : [...METHODS, draft.method];
   return (
     <form
@@ -64,10 +69,29 @@ export function UrlBar({ draft, sending, onEdit, onSend, onCurl, actions }: Prop
           }));
         }}
       />
-      <button type="submit" className="send" disabled={sending} title="Send (Enter, Ctrl/Cmd+Enter)">
-        {sending ? "Sending…" : "Send"}
-      </button>
+      {sending && onCancel ? (
+        <CancelButton startedAt={sendStartedAt} onCancel={onCancel} />
+      ) : (
+        <button type="submit" className="send" disabled={sending} title="Send (Enter, Ctrl/Cmd+Enter)">
+          {sending ? "Sending…" : "Send"}
+        </button>
+      )}
       {actions}
     </form>
+  );
+}
+
+/** Neutral outline button with the running time; Esc does the same (see App). */
+function CancelButton({ startedAt, onCancel }: { startedAt?: number; onCancel: () => void }) {
+  const [now, setNow] = useState(() => Date.now());
+  const [start] = useState(() => startedAt ?? Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <button type="button" className="cancel-send" aria-label="Cancel request" title="Cancel (Esc)" onClick={onCancel}>
+      Cancel · <span aria-live="off">{formatElapsed(Math.max(0, now - (startedAt ?? start)))}</span>
+    </button>
   );
 }

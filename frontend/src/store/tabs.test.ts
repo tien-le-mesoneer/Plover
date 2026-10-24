@@ -159,7 +159,7 @@ describe("tabs store", () => {
     const key = useTabs.getState().active!;
     useTabs.getState().edit(key, (d) => ({ ...d, url: "draft" }));
     await useTabs.getState().send(key);
-    expect(api.send).toHaveBeenCalledWith("c1", "a.bru", expect.objectContaining({ url: "draft" }), "local");
+    expect(api.send).toHaveBeenCalledWith("c1", "a.bru", expect.objectContaining({ url: "draft" }), "local", expect.objectContaining({ sendId: expect.any(String) }));
     expect(useTabs.getState().tabs[0]!.result).toEqual(result);
     expect(useTabs.getState().tabs[0]!.sending).toBe(false);
   });
@@ -212,7 +212,7 @@ describe("tabs store", () => {
     const key = useTabs.getState().newScratch("c1");
     useTabs.getState().edit(key, (d) => ({ ...d, url: "http://x/s" }));
     await useTabs.getState().send(key);
-    expect(api.send).toHaveBeenCalledWith("c1", null, expect.objectContaining({ url: "http://x/s" }), null);
+    expect(api.send).toHaveBeenCalledWith("c1", null, expect.objectContaining({ url: "http://x/s" }), null, expect.objectContaining({ sendId: expect.any(String) }));
   });
 
   it("saveScratch creates request and rekeys tab", async () => {
@@ -281,5 +281,85 @@ describe("tabs store", () => {
       scriptPre: "x()",
       tests: "t()",
     });
+  });
+});
+
+describe("cancel", () => {
+  const tab = (key = "c1:a.bru") => ({
+    key,
+    collectionId: "c1",
+    item: "a.bru",
+    saved: request("http://h/a"),
+    draft: request("http://h/a"),
+    hash: "h",
+    sending: false,
+  });
+  const ok = { response: null, tests: [], asserts: [], console: [], scriptError: null, scriptedRequests: [], skipped: null };
+
+  it("send_generates_send_id", async () => {
+    const send = vi.fn(async () => ok);
+    setApi(mockApi({ send }));
+    useTabs.setState({ tabs: [tab()], active: "c1:a.bru" });
+    await useTabs.getState().send("c1:a.bru");
+    const opts = (send.mock.calls[0] as unknown[])[4] as { sendId: string; signal: AbortSignal };
+    expect(opts.sendId).toMatch(/^[A-Za-z0-9-]{1,64}$/);
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
+    expect(useTabs.getState().tabs[0]!.sending).toBe(false);
+  });
+
+  it("cancel_posts_route_and_aborts", async () => {
+    let signal: AbortSignal | undefined;
+    const send = vi.fn(
+      (_i: string, _it: string, _d: unknown, _e: unknown, opts: { signal: AbortSignal }) =>
+        new Promise((_, reject) => {
+          signal = opts.signal;
+          opts.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        }),
+    );
+    const cancelSend = vi.fn(async () => {});
+    setApi(mockApi({ send, cancelSend } as unknown as Partial<ApiClient>));
+    useTabs.setState({ tabs: [tab()], active: "c1:a.bru" });
+    const sent = useTabs.getState().send("c1:a.bru");
+    const sendId = useTabs.getState().tabs[0]!.sendId;
+    await useTabs.getState().cancel("c1:a.bru");
+    await sent;
+    expect(cancelSend).toHaveBeenCalledWith("c1", sendId);
+    expect(signal?.aborted).toBe(true);
+    const t = useTabs.getState().tabs[0]!;
+    expect(t.sending).toBe(false);
+    expect(t.result).toBeUndefined();
+    expect(t.error).toBeUndefined();
+    expect(t.cancelledAfterMs).toEqual(expect.any(Number));
+  });
+
+  it("409_cancelled_is_not_an_error", async () => {
+    const send = vi.fn(async () => {
+      throw new ApiError(409, "cancelled", {}, "Request cancelled");
+    });
+    setApi(mockApi({ send }));
+    useTabs.setState({ tabs: [tab()], active: "c1:a.bru" });
+    await useTabs.getState().send("c1:a.bru");
+    const t = useTabs.getState().tabs[0]!;
+    expect(t.error).toBeUndefined();
+    expect(t.cancelledAfterMs).toEqual(expect.any(Number));
+  });
+
+  it("late_cancel_keeps_result", async () => {
+    let finish: (v: unknown) => void = () => {};
+    const send = vi.fn(() => new Promise((resolve) => (finish = resolve)));
+    let cancelDone: () => void = () => {};
+    const cancelSend = vi.fn(() => new Promise<void>((resolve) => (cancelDone = resolve)));
+    setApi(mockApi({ send, cancelSend } as unknown as Partial<ApiClient>));
+    useTabs.setState({ tabs: [tab()], active: "c1:a.bru" });
+    const sent = useTabs.getState().send("c1:a.bru");
+    const cancelled = useTabs.getState().cancel("c1:a.bru");
+    finish(ok);
+    await sent;
+    cancelDone();
+    await cancelled;
+    const t = useTabs.getState().tabs[0]!;
+    expect(t.result).toEqual(ok);
+    expect(t.cancelledAfterMs).toBeUndefined();
+    expect(t.sending).toBe(false);
   });
 });

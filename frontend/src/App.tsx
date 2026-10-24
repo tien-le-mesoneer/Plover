@@ -20,8 +20,11 @@ import { useTabs } from "./store/tabs";
 import { startUp } from "./store/startup";
 import { useWorkspace } from "./store/workspace";
 
+/** Open layers that own Escape. */
+const OVERLAY = '[aria-modal="true"], [role="dialog"], [role="menu"], [role="tooltip"]';
+
 export default function App({ hasToken }: { hasToken: boolean }) {
-  const { tabs, runTabs, active, requestSave, send, saveDialog, closeSaveDialog, openRun } = useTabs();
+  const { tabs, runTabs, active, requestSave, send, cancel, saveDialog, closeSaveDialog, openRun } = useTabs();
   const { collections, activeEnv, error, clearError, capabilities, openInBrowser, activeCollection } =
     useWorkspace();
   const anyDirty = useTabs((s) => s.tabs.some((t) => s.isDirty(t.key)));
@@ -82,6 +85,13 @@ export default function App({ hasToken }: { hasToken: boolean }) {
   // page; it works in the desktop app and in browsers that pass it through.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Esc cancels the active tab's send, unless something on top (a dialog, a menu,
+      // a variable card) took it first.
+      if (e.key === "Escape") {
+        if (e.defaultPrevented || !active || document.querySelector(OVERLAY)) return;
+        if (useTabs.getState().tabs.find((t) => t.key === active)?.sending) void cancel(active);
+        return;
+      }
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
       const key = e.key.toLowerCase();
       if (key === "s") {
@@ -105,7 +115,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("plover:send", onSend);
     };
-  }, [active, requestSave, send]);
+  }, [active, requestSave, send, cancel]);
 
   if (!hasToken) {
     return (

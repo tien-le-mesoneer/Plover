@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 interface Props {
-  kind: "warn" | "error";
+  kind: "warn" | "error" | "info";
   role?: "alert" | "note" | "status";
   children: ReactNode;
   /** Buttons shown after the message. */

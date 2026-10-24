@@ -17,6 +17,11 @@ export interface Tab {
   /** The last send: response (if any), tests, asserts, console output, script error. */
   result?: SendResultDto;
   sending: boolean;
+  /** The running send's ID (for `cancelSend`) and when it started (`Date.now()`). */
+  sendId?: string;
+  sendStartedAt?: number;
+  /** Set when the last send was cancelled: how long it had run. */
+  cancelledAfterMs?: number;
   error?: string;
   /** Set when a save found the file changed on disk. */
   conflict?: ConflictDto;
@@ -51,6 +56,8 @@ export interface TabsState {
   save(key: string): Promise<"saved" | "conflict">;
   resolveConflict(key: string, choice: "reload" | "overwrite"): Promise<void>;
   send(key: string): Promise<void>;
+  /** Stops the tab's running send on the server and drops its result. */
+  cancel(key: string): Promise<void>;
   /** Opens an unsaved "Untitled" request in `collectionId`; returns its key. */
   newScratch(collectionId: string): string;
   /** Writes a scratch tab to a new file and turns it into that file's tab. */
@@ -69,6 +76,16 @@ export const tabKey = (collectionId: string, item: string) => `${collectionId}:$
 
 let scratchCount = 0;
 let runTabCount = 0;
+
+/** Fetches of running sends, by send ID, so `cancel` can abort them. */
+const inFlight = new Map<string, AbortController>();
+
+function newSendId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+const isCancel = (e: unknown) =>
+  (e instanceof ApiError && e.code === "cancelled") || (e instanceof DOMException && e.name === "AbortError");
 
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -206,16 +223,52 @@ export const useTabs = create<TabsState>()((set, get) => {
     async send(key) {
       const tab = find(key);
       if (!tab) return;
-      update(key, { sending: true, error: undefined });
+      const sendId = newSendId();
+      const controller = new AbortController();
+      inFlight.set(sendId, controller);
+      const startedAt = Date.now();
+      update(key, { sending: true, sendId, sendStartedAt: startedAt, cancelledAfterMs: undefined, error: undefined });
       const env = useWorkspace.getState().activeEnv[tab.collectionId] ?? null;
+      // A cancel (or a newer send) already settled this tab: its answer is not shown.
+      const current = () => find(key)?.sendId === sendId;
+      const done = { sending: false, sendId: undefined, sendStartedAt: undefined };
       try {
-        const result = await api().send(tab.collectionId, tab.item, tab.draft, env);
-        update(key, { result, sending: false });
+        const result = await api().send(tab.collectionId, tab.item, tab.draft, env, {
+          sendId,
+          signal: controller.signal,
+        });
+        if (current()) update(key, { ...done, result });
       } catch (e) {
-        update(key, { sending: false, error: message(e), result: undefined });
+        if (!current()) return;
+        if (isCancel(e)) update(key, { ...done, result: undefined, cancelledAfterMs: Date.now() - startedAt });
+        else update(key, { ...done, error: message(e), result: undefined });
+      } finally {
+        inFlight.delete(sendId);
       }
     },
-  
+
+    async cancel(key) {
+      const tab = find(key);
+      const sendId = tab?.sendId;
+      if (!tab?.sending || !sendId) return;
+      try {
+        await api().cancelSend(tab.collectionId, sendId);
+      } catch {
+        // The fetch is aborted below either way.
+      }
+      // The send may have finished while the cancel was on its way: keep that result.
+      const now = find(key);
+      if (now?.sendId !== sendId) return;
+      inFlight.get(sendId)?.abort();
+      update(key, {
+        sending: false,
+        sendId: undefined,
+        sendStartedAt: undefined,
+        result: undefined,
+        cancelledAfterMs: Date.now() - (now.sendStartedAt ?? Date.now()),
+      });
+    },
+
     newScratch(collectionId) {
       scratchCount += 1;
       const key = `${collectionId}:scratch:${scratchCount}`;

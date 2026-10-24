@@ -93,13 +93,19 @@ export interface ApiClient {
     request: HttpRequestDto,
     hash: string,
   ): Promise<SavedRequestDto>;
-  /** `item: null` sends `draft` as a scratch request (collection scope only). */
+  /**
+   * `item: null` sends `draft` as a scratch request (collection scope only). `sendId` lets
+   * `cancelSend` stop it on the server; `signal` aborts the fetch.
+   */
   send(
     id: string,
     item: string | null,
     draft: HttpRequestDto | null,
     env: string | null,
+    opts?: SendOptions,
   ): Promise<SendResultDto>;
+  /** Stops send `sendId` on the server; resolves whether or not it was still running. */
+  cancelSend(id: string, sendId: string): Promise<void>;
   /** A pasted curl command as a request, plus the options it could not fill in. */
   parseCurl(text: string): Promise<CurlParsedDto>;
   copyCurl(id: string, body: CopyCurlBody): Promise<CurlTextDto>;
@@ -152,6 +158,11 @@ export interface ApiClient {
   /** One result's request and response, masked; live runs answer from memory. */
   runResult(id: string, recordId: string, index: number): Promise<RunResultDetailDto>;
   clearRuns(id: string): Promise<void>;
+}
+
+export interface SendOptions {
+  sendId?: string;
+  signal?: AbortSignal;
 }
 
 export type ReportFormat = "html" | "json" | "junit";
@@ -209,13 +220,14 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
   const Socket = deps.WebSocket ?? window.WebSocket;
   const enc = encodeURIComponent;
 
-  async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     const headers: Record<string, string> = { authorization: `Bearer ${token}` };
     if (body !== undefined) headers["content-type"] = "application/json";
     const res = await doFetch(`${baseUrl}/api${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     });
     const text = await res.text();
     if (!res.ok) throw errorFrom(res, text);
@@ -262,7 +274,9 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     readRequest: (id, item) => call("GET", `${collections(id)}/requests?item=${enc(item)}`),
     saveRequest: (id, item, request, hash) =>
       call("PUT", `${collections(id)}/requests?item=${enc(item)}`, { request, hash }),
-    send: (id, item, draft, env) => call("POST", `${collections(id)}/send`, { item, draft, env }),
+    send: (id, item, draft, env, opts) =>
+      call("POST", `${collections(id)}/send`, { item, draft, env, sendId: opts?.sendId ?? null }, opts?.signal),
+    cancelSend: (id, sendId) => call("POST", `${collections(id)}/send/${enc(sendId)}/cancel`, {}),
     parseCurl: (text) => call("POST", "/curl/parse", { text }),
     copyCurl: (id, body) => call("POST", `${collections(id)}/curl`, body),
     resolvedUrl: (id, body) => call("POST", `${collections(id)}/resolved-url`, body),
