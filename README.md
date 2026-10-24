@@ -18,7 +18,11 @@ limits, and no data leaves your machine except the requests you send.
 |---|---|
 | ![Script tab with bru.setVar](docs/screenshots/script-dark.png) | ![Tests tab, 3 of 3 passed](docs/screenshots/tests-dark.png) |
 
-![Collection run panel in light mode](docs/screenshots/run-light.png)
+| Value menu on a JSON response | A run tab filtered to failures |
+|---|---|
+| ![Copy value, Copy path or save as a runtime variable](docs/screenshots/value-menu-light.png) | ![Run tab with the Fail filter and the failure reason on top](docs/screenshots/run-fail-dark.png) |
+
+![Collection run in a tab, light mode](docs/screenshots/run-light.png)
 
 ## Usage
 
@@ -75,8 +79,10 @@ plv runs clear coll --yes                           # delete this collection's r
 plv run coll --no-history                           # do not save this run
 ```
 
-In the app, click a row in the run panel to see its Response, Headers, Request, Tests
-and Console; **History** in the run panel lists saved runs (app and `plv`) and opens one.
+In the app, ▶ on a collection or folder opens the run in a **Run tab**. **All | Fail |
+Pass | Skip** filters the results (with a name filter beside it); click a row to see its
+Body, Headers, Request, Tests and Console, with the failure reason first. **Previous
+runs ▾** lists saved runs (app and `plv`) and shows one in the same tab.
 
 - Where: `runs/` next to `state.json` (below), never inside the collection, one folder
   per collection. The 20 newest runs per collection are kept.
@@ -129,9 +135,9 @@ plv run coll --env local --iteration-count 5           # five times, no file
   iteration (like Bruno); the HTML report has an "Iteration N of M" section with the
   row; JUnit stays one flat list with Bruno's suite names.
 
-In the app, **Run with data…** in the run panel takes a CSV/JSON file (shown as its row
+In the app, **Run with data…** in the Run tab header takes a CSV/JSON file (shown as its row
 count and column names only, never kept) or an iteration count; results are grouped by
-iteration. **Export** in the run panel saves a finished, cancelled or saved run as
+iteration. **Export** in the Run tab header saves a finished, cancelled or saved run as
 HTML, JSON or JUnit, byte for byte what `plv runs show <id> --reporter-*` writes (the
 desktop app uses a save dialog).
 
@@ -167,14 +173,25 @@ never secrets. `plv run` reads and writes only its `runs/` folder.
 - **New request** (above the sidebar) opens an unsaved tab that sends with the
   collection's headers, auth and scripts. It is never written to disk until you save it
   into a folder, and is not remembered across restarts.
-- **Copy as cURL** (next to Save) copies a request as written, or with variables filled
-  in for the selected environment (it asks first when the command contains a secret).
+- **Send** is the only coloured button. **⋯** next to it holds Copy as cURL (as written,
+  or with variables filled in for the selected environment; it asks first when the
+  command contains a secret), Copy resolved URL (secret values as `***`), Save and
+  Reveal .bru file (desktop) / Copy file path (browser). A dot on a tab means unsaved.
+- **Response:** Pretty / Raw / Preview (HTML in a sandboxed frame, images, PDF), a
+  JSONPath filter (`$.items[*].id`, `..id`; Copy body then copies the result), `⌘/Ctrl+F`
+  to search, and a click (or Enter) on a JSON value to copy it, copy its path, or keep
+  it as a runtime variable. `x-request-id`, `traceparent` and `location` are pinned
+  under the body with a copy button. Bodies over 1 MiB render in part (Show all);
+  Copy and Save always use the whole body.
+- **Sidebar width:** drag its edge (or focus it and use the arrow keys); double-click
+  resets it. The width is remembered.
 - **Import HAR** (above the sidebar) turns a recorded browser session into requests and
   moves every credential into secret variables. See
   [Capture a browser flow and import it](docs/capture-with-claude.md).
 
 Shortcuts: `⌘/Ctrl+O` open collection, `⌘/Ctrl+P` filter requests (`Esc` clears),
-`⌘/Ctrl+Enter` send, `⌘/Ctrl+S` save, arrow keys in the sidebar tree and tab strips,
+`⌘/Ctrl+Enter` send, `⌘/Ctrl+S` save, `⌘/Ctrl+F` search the response body, Enter on a
+JSON value for its menu, arrow keys in the sidebar tree and tab strips,
 `Esc` closes dialogs. `⌘/Ctrl+W` closes a request tab in the desktop app (browsers
 keep that shortcut for closing the window).
 

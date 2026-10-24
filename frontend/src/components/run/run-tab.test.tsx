@@ -162,6 +162,15 @@ describe("run tab", () => {
     expect(useTabs.getState().runTabs[0]!.runId).toBe("new-1");
   });
 
+  it("run_tab_has_export_and_run_with_data", () => {
+    render(runTabFor());
+    const header = screen.getByRole("region", { name: "Run all" }).querySelector("header")!;
+    const names = within(header).getAllByRole("button").map((b) => b.textContent);
+    expect(names).toEqual(["Previous runs ▾", "Export", "Re-run", "Run with data…"]);
+    fireEvent.click(within(header).getByRole("button", { name: "Run with data…" }));
+    expect(screen.getByRole("dialog", { name: "Run with data" })).toBeTruthy();
+  });
+
   it("run_tabs_not_persisted and shown in the tab strip", () => {
     useTabs.getState().openRun("c1", "r1", "all");
     render(<RequestTabs />);

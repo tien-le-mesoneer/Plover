@@ -7,6 +7,8 @@
 4. **Sửa nhanh (mỗi việc dưới 30 phút):** thêm ⌘↵ để gửi và ⌘W để đóng tab, sắp xếp collection theo thứ tự cố định, vùng bấm của nút icon tối thiểu 24 px, thêm header "Name / Value" cho bảng.
 5. **Để ngang Bruno/Postman:** cần thêm ô tìm request, nút copy hoặc format response, kéo để đổi kích thước pane, nhớ tab sau khi reload, và lịch sử request.
 
+> **Update 2026-10-24:** the token proposals in section D were superseded by the Swiss Minimal tokens in `frontend/src/styles.css` (checked by `frontend/src/theme.test.ts`); see `docs/ui-style-report.md`.
+
 Scope: the React frontend served by `plv serve` and by the Tauri window. It was reviewed as a desktop developer tool used with mouse and keyboard, so mobile-only rules were skipped. The method was a source read plus a live walkthrough: release `plv` (`target/release/plv`), the `fixtures/phase3-chain` and `uicheck` collections copied to scratch, localhost mocks, and agent-browser at 1440×900 and 960×700 in light and dark. Contrast ratios were computed from the CSS tokens with the WCAG 2.x formula.
 
 Screenshots are in `/private/tmp/claude-501/-Users-tienle-projects-rea/1bb5dcfd-43a5-447b-a541-d24ed1b9cd89/scratchpad/uiux/shots/` (referred to below as `shots/`).
