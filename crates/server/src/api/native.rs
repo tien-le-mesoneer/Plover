@@ -5,7 +5,8 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use plover_core::secrets::SecretBackend;
 
-use super::dto::{CapabilitiesDto, PickedFolderDto};
+use super::dto::{CapabilitiesDto, PickedFolderDto, SaveReportBody, SavedFileDto};
+use super::extract::ApiJson;
 use crate::error::ApiError;
 use crate::native::NativeHost;
 use crate::state::AppState;
@@ -16,6 +17,7 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<CapabilitiesDto
         desktop: native,
         native_picker: native,
         open_external: native,
+        native_save: native,
         secret_backend: match state.workspace.secret_backend() {
             SecretBackend::Keychain => "keychain",
             SecretBackend::Memory => "memory",
@@ -51,4 +53,23 @@ pub async fn open_browser(State(state): State<AppState>) -> Result<StatusCode, A
         .await
         .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, "open_failed", e))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Saves a run's report through the native save dialog (webviews don't handle
+/// `<a download>` reliably).
+pub async fn save_report(
+    State(state): State<AppState>,
+    ApiJson(body): ApiJson<SaveReportBody>,
+) -> Result<Json<SavedFileDto>, ApiError> {
+    let host = host(&state)?;
+    let report =
+        super::history::report_file(&state, &body.collection_id, &body.run_id, &body.format)
+            .await?;
+    let path = host
+        .save_file(&report.file_name, report.bytes)
+        .await
+        .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "save_failed", e))?;
+    Ok(Json(SavedFileDto {
+        path: path.map(|p| p.to_string_lossy().into_owned()),
+    }))
 }

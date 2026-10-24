@@ -265,6 +265,7 @@
   fn save_file<'a>(&'a self, default_name: &'a str, bytes: Vec<u8>) -> HostFuture<'a, Result<Option<PathBuf>, String>>;
   pub struct SavedFileDto { pub path: Option<String> }   // null when cancelled
   ```
+  *Implementation note:* the socket (and history replay) sends `iterationStarted` only for a data-driven or repeated run (`total > 1` or a non-empty row), so a plain run's event stream is unchanged. Core always emits `IterationStarted`/`IterationFinished` (the latter carries the row after script changes, for the record). The socket accepts messages up to 17 MiB so a 16 MiB data file gets `bad_data` rather than a dropped connection.
   Routes: `POST /collections/{id}/data-file/preview` (body `DataFileDto`) → `DataPreviewDto`, 400 `bad_data` with the parser message; `GET /collections/{id}/runs/{runId}/report?format=html|json|junit` → file with `Content-Type` and `Content-Disposition: attachment; filename="<collection>-<runId>.<ext>"`, 409 `run_in_progress` while running, 400 `bad_format`, lookups and errors as the run-history detail route; `POST /native/save-report` (body `{ collectionId, runId, format }`) → `SavedFileDto`, 501 when there is no native host. A `Start` with bad data answers `RunEventDto::Error { code: "bad_data", .. }` and runs nothing. `text` over `MAX_DATA_FILE` → `bad_data`.
 
 - [ ] **Step 1: Write the failing tests.**

@@ -532,6 +532,8 @@ pub struct RunReportDto {
     pub asserts_failed: u32,
     #[ts(type = "number")]
     pub elapsed_ms: u64,
+    /// Iterations reached (1 for a plain run).
+    pub iterations: u32,
 }
 
 /// One saved run, as `GET /collections/{id}/runs` lists it.
@@ -873,6 +875,8 @@ pub struct CapabilitiesDto {
     pub desktop: bool,
     pub native_picker: bool,
     pub open_external: bool,
+    /// Reports can be saved through a native save dialog (`POST /native/save-report`).
+    pub native_save: bool,
     /// Where secrets are kept: `"keychain"` or `"memory"`.
     #[ts(type = "\"keychain\" | \"memory\"")]
     pub secret_backend: String,
@@ -1114,6 +1118,11 @@ pub fn typescript_bindings() -> String {
         HarImportBody::decl(&cfg),
         HarPlanDto::decl(&cfg),
         HarImportResultDto::decl(&cfg),
+        DataFormatDto::decl(&cfg),
+        DataFileDto::decl(&cfg),
+        DataPreviewDto::decl(&cfg),
+        SaveReportBody::decl(&cfg),
+        SavedFileDto::decl(&cfg),
     ];
     let mut out = String::from(
         "// Generated from crates/server/src/api by ts-rs. Do not edit.\n\
@@ -1126,4 +1135,59 @@ pub fn typescript_bindings() -> String {
         out.push('\n');
     }
     out
+}
+
+/// A data file the browser read, for a data-driven run or its preview.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DataFileDto {
+    pub format: DataFormatDto,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum DataFormatDto {
+    Csv,
+    Json,
+}
+
+impl From<DataFormatDto> for plover_core::data_file::DataFormat {
+    fn from(f: DataFormatDto) -> Self {
+        match f {
+            DataFormatDto::Csv => plover_core::data_file::DataFormat::Csv,
+            DataFormatDto::Json => plover_core::data_file::DataFormat::Json,
+        }
+    }
+}
+
+/// `POST /collections/{id}/data-file/preview`: counts and names only, never values.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DataPreviewDto {
+    pub rows: u32,
+    pub columns: Vec<String>,
+}
+
+/// `GET /collections/{id}/runs/{runId}/report?format=…`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReportQuery {
+    pub format: String,
+}
+
+/// `POST /native/save-report`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveReportBody {
+    pub collection_id: String,
+    pub run_id: String,
+    #[ts(type = "\"html\" | \"json\" | \"junit\"")]
+    pub format: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedFileDto {
+    /// `null` when the user cancelled the dialog.
+    pub path: Option<String>,
 }

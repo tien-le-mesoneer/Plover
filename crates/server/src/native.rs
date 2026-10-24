@@ -12,4 +12,11 @@ pub trait NativeHost: Send + Sync {
     fn pick_folder<'a>(&'a self, title: &'a str) -> HostFuture<'a, Option<PathBuf>>;
     /// Opens `url` in the default browser.
     fn open_external<'a>(&'a self, url: &'a str) -> HostFuture<'a, Result<(), String>>;
+    /// Asks where to save `bytes` (suggesting `default_name`) and writes them there;
+    /// `Ok(None)` when the user cancels.
+    fn save_file<'a>(
+        &'a self,
+        default_name: &'a str,
+        bytes: Vec<u8>,
+    ) -> HostFuture<'a, Result<Option<PathBuf>, String>>;
 }

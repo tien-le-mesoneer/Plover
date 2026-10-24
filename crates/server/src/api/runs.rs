@@ -9,12 +9,13 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
+use plover_core::data_file;
 use plover_core::masking::secret_strings;
 use plover_core::run_record::{
     ResultRecord, ResultStatus, RunEnd, RunHeader, RunId, RunRecord, RunRecorder, RunSource,
 };
 use plover_core::runner::{
-    Persist, RunEvent, RunOptions, RunReport, RunVars, run_with_state, secret_values,
+    Iterations, Persist, RunEvent, RunOptions, RunReport, RunVars, run_with_state, secret_values,
 };
 use plover_core::store;
 use plover_core::workspace::{CollectionId, OpenCollection};
@@ -25,7 +26,8 @@ use ts_rs::TS;
 
 use super::collections::item_id;
 use super::dto::{
-    AssertResultDto, ConsoleLineDto, RunReportDto, ScriptErrorDto, TestResultDto, outcome_lists,
+    AssertResultDto, ConsoleLineDto, DataFileDto, RunReportDto, ScriptErrorDto, TestResultDto,
+    outcome_lists,
 };
 use crate::security::TOKEN_PROTOCOL_PREFIX;
 use crate::state::{AppState, LiveRun};
@@ -43,6 +45,14 @@ pub enum ClientMessage {
         collection_id: String,
         item: String,
         env: Option<String>,
+        /// Run once per row of this file (`Run with data…`).
+        #[serde(default)]
+        #[ts(optional)]
+        data: Option<DataFileDto>,
+        /// Run this many times; a data file sets the count to its rows instead.
+        #[serde(default)]
+        #[ts(optional)]
+        iteration_count: Option<u32>,
     },
     Cancel {
         run_id: String,
@@ -62,8 +72,19 @@ pub enum RunEventDto {
         run_id: String,
         record_id: String,
     },
+    /// Before each iteration of a data-driven or repeated run (not sent for a plain run);
+    /// `data` is the row, masked (`{}` without a data file).
+    IterationStarted {
+        run_id: String,
+        index: u32,
+        total: u32,
+        #[ts(type = "Record<string, unknown>")]
+        data: serde_json::Value,
+    },
     Started {
         run_id: String,
+        /// Zero-based iteration (also on `passed`, `failed`, `skipped`).
+        iteration: u32,
         item: String,
         name: String,
         method: String,
@@ -73,6 +94,7 @@ pub enum RunEventDto {
         run_id: String,
         /// The result's position in the run (a request run twice has two).
         index: u32,
+        iteration: u32,
         item: String,
         status: u16,
         #[ts(type = "number")]
@@ -88,6 +110,7 @@ pub enum RunEventDto {
     Failed {
         run_id: String,
         index: u32,
+        iteration: u32,
         item: String,
         error: String,
         status: Option<u16>,
@@ -101,6 +124,7 @@ pub enum RunEventDto {
     Skipped {
         run_id: String,
         index: u32,
+        iteration: u32,
         item: String,
         reason: String,
     },
@@ -111,7 +135,8 @@ pub enum RunEventDto {
     Cancelled {
         run_id: String,
     },
-    /// `error` codes: `bad_message`, `not_found`, `bad_item`, `run_in_progress`, `run_failed`.
+    /// `error` codes: `bad_message`, `not_found`, `bad_item`, `bad_data`, `run_in_progress`,
+    /// `run_failed`.
     Error {
         run_id: Option<String>,
         error: String,
@@ -121,7 +146,12 @@ pub enum RunEventDto {
 
 pub async fn upgrade(State(state): State<AppState>, ws: WebSocketUpgrade) -> Response {
     let protocol = format!("{TOKEN_PROTOCOL_PREFIX}{}", state.token);
+    // A `start` message can carry a data file of up to 16 MiB; larger files are answered
+    // with `bad_data` instead of a dropped connection.
+    let limit = data_file::MAX_DATA_FILE + (1 << 20);
     ws.protocols([protocol])
+        .max_message_size(limit)
+        .max_frame_size(limit)
         .on_upgrade(move |socket| handle(socket, state))
 }
 
@@ -143,12 +173,19 @@ async fn handle(mut socket: WebSocket, state: AppState) {
                     Some(Ok(_)) => continue,
                 };
                 match serde_json::from_str::<ClientMessage>(&text) {
-                    Ok(ClientMessage::Start { run_id, collection_id, item, env }) => {
+                    Ok(ClientMessage::Start { run_id, collection_id, item, env, data, iteration_count }) => {
                         if active.as_ref().is_some_and(|a| !a.task.is_finished()) {
                             let _ = tx.send(error(Some(run_id), "run_in_progress", "a run is already active on this socket"));
                             continue;
                         }
-                        active = start(&state, run_id, collection_id, item, env, tx.clone());
+                        let iterations = match iterations(data, iteration_count) {
+                            Ok(iterations) => iterations,
+                            Err(message) => {
+                                let _ = tx.send(error(Some(run_id), "bad_data", &message));
+                                continue;
+                            }
+                        };
+                        active = start(&state, run_id, collection_id, item, env, iterations, tx.clone());
                     }
                     Ok(ClientMessage::Cancel { run_id }) => {
                         if let Some(run) = active.take_if(|a| a.id == run_id) {
@@ -223,12 +260,42 @@ fn error(run_id: Option<String>, code: &str, message: &str) -> RunEventDto {
     }
 }
 
+/// The run's iterations and the data-file credential values to mask.
+struct DataRun {
+    iterations: Iterations,
+    secrets: Vec<String>,
+}
+
+/// A data file wins over a count (Bruno CLI); a bad file is an error and nothing runs.
+fn iterations(data: Option<DataFileDto>, count: Option<u32>) -> Result<DataRun, String> {
+    match (data, count) {
+        (Some(file), _) => {
+            let rows = data_file::parse(file.format.into(), &file.text)
+                .map_err(|e| e.with_name("data file"))?;
+            Ok(DataRun {
+                secrets: data_file::credential_values(&rows),
+                iterations: Iterations::from_rows(rows),
+            })
+        }
+        (None, Some(0)) => Err("the iteration count must be at least 1".to_owned()),
+        (None, Some(n)) => Ok(DataRun {
+            iterations: Iterations::repeat(n as usize),
+            secrets: Vec::new(),
+        }),
+        (None, None) => Ok(DataRun {
+            iterations: Iterations::default(),
+            secrets: Vec::new(),
+        }),
+    }
+}
+
 fn start(
     state: &AppState,
     run_id: String,
     collection_id: String,
     item: String,
     env: Option<String>,
+    data: DataRun,
     tx: mpsc::UnboundedSender<RunEventDto>,
 ) -> Option<ActiveRun> {
     let Some(open) = state.workspace.get(&CollectionId(collection_id.clone())) else {
@@ -263,7 +330,7 @@ fn start(
         },
         record_id.clone(),
         run_id,
-        env,
+        Settings { env, data },
         tx,
     ));
     Some(ActiveRun {
@@ -271,6 +338,12 @@ fn start(
         record_id: record_id.0,
         task,
     })
+}
+
+/// The environment and iterations a run was started with.
+struct Settings {
+    env: Option<String>,
+    data: DataRun,
 }
 
 struct Target {
@@ -286,9 +359,10 @@ async fn run_task(
     target: Target,
     record_id: RunId,
     run_id: String,
-    env: Option<String>,
+    settings: Settings,
     tx: mpsc::UnboundedSender<RunEventDto>,
 ) {
+    let Settings { env, data } = settings;
     let Target {
         root,
         path: target,
@@ -303,6 +377,7 @@ async fn run_task(
         env,
         // The Bruno app writes script changes to the environment file.
         persist: Persist::Environment,
+        iterations: data.iterations,
         ..RunOptions::default()
     };
     let environment = opts.env.as_deref().and_then(|e| collection.environment(e));
@@ -328,7 +403,8 @@ async fn run_task(
         env: opts.env.clone(),
         started_at_ms: plover_core::time::unix_ms(std::time::SystemTime::now()),
     };
-    let start_secrets = secret_strings(&secret_values(environment, &state.environment));
+    let mut start_secrets = secret_strings(&secret_values(environment, &state.environment));
+    start_secrets.extend(data.secrets);
     let record_key = record_id.0.clone();
     app.live.lock().unwrap_or_else(|e| e.into_inner()).insert(
         record_key.clone(),
@@ -347,23 +423,35 @@ async fn run_task(
             });
         }
         // `Finished` is sent once the run is masked and saved.
-        if matches!(
-            event,
-            RunEvent::Finished { .. }
-                | RunEvent::IterationStarted { .. }
-                | RunEvent::IterationFinished { .. }
-        ) {
+        if matches!(event, RunEvent::Finished { .. }) {
             return;
         }
-        let index = match live
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get_mut(&record_key)
-        {
-            Some(LiveRun::Running(recorder)) => recorder.event(event),
-            _ => None,
+        let mut live = live.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(LiveRun::Running(recorder)) = live.get_mut(&record_key) else {
+            return;
         };
-        let _ = events.send(event_dto(&root, &id, index, event));
+        let index = recorder.event(event);
+        match event {
+            // A plain run (one iteration, no data file) sends no iteration events, so its
+            // stream is unchanged.
+            RunEvent::IterationStarted { total: 1, data, .. } if data.is_empty() => {}
+            RunEvent::IterationStarted { index, total, .. } => {
+                let data = recorder
+                    .masked_iteration(*index)
+                    .map(|i| row_json(&i.data))
+                    .unwrap_or_else(|| serde_json::json!({}));
+                let _ = events.send(RunEventDto::IterationStarted {
+                    run_id: id.clone(),
+                    index: u32_of(*index),
+                    total: u32_of(*total),
+                    data,
+                });
+            }
+            RunEvent::IterationFinished { .. } => {}
+            _ => {
+                let _ = events.send(event_dto(&root, &id, index, event));
+            }
+        }
     };
     let result = run_with_state(
         &collection,
@@ -422,28 +510,42 @@ async fn run_task(
     }
 }
 
+fn u32_of(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+pub fn row_json(row: &plover_core::vars::ValueMap) -> serde_json::Value {
+    serde_json::Value::Object(row.clone().into_iter().collect())
+}
+
 fn event_dto(root: &Path, run_id: &str, index: Option<usize>, event: &RunEvent) -> RunEventDto {
     let run_id = run_id.to_owned();
     let index = index.map_or(0, |i| u32::try_from(i).unwrap_or(u32::MAX));
     match event {
         RunEvent::Started {
+            iteration,
             path,
             name,
             method,
             url,
-            ..
         } => RunEventDto::Started {
             run_id,
+            iteration: u32_of(*iteration),
             item: item_id(root, path),
             name: name.clone(),
             method: method.clone(),
             url: url.clone(),
         },
-        RunEvent::Passed { path, outcome, .. } => {
+        RunEvent::Passed {
+            iteration,
+            path,
+            outcome,
+        } => {
             let (tests, asserts, console, _) = outcome_lists(outcome);
             RunEventDto::Passed {
                 run_id,
                 index,
+                iteration: u32_of(*iteration),
                 item: item_id(root, path),
                 status: outcome.status.unwrap_or_default(),
                 elapsed_ms: millis(&outcome.elapsed),
@@ -454,6 +556,7 @@ fn event_dto(root: &Path, run_id: &str, index: Option<usize>, event: &RunEvent) 
             }
         }
         RunEvent::Failed {
+            iteration,
             path,
             error,
             outcome,
@@ -463,6 +566,7 @@ fn event_dto(root: &Path, run_id: &str, index: Option<usize>, event: &RunEvent) 
             RunEventDto::Failed {
                 run_id,
                 index,
+                iteration: u32_of(*iteration),
                 item: item_id(root, path),
                 error: error.clone(),
                 status: outcome.status,
@@ -473,9 +577,15 @@ fn event_dto(root: &Path, run_id: &str, index: Option<usize>, event: &RunEvent) 
                 script_error,
             }
         }
-        RunEvent::Skipped { path, reason, .. } => RunEventDto::Skipped {
+        RunEvent::Skipped {
+            iteration,
+            path,
+            reason,
+            ..
+        } => RunEventDto::Skipped {
             run_id,
             index,
+            iteration: u32_of(*iteration),
             item: item_id(root, path),
             reason: reason.clone(),
         },
@@ -484,7 +594,7 @@ fn event_dto(root: &Path, run_id: &str, index: Option<usize>, event: &RunEvent) 
             report: report_dto(report),
         },
         RunEvent::IterationStarted { .. } | RunEvent::IterationFinished { .. } => {
-            unreachable!("iteration events are filtered out before event_dto")
+            unreachable!("iteration events are sent by the run task")
         }
     }
 }
@@ -498,12 +608,14 @@ fn millis(d: &std::time::Duration) -> u64 {
 pub fn result_events(run_id: &str, r: &ResultRecord) -> Vec<RunEventDto> {
     let run_id = run_id.to_owned();
     let index = u32::try_from(r.index).unwrap_or(u32::MAX);
+    let iteration = u32_of(r.iteration_index);
     let o = &r.outcome;
     let (tests, asserts, console, script_error) = outcome_lists(o);
     let mut events = Vec::new();
     if !r.method.is_empty() {
         events.push(RunEventDto::Started {
             run_id: run_id.clone(),
+            iteration,
             item: r.file.clone(),
             name: r.name.clone(),
             method: r.method.clone(),
@@ -514,6 +626,7 @@ pub fn result_events(run_id: &str, r: &ResultRecord) -> Vec<RunEventDto> {
         ResultStatus::Pass => RunEventDto::Passed {
             run_id,
             index,
+            iteration,
             item: r.file.clone(),
             status: o.status.unwrap_or_default(),
             elapsed_ms: millis(&o.elapsed),
@@ -525,6 +638,7 @@ pub fn result_events(run_id: &str, r: &ResultRecord) -> Vec<RunEventDto> {
         ResultStatus::Fail | ResultStatus::Error => RunEventDto::Failed {
             run_id,
             index,
+            iteration,
             item: r.file.clone(),
             error: r.error.clone().unwrap_or_default(),
             status: o.status,
@@ -537,6 +651,7 @@ pub fn result_events(run_id: &str, r: &ResultRecord) -> Vec<RunEventDto> {
         ResultStatus::Skipped => RunEventDto::Skipped {
             run_id,
             index,
+            iteration,
             item: r.file.clone(),
             reason: r.skip_reason.clone().unwrap_or_default(),
         },
@@ -555,5 +670,6 @@ pub fn report_dto(r: &RunReport) -> RunReportDto {
         asserts_passed: count(r.asserts_passed),
         asserts_failed: count(r.asserts_failed),
         elapsed_ms: millis(&r.elapsed),
+        iterations: count(r.iterations.max(1)),
     }
 }

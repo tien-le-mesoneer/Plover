@@ -19,6 +19,7 @@ use tower::ServiceExt;
 struct FakeHost {
     pick: Mutex<Vec<Option<PathBuf>>>,
     opened: Mutex<Vec<String>>,
+    saved: Mutex<Vec<(String, Vec<u8>)>>,
 }
 
 impl NativeHost for FakeHost {
@@ -29,6 +30,19 @@ impl NativeHost for FakeHost {
         Box::pin(async move {
             self.opened.lock().unwrap().push(url.to_owned());
             Ok(())
+        })
+    }
+    fn save_file<'a>(
+        &'a self,
+        default_name: &'a str,
+        bytes: Vec<u8>,
+    ) -> HostFuture<'a, Result<Option<PathBuf>, String>> {
+        Box::pin(async move {
+            self.saved
+                .lock()
+                .unwrap()
+                .push((default_name.to_owned(), bytes));
+            Ok(Some(PathBuf::from("/saved").join(default_name)))
         })
     }
 }
@@ -53,6 +67,7 @@ async fn capabilities_web_mode() {
             "desktop": false,
             "nativePicker": false,
             "openExternal": false,
+            "nativeSave": false,
             "secretBackend": "memory"
         })
     );
@@ -66,6 +81,20 @@ async fn capabilities_desktop_mode() {
     assert_eq!(body["desktop"], json!(true));
     assert_eq!(body["nativePicker"], json!(true));
     assert_eq!(body["openExternal"], json!(true));
+    assert_eq!(body["nativeSave"], json!(true));
+}
+
+#[tokio::test]
+async fn native_save_without_host_is_501() {
+    let (status, body) = call(
+        &common::app(),
+        "POST",
+        "/api/native/save-report",
+        Some(json!({"collectionId": "x", "runId": "y", "format": "html"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(body["error"], json!("not_supported"));
 }
 
 #[tokio::test]

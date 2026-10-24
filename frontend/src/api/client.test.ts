@@ -89,7 +89,7 @@ describe("ApiClient", () => {
   it("calls the capabilities and native routes", async () => {
     const fetch = vi.fn(async (url: string) =>
       url.endsWith("/capabilities")
-        ? jsonResponse(200, { desktop: true, nativePicker: true, openExternal: true, secretBackend: "keychain" })
+        ? jsonResponse(200, { desktop: true, nativePicker: true, openExternal: true, nativeSave: true, secretBackend: "keychain" })
         : url.endsWith("/pick-folder")
           ? jsonResponse(200, { path: "/c" })
           : jsonResponse(204, undefined),
@@ -175,8 +175,8 @@ describe("ApiClient", () => {
     const start = JSON.parse(socket.sent[0]!);
     expect(start).toMatchObject({ type: "start", collectionId: "c1", item: "", env: "local" });
     expect(start.runId).toBe(run.runId);
-    socket.emit({ type: "started", runId: run.runId, item: "a.bru", name: "a", method: "GET", url: "u" });
-    socket.emit({ type: "started", runId: "other", item: "x", name: "x", method: "GET", url: "u" });
+    socket.emit({ type: "started", runId: run.runId, iteration: 0, item: "a.bru", name: "a", method: "GET", url: "u" });
+    socket.emit({ type: "started", runId: "other", iteration: 0, item: "x", name: "x", method: "GET", url: "u" });
     socket.emit({
       type: "finished",
       runId: run.runId,

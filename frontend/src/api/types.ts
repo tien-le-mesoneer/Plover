@@ -215,7 +215,11 @@ export type ApiErrorDto = { error: string, message: string,
  */
 current: ConflictDto | null, };
 
-export type RunReportDto = { passed: number, failed: number, skipped: number, testsPassed: number, testsFailed: number, assertsPassed: number, assertsFailed: number, elapsedMs: number, };
+export type RunReportDto = { passed: number, failed: number, skipped: number, testsPassed: number, testsFailed: number, assertsPassed: number, assertsFailed: number, elapsedMs: number, 
+/**
+ * Iterations reached (1 for a plain run).
+ */
+iterations: number, };
 
 export type RunMetaDto = { recordId: string, 
 /**
@@ -277,19 +281,35 @@ request: RequestDetailDto | null,
  */
 responseBody: BodyDetailDto | null, result: SendResultDto, };
 
-export type RunEventDto = { "type": "accepted", runId: string, recordId: string, } | { "type": "started", runId: string, item: string, name: string, method: string, url: string, } | { "type": "passed", runId: string, 
+export type RunEventDto = { "type": "accepted", runId: string, recordId: string, } | { "type": "iterationStarted", runId: string, index: number, total: number, data: Record<string, unknown>, } | { "type": "started", runId: string, 
+/**
+ * Zero-based iteration (also on `passed`, `failed`, `skipped`).
+ */
+iteration: number, item: string, name: string, method: string, url: string, } | { "type": "passed", runId: string, 
 /**
  * The result's position in the run (a request run twice has two).
  */
-index: number, item: string, status: number, elapsedMs: number, size: number, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, } | { "type": "failed", runId: string, index: number, item: string, error: string, status: number | null, elapsedMs: number | null, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, scriptError: ScriptErrorDto | null, } | { "type": "skipped", runId: string, index: number, item: string, reason: string, } | { "type": "finished", runId: string, report: RunReportDto, } | { "type": "cancelled", runId: string, } | { "type": "error", runId: string | null, error: string, message: string, };
+index: number, iteration: number, item: string, status: number, elapsedMs: number, size: number, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, } | { "type": "failed", runId: string, index: number, iteration: number, item: string, error: string, status: number | null, elapsedMs: number | null, tests: Array<TestResultDto>, asserts: Array<AssertResultDto>, console: Array<ConsoleLineDto>, scriptError: ScriptErrorDto | null, } | { "type": "skipped", runId: string, index: number, iteration: number, item: string, reason: string, } | { "type": "finished", runId: string, report: RunReportDto, } | { "type": "cancelled", runId: string, } | { "type": "error", runId: string | null, error: string, message: string, };
 
-export type ClientMessage = { "type": "start", runId: string, collectionId: string, item: string, env: string | null, } | { "type": "cancel", runId: string, };
+export type ClientMessage = { "type": "start", runId: string, collectionId: string, item: string, env: string | null, 
+/**
+ * Run once per row of this file (`Run with data…`).
+ */
+data?: DataFileDto, 
+/**
+ * Run this many times; a data file sets the count to its rows instead.
+ */
+iterationCount?: number, } | { "type": "cancel", runId: string, };
 
 export type CapabilitiesDto = { 
 /**
  * Running inside the desktop app.
  */
 desktop: boolean, nativePicker: boolean, openExternal: boolean, 
+/**
+ * Reports can be saved through a native save dialog (`POST /native/save-report`).
+ */
+nativeSave: boolean, 
 /**
  * Where secrets are kept: `"keychain"` or `"memory"`.
  */
@@ -380,3 +400,17 @@ secretNames: Array<string>, env: string, notices: Array<string>,
  * The step that failed; what was written before it stays.
  */
 failedAt: string | null, };
+
+export type DataFormatDto = "csv" | "json";
+
+export type DataFileDto = { format: DataFormatDto, text: string, };
+
+export type DataPreviewDto = { rows: number, columns: Array<string>, };
+
+export type SaveReportBody = { collectionId: string, runId: string, format: "html" | "json" | "junit", };
+
+export type SavedFileDto = { 
+/**
+ * `null` when the user cancelled the dialog.
+ */
+path: string | null, };

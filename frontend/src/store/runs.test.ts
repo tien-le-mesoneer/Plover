@@ -12,7 +12,7 @@ const listRuns = vi.fn();
 const getRun = vi.fn();
 const clearRuns = vi.fn();
 
-const report = { passed: 1, failed: 0, skipped: 0, testsPassed: 0, testsFailed: 0, assertsPassed: 0, assertsFailed: 0, elapsedMs: 6 };
+const report = { passed: 1, failed: 0, skipped: 0, testsPassed: 0, testsFailed: 0, assertsPassed: 0, assertsFailed: 0, elapsedMs: 6, iterations: 1 };
 
 beforeEach(() => {
   cancel.mockReset();
@@ -41,8 +41,8 @@ describe("runs store", () => {
     const id = useRuns.getState().start("c1", "folder", "local", "folder");
     expect(id).toBe("r1");
     expect(useRuns.getState().runs.r1!.status).toBe("running");
-    emit({ type: "started", runId: "r1", item: "a.bru", name: "a", method: "GET", url: "u" });
-    emit({ type: "passed", runId: "r1", index: 0, item: "a.bru", status: 200, elapsedMs: 5, size: 2, tests: [], asserts: [], console: [] });
+    emit({ type: "started", runId: "r1", iteration: 0, item: "a.bru", name: "a", method: "GET", url: "u" });
+    emit({ type: "passed", runId: "r1", iteration: 0, index: 0, item: "a.bru", status: 200, elapsedMs: 5, size: 2, tests: [], asserts: [], console: [] });
     emit({ type: "finished", runId: "r1", report });
     finish();
     await Promise.resolve();
@@ -64,7 +64,7 @@ describe("runs store", () => {
 
   it("a socket that closes mid-run is an error", async () => {
     useRuns.getState().start("c1", "", null, "all");
-    emit({ type: "started", runId: "r1", item: "a.bru", name: "a", method: "GET", url: "u" });
+    emit({ type: "started", runId: "r1", iteration: 0, item: "a.bru", name: "a", method: "GET", url: "u" });
     finish();
     await new Promise((r) => setTimeout(r, 0));
     const run = useRuns.getState().runs.r1!;
@@ -108,7 +108,7 @@ describe("runs store", () => {
     getRun.mockResolvedValue({
       meta: { recordId: "rec", source: "plv", target: ".", env: null, startedAtMs: 1, outcome: "cancelled", report },
       label: "c",
-      events: [{ type: "skipped", runId: "rec", index: 0, item: "a.bru", reason: "x" }],
+      events: [{ type: "skipped", runId: "rec", iteration: 0, index: 0, item: "a.bru", reason: "x" }],
     });
     await useRuns.getState().openHistory("c1", "rec");
     const s = useRuns.getState();

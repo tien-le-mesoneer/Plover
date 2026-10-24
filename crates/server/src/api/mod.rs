@@ -3,6 +3,7 @@
 mod app_state;
 mod collections;
 mod curl;
+mod data_file;
 pub mod dto;
 mod environments;
 mod extract;
@@ -76,6 +77,14 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/collections/{id}/runs/{run_id}", get(history::get))
         .route(
+            "/collections/{id}/runs/{run_id}/report",
+            get(history::report),
+        )
+        .route(
+            "/collections/{id}/data-file/preview",
+            post(data_file::preview),
+        )
+        .route(
             "/collections/{id}/runs/{run_id}/results/{index}",
             get(history::result),
         )
@@ -91,6 +100,7 @@ pub fn routes() -> Router<AppState> {
         .route("/capabilities", get(native::capabilities))
         .route("/native/pick-folder", post(native::pick_folder))
         .route("/native/open-browser", post(native::open_browser))
+        .route("/native/save-report", post(native::save_report))
         .route("/ws", get(runs::upgrade))
         .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY))
 }

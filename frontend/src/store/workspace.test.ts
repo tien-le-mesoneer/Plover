@@ -47,7 +47,7 @@ describe("secrets", () => {
       capabilities: vi.fn(async () => ({
         desktop: true,
         nativePicker: true,
-        openExternal: true,
+        openExternal: true, nativeSave: true,
         secretBackend: "keychain",
       })),
     } as unknown as ApiClient;

@@ -9,7 +9,7 @@ let client: Record<string, ReturnType<typeof vi.fn>>;
 beforeEach(() => {
   useWorkspace.setState({ collections: [], error: undefined });
   client = {
-    capabilities: vi.fn(async () => ({ desktop: true, nativePicker: true, openExternal: true, secretBackend: "keychain" })),
+    capabilities: vi.fn(async () => ({ desktop: true, nativePicker: true, openExternal: true, nativeSave: true, secretBackend: "keychain" })),
     listCollections: vi.fn(async () => []),
     recent: vi.fn(async () => []),
     uiState: vi.fn(async () => ({})),

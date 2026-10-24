@@ -9,8 +9,8 @@ import { useWorkspace } from "../store/workspace";
 import { Sidebar } from "./Sidebar";
 import { SidebarHeader } from "./SidebarHeader";
 
-const web: CapabilitiesDto = { desktop: false, nativePicker: false, openExternal: false, secretBackend: "memory" };
-const desktop: CapabilitiesDto = { desktop: true, nativePicker: true, openExternal: true, secretBackend: "keychain" };
+const web: CapabilitiesDto = { desktop: false, nativePicker: false, openExternal: false, nativeSave: false, secretBackend: "memory" };
+const desktop: CapabilitiesDto = { desktop: true, nativePicker: true, openExternal: true, nativeSave: true, secretBackend: "keychain" };
 
 const node = (kind: TreeNodeDto["kind"], id: string, name: string, children?: TreeNodeDto[]): TreeNodeDto => ({
   kind,

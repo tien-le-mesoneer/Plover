@@ -88,8 +88,8 @@ describe("run panel keyboard access", () => {
           recordId: "rec",
           source: "live",
           events: [
-            { type: "started", runId: "r1", item: "a.bru", name: "a", method: "GET", url: "u" },
-            { type: "passed", runId: "r1", index: 0, item: "a.bru", status: 200, elapsedMs: 1, size: 1, tests: [], asserts: [], console: [] },
+            { type: "started", runId: "r1", iteration: 0, item: "a.bru", name: "a", method: "GET", url: "u" },
+            { type: "passed", runId: "r1", iteration: 0, index: 0, item: "a.bru", status: 200, elapsedMs: 1, size: 1, tests: [], asserts: [], console: [] },
           ],
         },
       },

@@ -50,7 +50,7 @@ beforeEach(() => {
     environments: vi.fn(async () => [
       { name: "local", vars: [], secretNames: ["authorization"], secretsSet: [], hash: "h" },
     ]),
-    capabilities: vi.fn(async () => ({ desktop: false, nativePicker: false, openExternal: false, secretBackend: "memory" })),
+    capabilities: vi.fn(async () => ({ desktop: false, nativePicker: false, openExternal: false, nativeSave: false, secretBackend: "memory" })),
   };
   setApi(client as unknown as ApiClient);
   useWorkspace.setState({

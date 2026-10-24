@@ -330,6 +330,7 @@ describe("run result detail and history", () => {
     type: "passed",
     runId: "r1",
     index,
+    iteration: 0,
     item,
     status: 200,
     elapsedMs: 5,
@@ -341,6 +342,7 @@ describe("run result detail and history", () => {
   const started = (item = "a.bru", name = "a"): RunEventDto => ({
     type: "started",
     runId: "r1",
+    iteration: 0,
     item,
     name,
     method: "POST",
@@ -415,16 +417,16 @@ describe("run result detail and history", () => {
           env: "local",
           startedAtMs: 0,
           outcome: "completed",
-          report: { passed: 2, failed: 1, skipped: 0, testsPassed: 0, testsFailed: 0, assertsPassed: 0, assertsFailed: 0, elapsedMs: 9 },
+          report: { passed: 2, failed: 1, skipped: 0, testsPassed: 0, testsFailed: 0, assertsPassed: 0, assertsFailed: 0, elapsedMs: 9, iterations: 1 },
         },
       ]),
       getRun: vi.fn(async () => ({
-        meta: { recordId: "rec-old", source: "plv", target: ".", env: "local", startedAtMs: 0, outcome: "completed", report: { passed: 1, failed: 0, skipped: 0, testsPassed: 0, testsFailed: 0, assertsPassed: 0, assertsFailed: 0, elapsedMs: 9 } },
+        meta: { recordId: "rec-old", source: "plv", target: ".", env: "local", startedAtMs: 0, outcome: "completed", report: { passed: 1, failed: 0, skipped: 0, testsPassed: 0, testsFailed: 0, assertsPassed: 0, assertsFailed: 0, elapsedMs: 9, iterations: 1 } },
         label: "saved-col",
         events: [
-          { type: "started", runId: "rec-old", item: "a.bru", name: "a", method: "GET", url: "u" },
-          { type: "passed", runId: "rec-old", index: 0, item: "a.bru", status: 200, elapsedMs: 5, size: 2, tests: [], asserts: [], console: [] },
-          { type: "finished", runId: "rec-old", report: { passed: 1, failed: 0, skipped: 0, testsPassed: 0, testsFailed: 0, assertsPassed: 0, assertsFailed: 0, elapsedMs: 9 } },
+          { type: "started", runId: "rec-old", iteration: 0, item: "a.bru", name: "a", method: "GET", url: "u" },
+          { type: "passed", runId: "rec-old", iteration: 0, index: 0, item: "a.bru", status: 200, elapsedMs: 5, size: 2, tests: [], asserts: [], console: [] },
+          { type: "finished", runId: "rec-old", report: { passed: 1, failed: 0, skipped: 0, testsPassed: 0, testsFailed: 0, assertsPassed: 0, assertsFailed: 0, elapsedMs: 9, iterations: 1 } },
         ],
       })),
       clearRuns: vi.fn(async () => {}),
@@ -473,7 +475,7 @@ describe("run result detail and history", () => {
 
   it("a skipped row shows its reason and no tabs", async () => {
     runResult.mockResolvedValue(detail({ status: "skipped", skipReason: "skipRequest", request: null, responseBody: null }));
-    live([{ type: "skipped", runId: "r1", index: 0, item: "a.bru", reason: "skipRequest" }]);
+    live([{ type: "skipped", runId: "r1", iteration: 0, index: 0, item: "a.bru", reason: "skipRequest" }]);
     render(<RunPanel onClose={() => {}} />);
     const rows = within(screen.getByRole("table", { name: "Run results" })).getAllByRole("row").slice(1);
     await act(async () => {

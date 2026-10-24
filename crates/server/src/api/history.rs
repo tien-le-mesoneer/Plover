@@ -6,17 +6,19 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, StatusCode, header};
+use axum::response::{IntoResponse, Response};
+use plover_core::report::{ReportFilter, html, json, junit};
 use plover_core::run_history::HistoryError;
 use plover_core::run_record::{BodyDetail, ResultRecord, RunId, RunOutcome, RunRecord};
 use plover_core::workspace::CollectionId;
 
 use super::dto::{
-    ResponseDto, RunDto, RunMetaDto, RunResultDetailDto, SendResultDto, outcome_lists,
+    ReportQuery, ResponseDto, RunDto, RunMetaDto, RunResultDetailDto, SendResultDto, outcome_lists,
 };
-use super::extract::ApiPath;
+use super::extract::{ApiPath, ApiQuery};
 use super::open_collection;
-use super::runs::{RunEventDto, report_dto, result_events};
+use super::runs::{RunEventDto, report_dto, result_events, row_json};
 use crate::error::ApiError;
 use crate::state::{AppState, LiveRun};
 
@@ -60,6 +62,107 @@ pub async fn result(
             .ok_or_else(not_found)?,
     };
     Ok(Json(detail_dto(&result)))
+}
+
+/// `GET /collections/{id}/runs/{runId}/report?format=html|json|junit`: the same bytes
+/// `plv runs show <id> --reporter-*` writes.
+pub async fn report(
+    State(state): State<AppState>,
+    ApiPath((id, run_id)): ApiPath<(String, String)>,
+    ApiQuery(query): ApiQuery<ReportQuery>,
+) -> Result<Response, ApiError> {
+    let file = report_file(&state, &id, &run_id, &query.format).await?;
+    let disposition = format!("attachment; filename=\"{}\"", file.file_name);
+    let mut response = file.bytes.into_response();
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(file.content_type),
+    );
+    if let Ok(value) = HeaderValue::from_str(&disposition) {
+        headers.insert(header::CONTENT_DISPOSITION, value);
+    }
+    Ok(response)
+}
+
+/// A rendered report of a finished, cancelled or saved run.
+pub struct ReportFile {
+    pub file_name: String,
+    pub content_type: &'static str,
+    pub bytes: Vec<u8>,
+}
+
+pub async fn report_file(
+    state: &AppState,
+    collection: &str,
+    run_id: &str,
+    format: &str,
+) -> Result<ReportFile, ApiError> {
+    let (ext, content_type) = match format {
+        "html" => ("html", "text/html; charset=utf-8"),
+        "json" => ("json", "application/json"),
+        "junit" => ("xml", "application/xml"),
+        other => {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "bad_format",
+                format!("`{other}` is not html, json or junit"),
+            ));
+        }
+    };
+    open_collection(state, collection)?;
+    if matches!(
+        state
+            .live
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(run_id),
+        Some(LiveRun::Running(_))
+    ) {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "run_in_progress",
+            "the run is still going",
+        ));
+    }
+    let record = load(state, collection, run_id).await?;
+    let filter = ReportFilter::default();
+    let bytes = match format {
+        "html" => html::render(&record, &filter).into_bytes(),
+        "json" => serde_json::to_string_pretty(&json::render(&record, &filter))
+            .unwrap_or_default()
+            .into_bytes(),
+        _ => junit::render(&record).into_bytes(),
+    };
+    Ok(ReportFile {
+        file_name: format!(
+            "{}-{}.{ext}",
+            file_name_part(&record.header.collection_name),
+            record.header.id
+        ),
+        content_type,
+        bytes,
+    })
+}
+
+/// A collection name made safe for a file name and a header value.
+fn file_name_part(name: &str) -> String {
+    let part: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let part = part.trim_matches('-');
+    if part.is_empty() {
+        "run".to_owned()
+    } else {
+        part.to_owned()
+    }
 }
 
 pub async fn clear(
@@ -163,11 +266,39 @@ fn meta_dto(
 fn run_dto(record: &RunRecord) -> RunDto {
     let h = &record.header;
     let run_id = h.id.to_string();
-    let mut events: Vec<RunEventDto> = record
-        .results
-        .iter()
-        .flat_map(|r| result_events(&run_id, r))
-        .collect();
+    let total = u32::try_from(record.report.iterations.max(record.iterations.len()).max(1))
+        .unwrap_or(u32::MAX);
+    // As live: a plain run has no iteration events.
+    let iterated = total > 1 || record.iterations.iter().any(|i| !i.data.is_empty());
+    let mut events: Vec<RunEventDto> = Vec::new();
+    let mut announced: Option<usize> = None;
+    let announce = |events: &mut Vec<RunEventDto>, index: usize| {
+        let data = record
+            .iterations
+            .iter()
+            .find(|i| i.index == index)
+            .map(|i| row_json(&i.data))
+            .unwrap_or_else(|| serde_json::json!({}));
+        events.push(RunEventDto::IterationStarted {
+            run_id: run_id.clone(),
+            index: u32::try_from(index).unwrap_or(u32::MAX),
+            total,
+            data,
+        });
+    };
+    for r in &record.results {
+        if iterated && announced != Some(r.iteration_index) {
+            announce(&mut events, r.iteration_index);
+            announced = Some(r.iteration_index);
+        }
+        events.extend(result_events(&run_id, r));
+    }
+    // An iteration stopped before its first request still shows.
+    for i in &record.iterations {
+        if iterated && !record.results.iter().any(|r| r.iteration_index == i.index) {
+            announce(&mut events, i.index);
+        }
+    }
     events.push(match record.outcome {
         RunOutcome::Completed => RunEventDto::Finished {
             run_id: run_id.clone(),
