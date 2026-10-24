@@ -9,6 +9,7 @@ use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
 use crate::executor::ResponseSummary;
+use crate::masking::Masker;
 use crate::resolve::{ResolvedBody, ResolvedPart, ResolvedRequest};
 use crate::runner::{RequestOutcome, RunEvent, RunReport, ScriptPhase};
 use crate::script::ScriptError;
@@ -406,11 +407,9 @@ pub struct RunRecorder {
     results: Vec<ResultRecord>,
     /// From the `Started` event of the request in flight: method, name, URL.
     started: Option<(String, String, String)>,
-    #[allow(dead_code)] // read by `finish` (masking)
     created: Instant,
     bodies_used: usize,
     bodies_exhausted: bool,
-    #[allow(dead_code)] // read by `finish` (masking)
     start_secrets: Vec<String>,
 }
 
@@ -435,6 +434,42 @@ impl RunRecorder {
     /// Unmasked, for live terminal output.
     pub fn results(&self) -> &[ResultRecord] {
         &self.results
+    }
+
+    /// Result `index`, masked with the start secrets and the header values seen so far
+    /// (for the live detail; a value first sent by a later request is masked by `finish`).
+    pub fn masked_result(&self, index: usize) -> Option<ResultRecord> {
+        let mut result = self.results.get(index)?.clone();
+        Masker::new(&self.start_secrets, &self.results).mask_result(&mut result);
+        Some(result)
+    }
+
+    /// The finished run, masked with the start and end secrets and every header value of
+    /// the run.
+    pub fn finish(self, end: RunEnd) -> RunRecord {
+        let (outcome, report, end_secrets) = match end {
+            RunEnd::Finished {
+                report,
+                end_secrets,
+            } => (RunOutcome::Completed, report, end_secrets),
+            RunEnd::Cancelled { end_secrets } => (
+                RunOutcome::Cancelled,
+                report_of(&self.results, self.created.elapsed()),
+                end_secrets,
+            ),
+        };
+        let mut secrets = self.start_secrets;
+        secrets.extend(end_secrets);
+        let masker = Masker::new(&secrets, &self.results);
+        let mut record = RunRecord {
+            version: RUN_RECORD_VERSION,
+            header: self.header,
+            outcome,
+            report,
+            results: self.results,
+        };
+        masker.mask_record(&mut record);
+        record
     }
 
     /// The index of the result this event completed, if any.
@@ -542,6 +577,38 @@ impl RunRecorder {
             size: body.size(),
         };
     }
+}
+
+/// How a run ended, with the secret values at its end (scripts can change secrets).
+pub enum RunEnd {
+    Finished {
+        report: RunReport,
+        end_secrets: Vec<String>,
+    },
+    Cancelled {
+        end_secrets: Vec<String>,
+    },
+}
+
+/// Counts for a run that did not report its own (cancelled).
+fn report_of(results: &[ResultRecord], elapsed: Duration) -> RunReport {
+    let mut report = RunReport {
+        elapsed,
+        ..RunReport::default()
+    };
+    for r in results {
+        match r.status {
+            ResultStatus::Pass => report.passed += 1,
+            ResultStatus::Fail | ResultStatus::Error => report.failed += 1,
+            ResultStatus::Skipped => report.skipped += 1,
+        }
+        let o = &r.outcome;
+        report.tests_passed += o.tests.iter().filter(|t| t.passed).count();
+        report.tests_failed += o.tests.iter().filter(|t| !t.passed).count();
+        report.asserts_passed += o.asserts.iter().filter(|a| a.passed).count();
+        report.asserts_failed += o.asserts.iter().filter(|a| !a.passed).count();
+    }
+    report
 }
 
 /// The error text the reporters show, like Bruno's: a script that stopped the request

@@ -5,6 +5,7 @@ pub mod bru;
 pub mod collection;
 pub mod dotenv;
 pub mod executor;
+pub mod masking;
 pub mod persist;
 pub mod request;
 pub mod resolve;
