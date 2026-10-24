@@ -10,11 +10,30 @@ use crate::run_record::{
 };
 
 pub fn render(record: &RunRecord, filter: &ReportFilter) -> Value {
-    let results = &record.results;
+    let entries: Vec<Value> = super::iterations(record)
+        .into_iter()
+        .map(|(index, results)| {
+            let results: Vec<Value> = results.iter().map(|r| result(r, filter)).collect();
+            json!({ "iterationIndex": index, "summary": summary(&results_of(record, index)), "results": results })
+        })
+        .collect();
+    Value::Array(entries)
+}
+
+fn results_of(record: &RunRecord, index: usize) -> Vec<&ResultRecord> {
+    record
+        .results
+        .iter()
+        .filter(|r| r.iteration_index == index)
+        .collect()
+}
+
+/// Bruno's `getRunnerSummary` for one iteration.
+fn summary(results: &[&ResultRecord]) -> Value {
     let count = |status: ResultStatus| results.iter().filter(|r| r.status == status).count();
     let tests = results.iter().flat_map(|r| &r.outcome.tests);
     let asserts = results.iter().flat_map(|r| &r.outcome.asserts);
-    let summary = json!({
+    json!({
         "totalRequests": results.len(),
         "passedRequests": count(ResultStatus::Pass),
         "failedRequests": count(ResultStatus::Fail),
@@ -26,9 +45,7 @@ pub fn render(record: &RunRecord, filter: &ReportFilter) -> Value {
         "totalTests": tests.clone().count(),
         "passedTests": tests.clone().filter(|t| t.passed).count(),
         "failedTests": tests.filter(|t| !t.passed).count(),
-    });
-    let results: Vec<Value> = results.iter().map(|r| result(r, filter)).collect();
-    json!([{ "iterationIndex": 0, "summary": summary, "results": results }])
+    })
 }
 
 fn result(r: &ResultRecord, filter: &ReportFilter) -> Value {
@@ -124,6 +141,7 @@ fn result(r: &ResultRecord, filter: &ReportFilter) -> Value {
         })).collect::<Vec<_>>(),
         "postResponseTestResults": post_response_tests,
         "runDuration": r.duration().as_secs_f64(),
+        "iterationIndex": r.iteration_index,
     })
 }
 

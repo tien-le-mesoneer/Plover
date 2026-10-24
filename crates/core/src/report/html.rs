@@ -61,6 +61,59 @@ pub fn render(record: &RunRecord, filter: &ReportFilter) -> String {
         report.asserts_passed,
         asserts
     );
+    let sections = super::iterations(record);
+    let rows = |index: usize| {
+        record
+            .iterations
+            .iter()
+            .find(|i| i.index == index)
+            .map(|i| &i.data)
+    };
+    let grouped = sections.len() > 1 || rows(0).is_some_and(|d| !d.is_empty());
+    if grouped {
+        let total = record.report.iterations.max(sections.len());
+        for (index, results) in &sections {
+            let _ = writeln!(
+                out,
+                "<section>\n<h2>Iteration {} of {total}</h2>",
+                index + 1
+            );
+            if let Some(data) = rows(*index).filter(|d| !d.is_empty()) {
+                out.push_str("<table class=\"kv\">");
+                for (k, v) in data {
+                    let v = match v {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    let _ = write!(
+                        out,
+                        "<tr><td><code>{}</code></td><td><code>{}</code></td></tr>",
+                        escape(k),
+                        escape(&v)
+                    );
+                }
+                out.push_str("</table>\n");
+            }
+            let count = |st: ResultStatus| results.iter().filter(|r| r.status == st).count();
+            let _ = writeln!(
+                out,
+                "<p class=\"meta\">{} passed · {} failed · {} skipped</p>",
+                count(ResultStatus::Pass),
+                count(ResultStatus::Fail) + count(ResultStatus::Error),
+                count(ResultStatus::Skipped)
+            );
+            results_table(&mut out, results, filter);
+            out.push_str("</section>\n");
+        }
+    } else {
+        let all: Vec<&ResultRecord> = records.iter().collect();
+        results_table(&mut out, &all, filter);
+    }
+    out.push_str("</body>\n</html>\n");
+    out
+}
+
+fn results_table(out: &mut String, records: &[&ResultRecord], filter: &ReportFilter) {
     out.push_str(
         "<table>\n<thead><tr><th>Result</th><th>Method</th><th>Name</th><th>File</th>\
 <th>Status</th><th>Time</th><th>Checks</th></tr></thead>\n<tbody>\n",
@@ -125,12 +178,11 @@ pub fn render(record: &RunRecord, filter: &ReportFilter) -> String {
         out.push_str("</td></tr>\n");
         if r.outcome.request.is_some() {
             out.push_str("<tr class=\"detail\"><td colspan=\"7\">");
-            detail(&mut out, r, filter);
+            detail(out, r, filter);
             out.push_str("</td></tr>\n");
         }
     }
-    out.push_str("</tbody>\n</table>\n</body>\n</html>\n");
-    out
+    out.push_str("</tbody>\n</table>\n");
 }
 
 /// The request and response of one result, collapsed by default.

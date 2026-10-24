@@ -223,3 +223,106 @@ fn junit_uses_run_start_time() {
     );
     assert_eq!(xml.matches("<testsuite ").count(), 3);
 }
+
+/// `record()` run twice: iteration 0 and 1, each with its own row.
+fn two_iterations() -> RunRecord {
+    use plover_core::run_record::IterationRecord;
+    let mut r = record();
+    let first = r.results.clone();
+    let mut second = r.results.clone();
+    for (i, x) in second.iter_mut().enumerate() {
+        x.iteration_index = 1;
+        x.index = first.len() + i;
+    }
+    r.results.extend(second);
+    r.report.iterations = 2;
+    let row = |user: &str| {
+        serde_json::json!({"user": user, "password": "***"})
+            .as_object()
+            .unwrap()
+            .clone()
+            .into_iter()
+            .collect()
+    };
+    r.iterations = vec![
+        IterationRecord {
+            index: 0,
+            data: row("alice"),
+        },
+        IterationRecord {
+            index: 1,
+            data: row("bob"),
+        },
+    ];
+    r
+}
+
+#[test]
+fn json_one_entry_per_iteration() {
+    let v = json::render(&two_iterations(), &ReportFilter::default());
+    let entries = v.as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[1]["iterationIndex"], 1);
+    assert_eq!(entries[1]["summary"]["totalRequests"], 3);
+    assert_eq!(entries[1]["results"][0]["iterationIndex"], 1);
+    // One iteration: one entry, as before.
+    let single = json::render(&record(), &ReportFilter::default());
+    assert_eq!(single.as_array().unwrap().len(), 1);
+    assert_eq!(single[0]["iterationIndex"], 0);
+}
+
+#[test]
+fn json_has_no_iteration_data() {
+    let text = json::render(&two_iterations(), &ReportFilter::default()).to_string();
+    assert!(!text.contains("iterationData"));
+    assert!(!text.contains("alice"));
+}
+
+#[test]
+fn html_iteration_sections() {
+    let html = html::render(&two_iterations(), &ReportFilter::default());
+    assert!(html.contains("Iteration 1 of 2"));
+    assert!(html.contains("Iteration 2 of 2"));
+    assert!(html.contains("<code>bob</code>"));
+    assert!(html.contains("<code>password</code></td><td><code>***</code>"));
+    assert!(!html.contains("<script"));
+    let single = html::render(&record(), &ReportFilter::default());
+    assert!(!single.contains("Iteration"));
+}
+
+#[test]
+fn junit_names_repeat() {
+    let names = |xml: &str| -> Vec<String> {
+        xml.lines()
+            .filter_map(|l| l.trim().strip_prefix("<testsuite name=\""))
+            .map(|l| l.split('"').next().unwrap().to_owned())
+            .collect()
+    };
+    let one = names(&junit::render(&record()));
+    let two = names(&junit::render(&two_iterations()));
+    assert_eq!(two.len(), one.len() * 2);
+    assert_eq!(&two[..one.len()], &one[..]);
+    assert_eq!(&two[one.len()..], &one[..]);
+}
+
+#[test]
+fn many_iterations_in_order() {
+    let mut r = record();
+    let base = r.results[0].clone();
+    r.results = (0..200)
+        .map(|i| {
+            let mut x = base.clone();
+            x.index = i;
+            x.iteration_index = i;
+            x
+        })
+        .collect();
+    let v = json::render(&r, &ReportFilter::default());
+    let idx: Vec<u64> = v
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["iterationIndex"].as_u64().unwrap())
+        .collect();
+    assert_eq!(idx, (0..200).collect::<Vec<u64>>());
+}
