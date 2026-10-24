@@ -1,5 +1,6 @@
 // The only module that talks to the backend (fetch + WebSocket).
 import type {
+  LayoutDto,
   ApiErrorDto,
   CapabilitiesDto,
   ClientMessage,
@@ -77,6 +78,9 @@ export interface ApiClient {
   /** Remembered layout (tabs, expanded folders, environment) per collection ID. */
   uiState(): Promise<Record<string, UiStateDto>>;
   saveUiState(id: string, ui: UiStateDto): Promise<void>;
+  /** The window layout shared by all collections (sidebar width). */
+  layout(): Promise<LayoutDto>;
+  saveLayout(layout: LayoutDto): Promise<void>;
   tree(id: string): Promise<TreeNodeDto>;
   reload(id: string): Promise<TreeNodeDto>;
   readRequest(id: string, item: string): Promise<StoredRequestDto>;
@@ -243,6 +247,8 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     removeRecent: (root) => call("DELETE", `/recent?root=${enc(root)}`),
     uiState: () => call("GET", "/ui-state"),
     saveUiState: (id, ui) => call("PUT", `/ui-state/${enc(id)}`, ui),
+    layout: () => call("GET", "/layout"),
+    saveLayout: (layout) => call("PUT", "/layout", layout),
     tree: (id) => call("GET", `${collections(id)}/tree`),
     reload: (id) => call("POST", `${collections(id)}/reload`),
     readRequest: (id, item) => call("GET", `${collections(id)}/requests?item=${enc(item)}`),

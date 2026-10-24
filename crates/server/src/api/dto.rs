@@ -147,6 +147,30 @@ pub struct RecentDto {
     pub open: bool,
 }
 
+/// Window layout shared by all collections (`GET/PUT /api/layout`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LayoutDto {
+    /// The dragged sidebar width in CSS pixels; `null` is the default width.
+    pub sidebar_width: Option<u32>,
+}
+
+impl From<plover_core::app_state::LayoutState> for LayoutDto {
+    fn from(l: plover_core::app_state::LayoutState) -> Self {
+        LayoutDto {
+            sidebar_width: l.sidebar_width,
+        }
+    }
+}
+
+impl From<LayoutDto> for plover_core::app_state::LayoutState {
+    fn from(l: LayoutDto) -> Self {
+        plover_core::app_state::LayoutState {
+            sidebar_width: l.sidebar_width,
+        }
+    }
+}
+
 /// One collection's layout in the UI, remembered between starts. Unsaved drafts are not.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
@@ -1069,6 +1093,7 @@ pub fn typescript_bindings() -> String {
         CollectionSummaryDto::decl(&cfg),
         RecentDto::decl(&cfg),
         UiStateDto::decl(&cfg),
+        LayoutDto::decl(&cfg),
         TreeNodeKind::decl(&cfg),
         TreeNodeDto::decl(&cfg),
         EnvironmentDto::decl(&cfg),

@@ -10,7 +10,7 @@ use plover_core::workspace::CollectionId;
 use serde::Deserialize;
 
 use super::collections::display_path;
-use super::dto::{RecentDto, UiStateDto};
+use super::dto::{LayoutDto, RecentDto, UiStateDto};
 use super::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -101,6 +101,33 @@ pub async fn put_ui_state(
         store
             .set_ui(&root, ui)
             .map_err(|m| ApiError::new(StatusCode::BAD_REQUEST, "bad_request", m))?;
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// The window layout (sidebar width). Without a store it is the default.
+pub async fn layout(State(state): State<AppState>) -> Json<LayoutDto> {
+    Json(
+        state
+            .workspace
+            .app_state()
+            .map(|s| s.layout().into())
+            .unwrap_or_default(),
+    )
+}
+
+pub async fn put_layout(
+    State(state): State<AppState>,
+    ApiJson(layout): ApiJson<LayoutDto>,
+) -> Result<StatusCode, ApiError> {
+    let layout: plover_core::app_state::LayoutState = layout.into();
+    layout
+        .validate()
+        .map_err(|m| ApiError::new(StatusCode::BAD_REQUEST, "bad_layout", m))?;
+    if let Some(store) = state.workspace.app_state() {
+        store
+            .set_layout(layout)
+            .map_err(|m| ApiError::new(StatusCode::BAD_REQUEST, "bad_layout", m))?;
     }
     Ok(StatusCode::NO_CONTENT)
 }

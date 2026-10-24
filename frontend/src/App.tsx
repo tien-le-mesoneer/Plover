@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { api } from "./api/instance";
 import { handleServerEvent } from "./store/events";
 import { Banner } from "./components/Banner";
@@ -13,6 +13,8 @@ import { RunPanel } from "./components/RunPanel";
 import { SaveRequestDialog } from "./components/SaveRequestDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SidebarHeader } from "./components/SidebarHeader";
+import { SidebarResizer } from "./components/SidebarResizer";
+import { useLayout, useSidebarWidth } from "./store/layout";
 import { useRuns } from "./store/runs";
 import { useTabs } from "./store/tabs";
 import { startUp } from "./store/startup";
@@ -28,9 +30,11 @@ export default function App({ hasToken }: { hasToken: boolean }) {
   const [showRun, setShowRun] = useState(false);
   const tab = tabs.find((t) => t.key === active) ?? null;
   const collectionId = tab?.collectionId ?? activeCollection ?? collections[0]?.id ?? null;
+  const sidebarWidth = useSidebarWidth();
 
   useEffect(() => {
     if (!hasToken) return;
+    void useLayout.getState().load();
     let stopPersisting: (() => void) | undefined;
     let cancelled = false;
     void startUp(() => cancelled).then((stop) => {
@@ -107,7 +111,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
   }
 
   return (
-    <div className="app">
+    <div className="app" style={{ "--sidebar-w": `${sidebarWidth}px` } as CSSProperties}>
       <header className="topbar">
         <SidebarHeader />
         <span className="spacer" />
@@ -156,6 +160,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
             setShowRun(true);
           }}
         />
+        <SidebarResizer width={sidebarWidth} />
         <main className="main">
           <RequestTabs />
           {tab ? <RequestEditor key={tab.key} tab={tab} /> : <EmptyState />}

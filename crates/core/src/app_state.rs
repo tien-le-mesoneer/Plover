@@ -72,6 +72,30 @@ pub struct RecentEntry {
     pub last_opened: u64,
 }
 
+/// Smallest and largest sidebar width that is stored, in CSS pixels.
+pub const SIDEBAR_WIDTH_RANGE: std::ops::RangeInclusive<u32> = 120..=4000;
+
+/// Window layout that is the same for every collection.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LayoutState {
+    /// The dragged sidebar width; `None` is the default width.
+    pub sidebar_width: Option<u32>,
+}
+
+impl LayoutState {
+    pub fn validate(&self) -> Result<(), String> {
+        match self.sidebar_width {
+            Some(w) if !SIDEBAR_WIDTH_RANGE.contains(&w) => Err(format!(
+                "sidebarWidth must be {}..={} px",
+                SIDEBAR_WIDTH_RANGE.start(),
+                SIDEBAR_WIDTH_RANGE.end()
+            )),
+            _ => Ok(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistedState {
@@ -81,6 +105,9 @@ pub struct PersistedState {
     pub recent: Vec<RecentEntry>,
     /// Keyed by canonical root.
     pub ui: BTreeMap<String, UiState>,
+    /// Missing in files written before it existed.
+    #[serde(default)]
+    pub layout: LayoutState,
 }
 
 impl Default for PersistedState {
@@ -90,6 +117,7 @@ impl Default for PersistedState {
             open: Vec::new(),
             recent: Vec::new(),
             ui: BTreeMap::new(),
+            layout: LayoutState::default(),
         }
     }
 }
@@ -231,6 +259,20 @@ impl AppStateStore {
             .ui
             .get(root)
             .cloned()
+    }
+
+    pub fn layout(&self) -> LayoutState {
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .layout
+            .clone()
+    }
+
+    pub fn set_layout(&self, layout: LayoutState) -> Result<(), String> {
+        layout.validate()?;
+        self.change(|s| s.layout = layout);
+        Ok(())
     }
 
     pub fn set_ui(&self, root: &str, ui: UiState) -> Result<(), String> {

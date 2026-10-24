@@ -201,3 +201,64 @@ async fn new_routes_require_the_token() {
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "{method} {uri}");
     }
 }
+
+#[tokio::test]
+async fn layout_get_put() {
+    let state_dir = tempfile::tempdir().unwrap();
+    let app = router(state_with(state_dir.path()));
+    let (status, body) = call(&app, "GET", "/api/layout", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({ "sidebarWidth": null }));
+    let (status, body) = call(
+        &app,
+        "PUT",
+        "/api/layout",
+        Some(json!({ "sidebarWidth": 320 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    // It survives a restart.
+    let again = router(state_with(state_dir.path()));
+    let (_, body) = call(&again, "GET", "/api/layout", None).await;
+    assert_eq!(body, json!({ "sidebarWidth": 320 }));
+    let (status, _) = call(
+        &app,
+        "PUT",
+        "/api/layout",
+        Some(json!({ "sidebarWidth": null })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn layout_rejects_out_of_range() {
+    let state_dir = tempfile::tempdir().unwrap();
+    let app = router(state_with(state_dir.path()));
+    for w in [50, 5000] {
+        let (status, body) = call(
+            &app,
+            "PUT",
+            "/api/layout",
+            Some(json!({ "sidebarWidth": w })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{w}");
+        assert_eq!(body["error"], "bad_layout");
+    }
+    for method in ["GET", "PUT"] {
+        let req = Request::builder()
+            .method(method)
+            .uri("/api/layout")
+            .header("host", format!("127.0.0.1:{PORT}"))
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::UNAUTHORIZED,
+            "{method} needs the token"
+        );
+    }
+}

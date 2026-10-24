@@ -185,3 +185,37 @@ fn removing_an_unavailable_entry_forgets_it() {
     assert!(ws.unavailable().is_empty());
     assert!(AppStateStore::load(&state_dir).snapshot().open.is_empty());
 }
+
+#[test]
+fn layout_defaults_and_round_trips() {
+    use plover_core::app_state::LayoutState;
+    let dir = tempfile::tempdir().unwrap();
+    // A state file written before `layout` existed still loads.
+    fs::write(
+        dir.path().join("state.json"),
+        r#"{"version":1,"open":[],"recent":[],"ui":{}}"#,
+    )
+    .unwrap();
+    let store = AppStateStore::load(dir.path());
+    assert_eq!(
+        store.layout(),
+        LayoutState {
+            sidebar_width: None
+        }
+    );
+    store
+        .set_layout(LayoutState {
+            sidebar_width: Some(320),
+        })
+        .unwrap();
+    let again = AppStateStore::load(dir.path());
+    assert_eq!(again.layout().sidebar_width, Some(320));
+    assert!(
+        again
+            .set_layout(LayoutState {
+                sidebar_width: Some(50)
+            })
+            .is_err()
+    );
+    assert_eq!(again.layout().sidebar_width, Some(320));
+}

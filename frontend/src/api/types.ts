@@ -77,6 +77,12 @@ expanded: Array<string>,
  */
 env: string | null, };
 
+export type LayoutDto = { 
+/**
+ * The dragged sidebar width in CSS pixels; `null` is the default width.
+ */
+sidebarWidth: number | null, };
+
 export type TreeNodeKind = "folder" | "request" | "invalid";
 
 export type TreeNodeDto = { kind: TreeNodeKind, 

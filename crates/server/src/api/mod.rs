@@ -51,6 +51,7 @@ pub fn routes() -> Router<AppState> {
             get(app_state::recent).delete(app_state::remove_recent),
         )
         .route("/ui-state", get(app_state::all_ui_state))
+        .route("/layout", get(app_state::layout).put(app_state::put_layout))
         .route(
             "/ui-state/{id}",
             put(app_state::put_ui_state).layer(DefaultBodyLimit::max(app_state::MAX_UI_STATE_BODY)),
