@@ -497,7 +497,7 @@ impl RunRecorder {
                 self.started = Some((method.clone(), name.clone(), url.clone()));
                 None
             }
-            RunEvent::Passed { path, outcome } => {
+            RunEvent::Passed { path, outcome, .. } => {
                 Some(self.record(path, ResultStatus::Pass, outcome, None, None))
             }
             RunEvent::Failed {
@@ -505,6 +505,7 @@ impl RunRecorder {
                 name,
                 error,
                 outcome,
+                ..
             } => {
                 let status = if outcome.status.is_some() {
                     ResultStatus::Fail
@@ -518,7 +519,9 @@ impl RunRecorder {
                 let error = report_error(error, outcome);
                 Some(self.record(path, status, outcome, Some(error), None))
             }
-            RunEvent::Skipped { path, name, reason } => {
+            RunEvent::Skipped {
+                path, name, reason, ..
+            } => {
                 // Never started, so no `Started` event named it.
                 self.started = Some((String::new(), name.clone(), String::new()));
                 Some(self.record(
@@ -529,7 +532,9 @@ impl RunRecorder {
                     Some(reason.clone()),
                 ))
             }
-            RunEvent::Finished { .. } => None,
+            RunEvent::Finished { .. }
+            | RunEvent::IterationStarted { .. }
+            | RunEvent::IterationFinished { .. } => None,
         }
     }
 

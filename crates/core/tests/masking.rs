@@ -95,12 +95,14 @@ fn recorder(secrets: &[&str]) -> RunRecorder {
 fn push(r: &mut RunRecorder, outcome: RequestOutcome) {
     let url = outcome.request.as_ref().unwrap().url.clone();
     r.event(&RunEvent::Started {
+        iteration: 0,
         path: Path::new(ROOT).join("a.bru"),
         name: "a".into(),
         method: "GET".into(),
         url,
     });
     r.event(&RunEvent::Passed {
+        iteration: 0,
         path: Path::new(ROOT).join("a.bru"),
         outcome,
     });

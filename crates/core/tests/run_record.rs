@@ -29,6 +29,7 @@ fn recorder() -> RunRecorder {
 
 fn started(path: &str, name: &str) -> RunEvent {
     RunEvent::Started {
+        iteration: 0,
         path: Path::new(ROOT).join(path),
         name: name.into(),
         method: "GET".into(),
@@ -50,6 +51,7 @@ fn records_pass_fail_error_skipped() {
     let p = |s: &str| Path::new(ROOT).join(s);
     assert_eq!(
         r.event(&RunEvent::Passed {
+            iteration: 0,
             path: p("a.bru"),
             outcome: outcome(Some(200)),
         }),
@@ -58,6 +60,7 @@ fn records_pass_fail_error_skipped() {
     r.event(&started("dir/b.bru", "b"));
     assert_eq!(
         r.event(&RunEvent::Failed {
+            iteration: 0,
             path: p("dir/b.bru"),
             name: "b".into(),
             error: "1 test failed".into(),
@@ -67,6 +70,7 @@ fn records_pass_fail_error_skipped() {
     );
     assert_eq!(
         r.event(&RunEvent::Failed {
+            iteration: 0,
             path: p("c.bru"),
             name: "c".into(),
             error: "connection refused".into(),
@@ -76,6 +80,7 @@ fn records_pass_fail_error_skipped() {
     );
     assert_eq!(
         r.event(&RunEvent::Skipped {
+            iteration: 0,
             path: p("d.bru"),
             name: "d".into(),
             reason: "parse error".into(),
@@ -125,6 +130,7 @@ fn pre_request_error_reports_thrown_message() {
         },
     });
     r.event(&RunEvent::Failed {
+        iteration: 0,
         path: Path::new(ROOT).join("a.bru"),
         name: "a".into(),
         error: "pre-request script error: Error: Request failed with status code 401".into(),
@@ -142,6 +148,7 @@ fn same_item_twice_gets_two_indices() {
     for status in [200, 201] {
         r.event(&started("a.bru", "a"));
         r.event(&RunEvent::Passed {
+            iteration: 0,
             path: Path::new(ROOT).join("a.bru"),
             outcome: outcome(Some(status)),
         });
@@ -189,6 +196,7 @@ fn run_body_budget_drops_later_bodies() {
     for _ in 0..results {
         r.event(&started("a.bru", "a"));
         r.event(&RunEvent::Passed {
+            iteration: 0,
             path: Path::new(ROOT).join("a.bru"),
             outcome: detail_outcome(&body),
         });

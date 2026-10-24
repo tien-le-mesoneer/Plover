@@ -29,7 +29,7 @@ impl Printer {
             RunEvent::Started { name, method, .. } => {
                 self.current = Some((method.clone(), name.clone()))
             }
-            RunEvent::Passed { path, outcome } => {
+            RunEvent::Passed { path, outcome, .. } => {
                 self.request_line('✓', path, outcome);
                 self.details(outcome);
             }
@@ -56,7 +56,9 @@ impl Printer {
                 println!("- {}: {reason}", self.relative(path))
             }
             // The summary line is printed by `summary`.
-            RunEvent::Finished { .. } => {}
+            RunEvent::Finished { .. }
+            | RunEvent::IterationStarted { .. }
+            | RunEvent::IterationFinished { .. } => {}
         }
     }
 

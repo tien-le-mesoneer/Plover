@@ -35,7 +35,12 @@ async fn run_all(
 ) {
     let c = Collection::load(root).unwrap();
     let mut events = Vec::new();
-    let report = run(&c, root, opts, &mut |e| events.push(e.clone())).await;
+    let report = run(&c, root, opts, &mut |e| {
+        if !is_iteration_event(e) {
+            events.push(e.clone())
+        }
+    })
+    .await;
     (report, events)
 }
 
@@ -603,4 +608,12 @@ mod scratch {
         .unwrap_err();
         assert!(matches!(err, SendError::NotFound(_)), "{err:?}");
     }
+}
+
+/// Request events only; the iteration events of a plain run are tested in `data_runs.rs`.
+fn is_iteration_event(e: &RunEvent) -> bool {
+    matches!(
+        e,
+        RunEvent::IterationStarted { .. } | RunEvent::IterationFinished { .. }
+    )
 }

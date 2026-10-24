@@ -347,7 +347,12 @@ async fn run_task(
             });
         }
         // `Finished` is sent once the run is masked and saved.
-        if matches!(event, RunEvent::Finished { .. }) {
+        if matches!(
+            event,
+            RunEvent::Finished { .. }
+                | RunEvent::IterationStarted { .. }
+                | RunEvent::IterationFinished { .. }
+        ) {
             return;
         }
         let index = match live
@@ -426,6 +431,7 @@ fn event_dto(root: &Path, run_id: &str, index: Option<usize>, event: &RunEvent) 
             name,
             method,
             url,
+            ..
         } => RunEventDto::Started {
             run_id,
             item: item_id(root, path),
@@ -433,7 +439,7 @@ fn event_dto(root: &Path, run_id: &str, index: Option<usize>, event: &RunEvent) 
             method: method.clone(),
             url: url.clone(),
         },
-        RunEvent::Passed { path, outcome } => {
+        RunEvent::Passed { path, outcome, .. } => {
             let (tests, asserts, console, _) = outcome_lists(outcome);
             RunEventDto::Passed {
                 run_id,
@@ -477,6 +483,9 @@ fn event_dto(root: &Path, run_id: &str, index: Option<usize>, event: &RunEvent) 
             run_id,
             report: report_dto(report),
         },
+        RunEvent::IterationStarted { .. } | RunEvent::IterationFinished { .. } => {
+            unreachable!("iteration events are filtered out before event_dto")
+        }
     }
 }
 

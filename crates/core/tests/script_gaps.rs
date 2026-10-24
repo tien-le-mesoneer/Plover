@@ -57,9 +57,13 @@ async fn run_dir(root: &Path) -> (RunReport, Vec<RunEvent>) {
         env: Some("local".into()),
         ..RunOptions::default()
     };
-    let report = run(&c, root, &opts, &mut |e| events.push(e.clone()))
-        .await
-        .unwrap();
+    let report = run(&c, root, &opts, &mut |e| {
+        if !is_iteration_event(e) {
+            events.push(e.clone())
+        }
+    })
+    .await
+    .unwrap();
     (report, events)
 }
 
@@ -523,7 +527,9 @@ async fn send_request_respects_script_timeout_and_body_cap() {
     let mut events = Vec::new();
     let started = Instant::now();
     run_with(&c, dir.path(), &opts, &session, &mut runtime, &mut |e| {
-        events.push(e.clone())
+        if !is_iteration_event(e) {
+            events.push(e.clone())
+        }
     })
     .await
     .unwrap();
@@ -579,9 +585,13 @@ async fn persists_env_and_collection_changes_like_bruno() {
         ..RunOptions::default()
     };
     let mut events = Vec::new();
-    let report = run(&c, dir.path(), &opts, &mut |e| events.push(e.clone()))
-        .await
-        .unwrap();
+    let report = run(&c, dir.path(), &opts, &mut |e| {
+        if !is_iteration_event(e) {
+            events.push(e.clone())
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(failures(&events), Vec::<String>::new());
     assert_eq!(report.passed, 2);
     assert_eq!(
@@ -622,4 +632,12 @@ async fn persistence_is_opt_in_for_library_callers() {
         fs::read_to_string(dir.path().join("environments/local.bru")).unwrap(),
         before
     );
+}
+
+/// Request events only; the iteration events of a plain run are tested in `data_runs.rs`.
+fn is_iteration_event(e: &RunEvent) -> bool {
+    matches!(
+        e,
+        RunEvent::IterationStarted { .. } | RunEvent::IterationFinished { .. }
+    )
 }

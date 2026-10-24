@@ -46,6 +46,42 @@ pub struct RunOptions {
     /// `--delay`: wait this long after every request except the last
     /// (Bruno commands/run.js), e.g. to stay under a server's rate limit.
     pub delay: Option<Duration>,
+    /// Data-file rows or a repeat count (`--csv-file-path`, `--iteration-count`).
+    pub iterations: Iterations,
+}
+
+/// How many times a run goes through its requests, and the data-file row of each pass
+/// (Bruno CLI 4.3.0 commands/run.js: a file sets the count to its rows).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Iterations {
+    pub rows: Vec<ValueMap>,
+    pub count: usize,
+}
+
+impl Default for Iterations {
+    fn default() -> Self {
+        Iterations::repeat(1)
+    }
+}
+
+impl Iterations {
+    pub fn from_rows(rows: Vec<ValueMap>) -> Iterations {
+        Iterations {
+            count: rows.len(),
+            rows,
+        }
+    }
+
+    pub fn repeat(count: usize) -> Iterations {
+        Iterations {
+            rows: Vec::new(),
+            count: count.max(1),
+        }
+    }
+
+    fn row(&self, index: usize) -> ValueMap {
+        self.rows.get(index).cloned().unwrap_or_default()
+    }
 }
 
 /// Which script changes to variables are written back to disk after each request
@@ -133,18 +169,29 @@ impl RunOptions {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RunEvent {
+    /// Before each iteration, including the single one of a plain run. `data` is the
+    /// row as read from the data file (empty without one).
+    IterationStarted {
+        index: usize,
+        total: usize,
+        data: ValueMap,
+    },
     Started {
+        /// Zero-based iteration the request belongs to (also on the other request events).
+        iteration: usize,
         path: PathBuf,
         name: String,
         method: String,
         url: String,
     },
     Passed {
+        iteration: usize,
         path: PathBuf,
         outcome: RequestOutcome,
     },
     /// A transport error, a script error, or a failed test or assert.
     Failed {
+        iteration: usize,
         path: PathBuf,
         /// The request's `meta.name`, or the file name when it has none.
         name: String,
@@ -152,11 +199,15 @@ pub enum RunEvent {
         outcome: RequestOutcome,
     },
     Skipped {
+        iteration: usize,
         path: PathBuf,
         /// The request's `meta.name`, or the file name when it has none (unparsable file).
         name: String,
         reason: String,
     },
+    /// After each iteration that ran to its end (not after a cancel). `data` is the row
+    /// with the changes scripts made (`bru.runner.iterationData.set`).
+    IterationFinished { index: usize, data: ValueMap },
     /// Always the last event of a run.
     Finished { report: RunReport },
 }
@@ -173,6 +224,9 @@ pub struct RunReport {
     pub asserts_failed: usize,
     #[serde(with = "crate::serde_ms")]
     pub elapsed: Duration,
+    /// Iterations reached (1 for a plain run).
+    #[serde(default)]
+    pub iterations: usize,
 }
 
 /// What happened to one request.
@@ -373,7 +427,7 @@ pub async fn run_with_state(
     }
     let refs = collection.requests_under(&absolute);
     let engine = ScriptEngine::shared(opts.scripts);
-    let exec = Exec {
+    let mut exec = Exec {
         collection,
         session,
         engine: &engine,
@@ -384,131 +438,167 @@ pub async fn run_with_state(
 
     let start = Instant::now();
     let mut report = RunReport::default();
-    let mut index = 0;
-    let mut jumps = 0;
-    while index < refs.len() {
-        let r = &refs[index];
-        let path = r.path.to_path_buf();
-        if let Err(not_runnable) = check_runnable(r) {
-            match not_runnable {
-                NotRunnable::Skip(reason) => {
+    let total = opts.iterations.count.max(1);
+    // The caller's state must not keep a row once the run is over.
+    let outer_row = std::mem::take(&mut state.iteration);
+    let mut stopped = false;
+    for iteration in 0..total {
+        let data = opts.iterations.row(iteration);
+        state.iteration = data.clone();
+        exec.iteration = Some(IterationInfo {
+            index: iteration,
+            total,
+        });
+        report.iterations = iteration + 1;
+        on_event(&RunEvent::IterationStarted {
+            index: iteration,
+            total,
+            data,
+        });
+        // commands/run.js: `currentRequestIndex` and the jump counter are per iteration.
+        let mut index = 0;
+        let mut jumps = 0;
+        while index < refs.len() {
+            let r = &refs[index];
+            let path = r.path.to_path_buf();
+            if let Err(not_runnable) = check_runnable(r) {
+                match not_runnable {
+                    NotRunnable::Skip(reason) => {
+                        report.skipped += 1;
+                        on_event(&RunEvent::Skipped {
+                            iteration,
+                            path,
+                            name: display_name(r),
+                            reason,
+                        });
+                    }
+                    NotRunnable::Fail(e) => {
+                        report.failed += 1;
+                        on_event(&RunEvent::Failed {
+                            iteration,
+                            path,
+                            name: display_name(r),
+                            error: e.to_string(),
+                            outcome: RequestOutcome::default(),
+                        });
+                    }
+                }
+                index += 1;
+                continue;
+            }
+            let before = state.clone();
+            let request_started = Instant::now();
+            let mut executed = exec
+                .execute(r, None, state, &mut |name, resolved| {
+                    on_event(&RunEvent::Started {
+                        iteration,
+                        path: path.clone(),
+                        name: name.to_owned(),
+                        method: resolved.method.as_str().to_owned(),
+                        url: resolved.url.clone(),
+                    })
+                })
+                .await;
+            executed.outcome.duration = request_started.elapsed();
+            persist_changes(
+                collection,
+                environment,
+                &opts.env_overrides,
+                opts.persist,
+                &before,
+                state,
+            );
+            let outcome = &executed.outcome;
+            report.tests_passed += outcome.tests.iter().filter(|t| t.passed).count();
+            report.tests_failed += outcome.tests.iter().filter(|t| !t.passed).count();
+            report.asserts_passed += outcome.asserts.iter().filter(|a| a.passed).count();
+            report.asserts_failed += outcome.asserts.iter().filter(|a| !a.passed).count();
+            match (&executed.skipped, executed.error()) {
+                (Some(reason), _) => {
                     report.skipped += 1;
                     on_event(&RunEvent::Skipped {
+                        iteration,
                         path,
                         name: display_name(r),
-                        reason,
+                        reason: reason.clone(),
                     });
                 }
-                NotRunnable::Fail(e) => {
+                (None, Some(error)) => {
                     report.failed += 1;
                     on_event(&RunEvent::Failed {
+                        iteration,
                         path,
                         name: display_name(r),
-                        error: e.to_string(),
-                        outcome: RequestOutcome::default(),
+                        error,
+                        outcome: executed.outcome.clone(),
+                    });
+                }
+                (None, None) => {
+                    report.passed += 1;
+                    on_event(&RunEvent::Passed {
+                        iteration,
+                        path,
+                        outcome: executed.outcome.clone(),
                     });
                 }
             }
-            index += 1;
-            continue;
-        }
-        let before = state.clone();
-        let request_started = Instant::now();
-        let mut executed = exec
-            .execute(r, None, state, &mut |name, resolved| {
-                on_event(&RunEvent::Started {
-                    path: path.clone(),
-                    name: name.to_owned(),
-                    method: resolved.method.as_str().to_owned(),
-                    url: resolved.url.clone(),
-                })
-            })
-            .await;
-        executed.outcome.duration = request_started.elapsed();
-        persist_changes(
-            collection,
-            environment,
-            &opts.env_overrides,
-            opts.persist,
-            &before,
-            state,
-        );
-        let outcome = &executed.outcome;
-        report.tests_passed += outcome.tests.iter().filter(|t| t.passed).count();
-        report.tests_failed += outcome.tests.iter().filter(|t| !t.passed).count();
-        report.asserts_passed += outcome.asserts.iter().filter(|a| a.passed).count();
-        report.asserts_failed += outcome.asserts.iter().filter(|a| !a.passed).count();
-        match (&executed.skipped, executed.error()) {
-            (Some(reason), _) => {
-                report.skipped += 1;
-                on_event(&RunEvent::Skipped {
-                    path,
-                    name: display_name(r),
-                    reason: reason.clone(),
-                });
-            }
-            (None, Some(error)) => {
-                report.failed += 1;
-                on_event(&RunEvent::Failed {
-                    path,
-                    name: display_name(r),
-                    error,
-                    outcome: executed.outcome.clone(),
-                });
-            }
-            (None, None) => {
-                report.passed += 1;
-                on_event(&RunEvent::Passed {
-                    path,
-                    outcome: executed.outcome.clone(),
-                });
-            }
-        }
 
-        // commands/run.js waits right after each request, before stop/jump handling.
-        if let Some(delay) = opts.delay.filter(|d| !d.is_zero())
-            && index + 1 < refs.len()
-        {
-            tokio::time::sleep(delay).await;
-        }
-
-        // commands/run.js: stopExecution skips the rest; setNextRequest jumps by name.
-        if executed.flow.stop_execution {
-            for rest in &refs[index + 1..] {
-                report.skipped += 1;
-                on_event(&RunEvent::Skipped {
-                    path: rest.path.to_path_buf(),
-                    name: display_name(rest),
-                    reason: "stopExecution".to_owned(),
-                });
+            // commands/run.js waits right after each request, before stop/jump handling.
+            if let Some(delay) = opts.delay.filter(|d| !d.is_zero())
+                && index + 1 < refs.len()
+            {
+                tokio::time::sleep(delay).await;
             }
-            break;
-        }
-        match &executed.flow.next_request {
-            None => index += 1,
-            Some(NextRequest::Stop) => break,
-            Some(NextRequest::Name(name)) => {
-                jumps += 1;
-                if jumps > 10_000 {
-                    report.failed += 1;
-                    on_event(&RunEvent::Failed {
-                        path: r.path.to_path_buf(),
-                        name: display_name(r),
-                        error: "too many jumps, possible infinite loop".to_owned(),
-                        outcome: RequestOutcome::default(),
+
+            // commands/run.js: stopExecution skips the rest; setNextRequest jumps by name.
+            if executed.flow.stop_execution {
+                for rest in &refs[index + 1..] {
+                    report.skipped += 1;
+                    on_event(&RunEvent::Skipped {
+                        iteration,
+                        path: rest.path.to_path_buf(),
+                        name: display_name(rest),
+                        reason: "stopExecution".to_owned(),
                     });
-                    break;
                 }
-                match refs.iter().position(|x| request_name(x) == Some(name)) {
-                    Some(next) => index = next,
-                    None => {
-                        tracing::warn!("could not find request with name '{name}'");
-                        index += 1;
+                stopped = true;
+                break;
+            }
+            match &executed.flow.next_request {
+                None => index += 1,
+                Some(NextRequest::Stop) => break,
+                Some(NextRequest::Name(name)) => {
+                    jumps += 1;
+                    if jumps > 10_000 {
+                        report.failed += 1;
+                        on_event(&RunEvent::Failed {
+                            iteration,
+                            path: r.path.to_path_buf(),
+                            name: display_name(r),
+                            error: "too many jumps, possible infinite loop".to_owned(),
+                            outcome: RequestOutcome::default(),
+                        });
+                        break;
+                    }
+                    match refs.iter().position(|x| request_name(x) == Some(name)) {
+                        Some(next) => index = next,
+                        None => {
+                            tracing::warn!("could not find request with name '{name}'");
+                            index += 1;
+                        }
                     }
                 }
             }
         }
+        on_event(&RunEvent::IterationFinished {
+            index: iteration,
+            data: state.iteration.clone(),
+        });
+        if stopped {
+            break;
+        }
     }
+    state.iteration = outer_row;
     report.elapsed = start.elapsed();
     on_event(&RunEvent::Finished { report });
     Ok(report)

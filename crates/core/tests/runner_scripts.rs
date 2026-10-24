@@ -56,9 +56,13 @@ async fn run_dir(root: &Path) -> (RunReport, Vec<RunEvent>) {
         env: Some("local".into()),
         ..RunOptions::default()
     };
-    let report = run(&c, root, &opts, &mut |e| events.push(e.clone()))
-        .await
-        .unwrap();
+    let report = run(&c, root, &opts, &mut |e| {
+        if !is_iteration_event(e) {
+            events.push(e.clone())
+        }
+    })
+    .await
+    .unwrap();
     (report, events)
 }
 
@@ -355,7 +359,9 @@ async fn error_reports_scope_and_line() {
         ..RunOptions::default()
     };
     let report = run_with(&c, root, &opts, &session, &mut runtime, &mut |e| {
-        events.push(e.clone())
+        if !is_iteration_event(e) {
+            events.push(e.clone())
+        }
     })
     .await
     .unwrap();
@@ -546,4 +552,12 @@ async fn deep_variable_chain_in_url_does_not_abort() {
     let (report, events) = run_dir(root).await;
     assert_eq!(report.passed + report.failed, 2, "{events:#?}");
     assert_eq!(started(&events), ["a", "b"]);
+}
+
+/// Request events only; the iteration events of a plain run are tested in `data_runs.rs`.
+fn is_iteration_event(e: &RunEvent) -> bool {
+    matches!(
+        e,
+        RunEvent::IterationStarted { .. } | RunEvent::IterationFinished { .. }
+    )
 }
