@@ -321,12 +321,12 @@ pub fn unique_name(name: &str, is_taken: impl Fn(&str) -> bool) -> String {
 
 /// [`unique_name`] against the `.bru` files in `dir`.
 pub fn unique_file_name(dir: &Path, name: &str) -> String {
-    let taken = taken_names(dir);
+    let taken = entry_names(dir);
     unique_name(name, |stem| taken.contains(&format!("{stem}.bru")))
 }
 
-/// Lower-cased names of the entries in `dir`.
-fn taken_names(dir: &Path) -> std::collections::BTreeSet<String> {
+/// Lower-cased names of the entries in `dir` (files with their extension, and folders).
+pub fn entry_names(dir: &Path) -> std::collections::BTreeSet<String> {
     std::fs::read_dir(dir)
         .map(|entries| {
             entries
@@ -397,7 +397,7 @@ pub fn create_request(
     let path = dir.join(&file_name);
     let lock = lock_file(&path)?;
     let _guard = lock.lock().unwrap_or_else(PoisonError::into_inner);
-    if taken_names(&dir).contains(&file_name.to_lowercase()) {
+    if entry_names(&dir).contains(&file_name.to_lowercase()) {
         return Err(StoreError::Exists(item_id));
     }
     let mut request = request.clone();
@@ -435,7 +435,7 @@ pub fn create_folder(root: &Path, parent_id: &str, name: &str) -> Result<String,
         return Err(StoreError::Parse("a folder needs a name".into()));
     }
     let id = join_id(parent_id, &stem);
-    if taken_names(&dir).contains(&stem.to_lowercase()) {
+    if entry_names(&dir).contains(&stem.to_lowercase()) {
         return Err(StoreError::Exists(id));
     }
     match std::fs::create_dir(dir.join(&stem)) {
