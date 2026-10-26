@@ -24,6 +24,19 @@ limits, and no data leaves your machine except the requests you send.
 
 ![Collection run in a tab, light mode](docs/screenshots/run-light.png)
 
+## Install
+
+Download from [Releases](https://github.com/tien-le-mesoneer/Plover/releases):
+
+- **CLI** `plv`: `plv-<version>-macos-universal.tar.gz`, `-linux-x64.tar.gz` or
+  `-windows-x64.zip`. Unpack and put `plv` on your `PATH`.
+- **Desktop app**: `.dmg` (macOS), `.exe` installer (Windows), `.deb` or `.AppImage` (Linux).
+  The `.deb` also installs `plv`.
+
+Builds are not signed. On macOS, right-click the app and choose **Open** the first time
+(for `plv`: `xattr -d com.apple.quarantine plv`); on Windows, choose **More info → Run
+anyway**. `SHA256SUMS` in each release lists the checksums.
+
 ## Usage
 
 ```bash

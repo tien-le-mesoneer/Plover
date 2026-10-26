@@ -15,3 +15,8 @@ server, opens the window, checks `/api/health`, exits).
 
 Bundles are unsigned (decision P4-6). `PLOVER_KEYCHAIN_SERVICE=dev.plover.ci` keeps any
 keychain access away from real entries.
+
+`release.yml` runs on `v*` tags (and by hand): it builds `plv` archives and desktop
+bundles on macOS (universal), Windows and Linux, then drafts a GitHub release with
+`SHA256SUMS`. A manual run only uploads the packages as artifacts. See
+[Publishing a release](../../docs/development.md#publishing-a-release).

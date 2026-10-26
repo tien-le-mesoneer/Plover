@@ -65,6 +65,22 @@ rounds, so compare within one table only.
 "–": measured only in a non-interleaved round (thin 1.86 s, fat 1.85 s vs baseline 1.95 s
 in that round). `opt-level = "z"` exceeds the 10% budget. `panic` stays `unwind`.
 
+## Publishing a release
+
+`.github/workflows/release.yml` builds every package and drafts a GitHub release.
+
+1. Set the same version in `crates/{core,cli,desktop}/Cargo.toml` and
+   `crates/desktop/tauri.conf.json`; `scripts/check-version.sh` checks they match.
+2. Commit, then tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
+3. The workflow checks the tag against the version and builds, on three runners: `plv`
+   (macOS universal, Linux x64, Windows x64) and the desktop bundles (`.dmg`, `.exe`,
+   `.deb`, `.AppImage`). It then creates a **draft** release with `SHA256SUMS` and
+   generated notes.
+4. Check the draft on GitHub and publish it.
+
+Running the workflow by hand (**Actions → Release → Run workflow**) builds the same
+packages as workflow artifacts and creates no release. Packages are unsigned (P4-6).
+
 ## Browser check (Monaco and page errors)
 
 Unit tests run in jsdom, which cannot create Monaco editors or workers. After
