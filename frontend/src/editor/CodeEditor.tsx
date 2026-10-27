@@ -3,7 +3,10 @@ import { useTabs } from "../store/tabs";
 import { useVars } from "../store/vars";
 import { useWorkspace } from "../store/workspace";
 import { currentTheme, monaco } from "./monaco";
-import { varDecorations, varHoverAt } from "./varDecorations";
+import { copyResolved } from "../lib/copyResolved";
+import { copiedValueNote } from "../lib/varText";
+import { explain } from "../lib/varTokens";
+import { varDecorations, varHoverAt, varTokenAt } from "./varDecorations";
 
 /** The `--font-mono` stack from styles.css. */
 export const MONO_FONT = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -26,6 +29,8 @@ export interface CodeEditorProps {
   foldLines?: number[];
   /** The request tab whose `{{variables}}` this editor underlines and explains (bodies only). */
   varTabKey?: string;
+  /** The note of the last ⌘/Ctrl+Shift+C value copy (for a live region). */
+  onNote?: (note: string) => void;
 }
 
 /** Body editor models whose `{{variables}}` are explained, by model URI → request tab key. */
@@ -50,10 +55,31 @@ function ensureVarHover() {
   }
 }
 
-/** Repaints after edits (debounced) and when the tab's `/vars` answer changes. */
-function decorateVars(instance: monaco.editor.IStandaloneCodeEditor, tabKey: string): () => void {
+/**
+ * Repaints after edits (debounced) and when the tab's `/vars` answer changes, and adds
+ * ⌘/Ctrl+Shift+C: copy the value of the variable under the cursor.
+ */
+function decorateVars(
+  instance: monaco.editor.IStandaloneCodeEditor,
+  tabKey: string,
+  note: { current: ((note: string) => void) | undefined },
+): () => void {
   const model = instance.getModel();
   if (!model) return () => {};
+  // addAction, not addCommand: commands are shared by all editors on the page.
+  const copyAction = instance.addAction({
+    id: "plover.copyVarValue",
+    label: "Copy variable value",
+    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyC],
+    run: (ed) => {
+      const m = ed.getModel();
+      const position = ed.getPosition();
+      if (!m || !position) return;
+      const token = varTokenAt(m.getValue(), m.getOffsetAt(position));
+      if (!token || explain(token.name, useVars.getState().byTab[tabKey])?.kind !== "defined") return;
+      void copyResolved(tabKey, `{{${token.name}}}`, copiedValueNote(token.name)).then((n) => note.current?.(n));
+    },
+  });
   ensureVarHover();
   const uri = model.uri.toString();
   varModels.set(uri, tabKey);
@@ -70,6 +96,7 @@ function decorateVars(instance: monaco.editor.IStandaloneCodeEditor, tabKey: str
   });
   return () => {
     clearTimeout(timer);
+    copyAction.dispose();
     edits.dispose();
     unsubscribe();
     marks.clear();
@@ -78,18 +105,20 @@ function decorateVars(instance: monaco.editor.IStandaloneCodeEditor, tabKey: str
 }
 
 /** A thin wrapper around a Monaco editor instance. */
-export function CodeEditor({ value, language, readOnly, onChange, height, onReady, onPick, foldLines, varTabKey }: CodeEditorProps) {
+export function CodeEditor({ value, language, readOnly, onChange, height, onReady, onPick, foldLines, varTabKey, onNote }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const changeHandler = useRef(onChange);
   const readyHandler = useRef(onReady);
   const pickHandler = useRef(onPick);
+  const noteHandler = useRef(onNote);
 
   useEffect(() => {
     changeHandler.current = onChange;
     readyHandler.current = onReady;
     pickHandler.current = onPick;
-  }, [onChange, onReady, onPick]);
+    noteHandler.current = onNote;
+  }, [onChange, onReady, onPick, onNote]);
 
   useEffect(() => {
     if (!host.current) return;
@@ -143,7 +172,7 @@ export function CodeEditor({ value, language, readOnly, onChange, height, onRead
       : undefined;
     editor.current = instance;
     readyHandler.current?.(instance);
-    const stopVars = varTabKey ? decorateVars(instance, varTabKey) : undefined;
+    const stopVars = varTabKey ? decorateVars(instance, varTabKey, noteHandler) : undefined;
     return () => {
       stopVars?.();
       sub.dispose();

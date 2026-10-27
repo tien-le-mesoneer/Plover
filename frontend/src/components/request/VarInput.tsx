@@ -1,8 +1,11 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type InputHTMLAttributes, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { copyResolved } from "../../lib/copyResolved";
+import { copiedValueNote } from "../../lib/varText";
 import { explain, tokenize, type VarToken } from "../../lib/varTokens";
 import { useTabs } from "../../store/tabs";
 import { useVars } from "../../store/vars";
 import { useWorkspace } from "../../store/workspace";
+import { useCopy } from "../response/useCopy";
 import { VarHover } from "./VarHover";
 
 type Props = InputHTMLAttributes<HTMLInputElement> & {
@@ -14,6 +17,12 @@ type Props = InputHTMLAttributes<HTMLInputElement> & {
 
 /** How long the caret stays in a token before its card shows. */
 const CARET_DELAY = 500;
+/** How long the card waits for the pointer to move onto it. */
+const LEAVE_DELAY = 150;
+
+/** ⌘/Ctrl+Shift+C. */
+const isCopyShortcut = (e: KeyboardEvent<HTMLInputElement>) =>
+  (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "c";
 
 /**
  * A plain `<input>` with `{{variables}}` underlined by class (defined, set later,
@@ -27,6 +36,8 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const mirror = useRef<HTMLDivElement>(null);
   const caretTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const { note, say } = useCopy();
   const [shown, setShown] = useState<{ token: VarToken; anchor: { left: number; bottom: number } } | null>(null);
   const tooltipId = useId();
   const text = String(props.value ?? "");
@@ -43,7 +54,16 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
     }
     m.scrollLeft = el.scrollLeft;
   });
-  useEffect(() => () => clearTimeout(caretTimer.current), []);
+  useEffect(
+    () => () => {
+      clearTimeout(caretTimer.current);
+      clearTimeout(leaveTimer.current);
+    },
+    [],
+  );
+
+  const copyValue = (name: string) => void copyResolved(tabKey, `{{${name}}}`, copiedValueNote(name)).then(say);
+  const copyable = (name: string) => explain(name, vars)?.kind === "defined";
 
   const tokenAt = (offset: number) => tokens.find((t) => offset > t.start && offset < t.end);
   const spanBox = (token: VarToken) => {
@@ -66,6 +86,7 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
 
   const onMouseMove = (e: MouseEvent<HTMLInputElement>) => {
     props.onMouseMove?.(e);
+    clearTimeout(leaveTimer.current);
     const spans = mirror.current?.querySelectorAll<HTMLElement>("[data-start]") ?? [];
     for (const span of spans) {
       const r = span.getBoundingClientRect();
@@ -79,6 +100,15 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    const el = input.current;
+    if (isCopyShortcut(e) && el && el.selectionStart !== null && el.selectionStart === el.selectionEnd) {
+      const token = tokenAt(el.selectionStart);
+      if (token && copyable(token.name)) {
+        e.preventDefault();
+        copyValue(token.name);
+        return;
+      }
+    }
     if (e.key === "Escape" && shown) {
       // Handled here: Esc must not also cancel a running send.
       e.preventDefault();
@@ -132,14 +162,34 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
         onMouseMove={onMouseMove}
         onMouseLeave={(e) => {
           props.onMouseLeave?.(e);
-          setShown(null);
+          // Wait a moment: the pointer may be on its way to the card.
+          clearTimeout(leaveTimer.current);
+          leaveTimer.current = setTimeout(() => setShown(null), LEAVE_DELAY);
         }}
         onScroll={(e) => {
           props.onScroll?.(e);
           if (mirror.current) mirror.current.scrollLeft = e.currentTarget.scrollLeft;
         }}
       />
-      {shown && info && <VarHover id={tooltipId} name={shown.token.name} info={info} env={env} anchor={shown.anchor} />}
+      <span className="sr-only" aria-live="polite">
+        {note}
+      </span>
+      {shown && info && (
+        <VarHover
+          id={tooltipId}
+          name={shown.token.name}
+          info={info}
+          env={env}
+          anchor={shown.anchor}
+          note={note}
+          onCopy={info.kind === "defined" ? () => copyValue(shown.token.name) : undefined}
+          onMouseEnter={() => clearTimeout(leaveTimer.current)}
+          onMouseLeave={() => {
+            clearTimeout(leaveTimer.current);
+            leaveTimer.current = setTimeout(() => setShown(null), LEAVE_DELAY);
+          }}
+        />
+      )}
     </span>
   );
 }

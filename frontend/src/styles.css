@@ -199,6 +199,7 @@ td .var-input { display: flex; }
 .var-setlater { text-decoration: underline dotted var(--warn); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .var-undefined { text-decoration: underline wavy var(--err); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
 .var-hover { position: fixed; z-index: 20; max-width: min(420px, 90vw); background: var(--bg); color: var(--fg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 16px var(--scrim); display: flex; flex-direction: column; gap: 2px; }
+.var-hover-head { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
 .var-hover-name { font-family: var(--font-mono); font-weight: 600; }
 .var-hover code { font-family: var(--font-mono); overflow-wrap: anywhere; }
 .split { display: flex; flex: 1; min-height: 0; min-width: 0; }
@@ -317,6 +318,11 @@ button.copy { display: inline-flex; align-items: center; gap: 4px; padding: 2px 
 .header-row .row-copy button { opacity: 0; }
 .header-row:hover .row-copy button, .header-row:focus-within .row-copy button { opacity: 1; }
 .row-copy { width: 28px; }
+.kv .row-copy button { opacity: 0; transition: opacity 120ms ease-out; }
+.kv tr:hover .row-copy button, .kv tr:focus-within .row-copy button { opacity: 1; }
+@media (hover: none) {
+  .kv .row-copy button { opacity: 1; }
+}
 table.headers { border-collapse: collapse; margin: 8px; font-family: var(--font-mono); font-size: 12px; }
 table.headers thead th { font-family: var(--font-ui); color: var(--muted); }
 table.headers th { text-align: left; padding: 2px 12px 2px 0; color: var(--muted); font-weight: 500; vertical-align: top; }

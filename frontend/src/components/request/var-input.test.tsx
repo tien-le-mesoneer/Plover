@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ApiClient } from "../../api/client";
+import { setApi } from "../../api/instance";
 import type { HttpRequestDto, VarsDto } from "../../api/types";
 import { useTabs } from "../../store/tabs";
 import { useVars } from "../../store/vars";
@@ -17,7 +19,18 @@ const dto: VarsDto = {
 
 const draft = { name: "r" } as HttpRequestDto;
 
+let writeText: ReturnType<typeof vi.fn>;
+let resolveText: ReturnType<typeof vi.fn>;
+
 beforeEach(() => {
+  writeText = vi.fn(async () => undefined);
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  resolveText = vi.fn(async (_id: string, body: { text: string; reveal: boolean }) =>
+    body.text === "{{apiKey}}"
+      ? { text: body.reveal ? "key-1234" : null, containsSecret: true }
+      : { text: body.text.replace("{{host}}", "api.test"), containsSecret: false },
+  );
+  setApi({ resolveText } as unknown as ApiClient);
   useTabs.setState({ tabs: [{ key: "c1:a.bru", collectionId: "c1", item: "a.bru", saved: draft, draft, hash: "h", sending: false }] });
   useWorkspace.setState({ activeEnv: { c1: "Dev" } });
   useVars.setState({ byTab: { "c1:a.bru": dto } });
@@ -68,7 +81,7 @@ describe("VarInput", () => {
   it("hover_shows_value_and_source", () => {
     const { container } = render(<Field initial="{{host}}/x" />);
     hover(container, "var-defined");
-    const tip = screen.getByRole("tooltip");
+    const tip = screen.getByRole("dialog");
     expect(tip.textContent).toContain("https://example.test");
     expect(tip.textContent).toContain("Environment: Dev");
     expect(tip.textContent).toContain("overrides collection");
@@ -78,19 +91,19 @@ describe("VarInput", () => {
   it("hover_masks_secret", () => {
     const { container } = render(<Field initial="{{apiKey}}" />);
     hover(container, "var-defined");
-    expect(screen.getByRole("tooltip").textContent).toContain("•••• secret");
+    expect(screen.getByRole("dialog").textContent).toContain("•••• secret");
   });
 
   it("set_later_message", () => {
     const { container } = render(<Field initial="{{token}}" />);
     hover(container, "var-setlater");
-    expect(screen.getByRole("tooltip").textContent).toContain("Not set yet. Set at runtime by auth/login.bru.");
+    expect(screen.getByRole("dialog").textContent).toContain("Not set yet. Set at runtime by auth/login.bru.");
   });
 
   it("undefined_message", () => {
     const { container } = render(<Field initial="{{missing}}" />);
     hover(container, "var-undefined");
-    expect(screen.getByRole("tooltip").textContent).toContain("Not defined in any scope.");
+    expect(screen.getByRole("dialog").textContent).toContain("Not defined in any scope.");
   });
 
   it("caret_inside_token_shows_after_500ms", () => {
@@ -103,11 +116,11 @@ describe("VarInput", () => {
     act(() => {
       vi.advanceTimersByTime(499);
     });
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(screen.getByRole("tooltip").textContent).toContain("https://example.test");
+    expect(screen.getByRole("dialog").textContent).toContain("https://example.test");
   });
 
   it("esc_hides_and_prevents_default", () => {
@@ -118,7 +131,7 @@ describe("VarInput", () => {
       screen.getByLabelText("URL").dispatchEvent(event);
     });
     expect(event.defaultPrevented).toBe(true);
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("paste_curl_still_works", () => {
@@ -139,4 +152,84 @@ describe("VarInput", () => {
     fireEvent.keyDown(input, { key: "a" });
     expect(onKeyDown).toHaveBeenCalled();
   });
+
+  it("hover_card_is_dialog_not_tooltip", () => {
+    const { container } = render(<Field initial="{{host}}" />);
+    hover(container, "var-defined");
+    const card = screen.getByRole("dialog", { name: "Variable host" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(card.querySelector('button[aria-label="Copy value"]')).toBeTruthy();
+    expect(card.textContent).toMatch(/(⌘⇧C|Ctrl\+Shift\+C) copies the value/);
+  });
+
+  it("hover_card_copy_copies_value_only", async () => {
+    const { container } = render(<Field initial="{{host}}" />);
+    hover(container, "var-defined");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copy value" }));
+    });
+    expect(resolveText).toHaveBeenCalledWith("c1", expect.objectContaining({ text: "{{host}}", env: "Dev", reveal: false }));
+    expect(writeText).toHaveBeenCalledWith("api.test");
+    expect(screen.getAllByText("Copied value of {{host}}").length).toBeGreaterThan(0);
+  });
+
+  it("hover_card_stays_open_when_pointer_moves_to_it", () => {
+    vi.useFakeTimers();
+    const { container } = render(<Field initial="{{host}}" />);
+    hover(container, "var-defined");
+    fireEvent.mouseLeave(screen.getByLabelText("URL"));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    fireEvent.mouseEnter(screen.getByRole("dialog"));
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.mouseLeave(screen.getByRole("dialog"));
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("secret_copy_asks_first", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const { container } = render(<Field initial="{{apiKey}}" />);
+    hover(container, "var-defined");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copy value" }));
+    });
+    expect(confirm).toHaveBeenCalled();
+    expect(resolveText).toHaveBeenCalledTimes(1);
+    expect(resolveText.mock.calls[0]![1].reveal).toBe(false);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it("caret_shortcut_copies_token_value", async () => {
+    render(<Field initial="a {{host}} b" />);
+    const input = screen.getByLabelText("URL") as HTMLInputElement;
+    input.focus();
+    input.setSelectionRange(4, 4);
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "c", code: "KeyC", metaKey: true, shiftKey: true });
+    });
+    expect(writeText).toHaveBeenCalledWith("api.test");
+    expect(screen.getByText("Copied value of {{host}}")).toBeTruthy();
+  });
+
+  it("no_copy_for_undefined_or_set_later", async () => {
+    const { container, unmount } = render(<Field initial="{{token}}" />);
+    hover(container, "var-setlater");
+    expect(screen.queryByRole("button", { name: "Copy value" })).toBeNull();
+    unmount();
+    render(<Field initial="{{missing}}" />);
+    const input = screen.getByLabelText("URL") as HTMLInputElement;
+    input.setSelectionRange(3, 3);
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "c", code: "KeyC", metaKey: true, shiftKey: true });
+    });
+    expect(resolveText).not.toHaveBeenCalled();
+  });
 });
+

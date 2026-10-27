@@ -10,6 +10,14 @@ const SOURCES: Record<string, string> = {
   collection: "Collection",
 };
 
+/** The copy-value shortcut as this platform writes it. */
+export function copyShortcut(): string {
+  return /Mac|iPhone|iPad/.test(globalThis.navigator?.platform ?? "") ? "⌘⇧C" : "Ctrl+Shift+C";
+}
+
+/** `{{name}}` was copied (the live note). */
+export const copiedValueNote = (name: string) => `Copied value of {{${name}}}`;
+
 /** "Environment: Dev", "Runtime", … */
 export function sourceLabel(source: string, env: string | null): string {
   const label = SOURCES[source] ?? source;

@@ -1,6 +1,6 @@
 import type { VarsDto } from "../api/types";
 import { explain, tokenize } from "../lib/varTokens";
-import { hoverLines } from "../lib/varText";
+import { copyShortcut, hoverLines } from "../lib/varText";
 
 /** The part of a Monaco text model these helpers read (tests pass a fake). */
 export interface TextModel {
@@ -33,6 +33,11 @@ const code = (s: string) => {
   return `${fence}${s.replace(/\n/g, " ")}${fence}`;
 };
 
+/** The `{{name}}` whose text covers `offset`, if any. */
+export function varTokenAt(text: string, offset: number) {
+  return tokenize(text).find((t) => offset >= t.start && offset <= t.end) ?? null;
+}
+
 /** The hover card as Markdown for the token at `offset`, with its range. */
 export function varHoverAt(
   model: TextModel,
@@ -40,9 +45,10 @@ export function varHoverAt(
   vars: VarsDto | undefined,
   env: string | null,
 ): { range: VarDecoration["range"]; markdown: string } | null {
-  const token = tokenize(model.getValue()).find((t) => offset >= t.start && offset <= t.end);
+  const token = varTokenAt(model.getValue(), offset);
   const info = token ? explain(token.name, vars) : null;
   if (!token || !info) return null;
   const lines = hoverLines(info, env).map((l) => [l.value !== undefined ? code(l.value) : "", l.note].filter(Boolean).join(" "));
+  if (info.kind === "defined") lines.push(`${copyShortcut()} copies the value`);
   return { range: rangeOf(model, token.start, token.end), markdown: [code(`{{${token.name}}}`), ...lines].join("\n\n") };
 }

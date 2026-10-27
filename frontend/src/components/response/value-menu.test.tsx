@@ -96,6 +96,16 @@ describe("value menu", () => {
     await waitFor(() => expect(setRuntimeVar).toHaveBeenCalledWith("c1", "docId", "d-8812"));
   });
 
+  it("save_as_variable_does_not_touch_clipboard", async () => {
+    render(<ResponseViewer result={result()} sending={false} collectionId="c1" />);
+    clickOn('"d-8812"');
+    fireEvent.click(screen.getByRole("menuitem", { name: "Save as runtime variable…" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Runtime variable name" }), { target: { value: "docId" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save variable" }));
+    await waitFor(() => expect(screen.getByText("Saved {{docId}}")).toBeTruthy());
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
   it("invalid_name_blocks_save", () => {
     render(<ResponseViewer result={result()} sending={false} collectionId="c1" />);
     clickOn('"d-8812"');

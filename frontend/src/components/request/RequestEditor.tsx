@@ -172,6 +172,7 @@ export function RequestEditor({ tab }: { tab: Tab }) {
                 <h4>Query</h4>
                 <KeyValueTable
                   varTabKey={tab.key}
+                  copyValues={{ tabKey: tab.key }}
                   rows={draft.query}
                   onChange={(query) => onEdit((d) => ({ ...d, query, url: urlWithQuery(d.url, query) }))}
                 />
@@ -180,6 +181,7 @@ export function RequestEditor({ tab }: { tab: Tab }) {
                     <h4>Path</h4>
                     <KeyValueTable
                       varTabKey={tab.key}
+                      copyValues={{ tabKey: tab.key }}
                       rows={draft.pathParams}
                       fixedNames
                       onChange={(pathParams) => onEdit((d) => ({ ...d, pathParams }))}

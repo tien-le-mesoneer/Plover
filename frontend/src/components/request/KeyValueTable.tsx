@@ -1,6 +1,8 @@
 import type { KeyValueDto } from "../../api/types";
+import { copyResolved } from "../../lib/copyResolved";
 import { Banner } from "../Banner";
-import { CloseIcon } from "../icons";
+import { CloseIcon, CopyIcon } from "../icons";
+import { useCopy } from "../response/useCopy";
 import { VarInput } from "./VarInput";
 
 interface Props {
@@ -15,12 +17,15 @@ interface Props {
   hint?: string;
   /** The request tab: `{{variables}}` in values are underlined and explained. */
   varTabKey?: string;
+  /** Each row gets a button copying its value with variables filled in for this tab. */
+  copyValues?: { tabKey: string };
 }
 
 const empty = (): KeyValueDto => ({ name: "", value: "", enabled: true, local: false });
 
 /** Editable name/value rows; the checkbox maps to `~` (disabled) in `.bru`. */
-export function KeyValueTable({ rows, onChange, fixedNames, nameLabel = "Name", valueLabel = "Value", hint, varTabKey }: Props) {
+export function KeyValueTable({ rows, onChange, fixedNames, nameLabel = "Name", valueLabel = "Value", hint, varTabKey, copyValues }: Props) {
+  const { note, say } = useCopy();
   const set = (index: number, patch: Partial<KeyValueDto>) =>
     onChange(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   const remove = (index: number) => onChange(rows.filter((_, i) => i !== index));
@@ -37,6 +42,11 @@ export function KeyValueTable({ rows, onChange, fixedNames, nameLabel = "Name", 
       </Banner>
     )}
     {hint && <p className="kv-hint muted">{hint}</p>}
+    {copyValues && (
+      <span className="sr-only" aria-live="polite">
+        {note}
+      </span>
+    )}
     <table className="kv">
       <thead>
         <tr>
@@ -45,6 +55,11 @@ export function KeyValueTable({ rows, onChange, fixedNames, nameLabel = "Name", 
           </th>
           <th>{nameLabel}</th>
           <th>{valueLabel}</th>
+          {copyValues && (
+            <th className="row-copy">
+              <span className="sr-only">Copy</span>
+            </th>
+          )}
           <th className="kv-del">
             <span className="sr-only">Remove</span>
           </th>
@@ -96,6 +111,23 @@ export function KeyValueTable({ rows, onChange, fixedNames, nameLabel = "Name", 
                   />
                 )}
               </td>
+              {copyValues && (
+                <td className="row-copy">
+                  {!isNew && (
+                    <button
+                      type="button"
+                      className="icon"
+                      aria-label={`Copy value of ${rowName}`}
+                      title={note ?? "Copy value with variables filled in"}
+                      onClick={() =>
+                        void copyResolved(copyValues.tabKey, row.value, `Copied value of ${rowName}`).then(say)
+                      }
+                    >
+                      <CopyIcon />
+                    </button>
+                  )}
+                </td>
+              )}
               <td className="kv-del">
                 {!isNew && !fixedNames && (
                   <button className="icon" title="Remove" aria-label="Remove" onClick={() => remove(i)}>

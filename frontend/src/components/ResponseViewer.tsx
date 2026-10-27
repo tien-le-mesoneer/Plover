@@ -142,7 +142,7 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
   const hasFailures = failedChecks.passed < failedChecks.total;
   const [view, setView] = useState<View>(hasFailures ? "tests" : "body");
   const [shown, setShown] = useState(result);
-  const { note, copy } = useCopy();
+  const { note, copy, say } = useCopy();
   const [mode, setMode] = useState<BodyMode>("pretty");
   const [filter, setFilter] = useState("");
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -368,7 +368,7 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
                 collectionId={collectionId ?? null}
                 pathDisabled={filtered !== null ? "Paths are relative to the filtered result" : undefined}
                 onCopy={(text) => void copy(text)}
-                onSaved={(n) => void copy(`{{${n}}}`, `Saved {{${n}}}`)}
+                onSaved={(n) => say(`Saved {{${n}}}`)}
                 onClose={closePicked}
               />
             )}

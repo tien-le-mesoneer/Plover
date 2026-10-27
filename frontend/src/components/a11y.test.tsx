@@ -197,6 +197,6 @@ describe("variable hover", () => {
     const span = container.querySelector<HTMLElement>(".var-mirror .var-defined")!;
     span.getBoundingClientRect = () => ({ left: 0, right: 50, top: 0, bottom: 20, width: 50, height: 20, x: 0, y: 0, toJSON: () => ({}) });
     fireEvent.mouseMove(input, { clientX: 5, clientY: 5 });
-    expect(input.getAttribute("aria-describedby")).toBe(screen.getByRole("tooltip").id);
+    expect(input.getAttribute("aria-describedby")).toBe(screen.getByRole("dialog").id);
   });
 });

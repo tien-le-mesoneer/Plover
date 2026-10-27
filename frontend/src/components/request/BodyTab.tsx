@@ -73,6 +73,7 @@ export function BodyTab({ body, onChange, onModeChange, tabKey }: Props) {
             language={body.mode === "text" ? "plaintext" : body.mode}
             onChange={(text) => onChange({ ...body, text })}
             varTabKey={tabKey}
+            onNote={say}
           />
         </div>
       )}
