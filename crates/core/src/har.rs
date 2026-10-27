@@ -10,7 +10,8 @@ use base64::Engine;
 use serde::Deserialize;
 
 use crate::credentials::{
-    is_credential_field, is_token_header, is_token_query_param, looks_like_jwt,
+    SpanKind, body_credential_spans, is_credential_field, is_token_header, is_token_query_param,
+    looks_like_jwt,
 };
 use crate::curl::{body_from_text, query_from_url};
 use crate::request::{Auth, Body, HttpRequest, KeyValue, Method, MultipartField, MultipartValue};
@@ -312,16 +313,13 @@ fn has_secrets(req: &HarRequest) -> bool {
         pd.params.iter().any(|p| {
             is_credential_field(&p.name) && p.value.as_deref().is_some_and(|v| !v.is_empty())
         }) || pd.text.as_deref().is_some_and(|t| {
-            looks_like_jwt(t) || {
-                let mut found = Vec::new();
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(t) {
-                    json_credentials(&v, &mut found);
-                }
-                !found.is_empty()
-                    || crate::curl::decode_form(t)
-                        .iter()
-                        .any(|f| is_credential_field(&f.name) && !f.value.is_empty())
-            }
+            // Numeric JSON credentials stay as written on import, so they do not flag.
+            body_credential_spans(t)
+                .iter()
+                .any(|s| s.kind != SpanKind::JsonNumber)
+                || crate::curl::decode_form(t)
+                    .iter()
+                    .any(|f| is_credential_field(&f.name) && !f.value.is_empty())
         })
     });
     header || query || body
@@ -651,9 +649,45 @@ fn entry_body(har: &HarRequest, alloc: &mut SecretAlloc<'_>, notices: &mut Vec<S
                 })
                 .collect(),
         ),
-        Body::Json(text) => Body::Json(json_with_secrets(&text, alloc)),
+        Body::Json(text) => Body::Json(text_with_secrets(
+            &json_with_secrets(&text, alloc),
+            alloc,
+            |kind| kind == SpanKind::Jwt,
+        )),
+        Body::Xml(text) => Body::Xml(text_with_secrets(&text, alloc, |_| true)),
+        Body::Text(text) => Body::Text(text_with_secrets(&text, alloc, |_| true)),
         other => other,
     }
+}
+
+/// Replaces the credential spans of `text` whose kind `take` accepts with `{{var}}`,
+/// keeping every other byte. A span's secret is its text as written (XML entities are
+/// not decoded), so filling the variables back in gives the captured bytes. Variables
+/// are allocated in document order.
+fn text_with_secrets(
+    text: &str,
+    alloc: &mut SecretAlloc<'_>,
+    take: impl Fn(SpanKind) -> bool,
+) -> String {
+    let spans: Vec<_> = body_credential_spans(text)
+        .into_iter()
+        .filter(|s| take(s.kind))
+        .collect();
+    let vars: Vec<String> = spans
+        .iter()
+        .map(|s| {
+            let base = s
+                .name
+                .as_deref()
+                .map_or_else(|| "bodyToken".to_owned(), camel_case);
+            alloc.placeholder(&base, &text[s.range.clone()])
+        })
+        .collect();
+    let mut out = text.to_owned();
+    for (span, var) in spans.iter().zip(vars).rev() {
+        out.replace_range(span.range.clone(), &var);
+    }
+    out
 }
 
 fn credential_value(name: &str, value: &str, alloc: &mut SecretAlloc<'_>) -> String {

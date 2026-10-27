@@ -13,6 +13,16 @@ use plover_core::store::sanitize_name;
 const CHROME: &str = include_str!("fixtures/har/chrome.har");
 const SECRETS: &str = include_str!("fixtures/har/secrets.har");
 const FIREFOX: &str = include_str!("fixtures/har/firefox-minimal.har");
+const SOAP: &str = include_str!("fixtures/har/xml-soap.har");
+/// Every secret value in `xml-soap.har`, as written in the HAR text.
+const SOAP_VALUES: &[&str] = &[
+    "pw-AAAA",
+    "pw-BBBB",
+    "cd<ATA-1",
+    "at&amp;tr-2",
+    "en&amp;t-3",
+    "eyJhbGciOiJIUzI1NiJ9",
+];
 
 /// Every secret value in `secrets.har`.
 const SECRET_VALUES: &[&str] = &[
@@ -313,7 +323,7 @@ fn body_credentials_become_secrets() {
 }
 
 #[test]
-fn xml_body_with_jwt_flags_row() {
+fn xml_body_with_jwt_flagged_and_rewritten() {
     let rows = rows(SECRETS);
     let soap = rows.iter().find(|r| r.url.ends_with("/v1/soap")).unwrap();
     assert!(soap.has_secrets);
@@ -322,7 +332,8 @@ fn xml_body_with_jwt_flags_row() {
     let Body::Xml(text) = &req.body else {
         panic!("{:?}", req.body)
     };
-    assert!(text.contains("eyJhbGciOiJIUzI1NiJ9"));
+    assert!(!text.contains("eyJhbGciOiJIUzI1NiJ9"), "{text}");
+    assert!(text.starts_with("<Envelope><Token>{{token"), "{text}");
     assert!(
         rows.iter()
             .filter(|r| !r.url.ends_with("/v1/soap"))
@@ -330,6 +341,76 @@ fn xml_body_with_jwt_flags_row() {
         "every other fixture entry carries a credential"
     );
     assert!(!preview(&parse_har(CHROME).unwrap())[0].has_secrets);
+}
+
+fn body_text(req: &HttpRequest) -> &str {
+    match &req.body {
+        Body::Xml(t) | Body::Text(t) | Body::Json(t) => t,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn xml_body_credentials_become_secrets() {
+    assert!(rows(SOAP).iter().all(|r| r.has_secrets));
+    let plan = plan_all(SOAP, &no_secrets());
+    let text = body_text(find(&plan, "/v1/soap-login"));
+    assert!(
+        text.contains(r#"<wsse:Password Type="text">{{password}}</wsse:Password>"#),
+        "{text}"
+    );
+    assert!(text.contains("<wsse:Username>u</wsse:Username>"), "{text}");
+    assert_eq!(plan.new_secrets["password"], "pw-AAAA");
+}
+
+#[test]
+fn xml_two_passwords_numbered() {
+    let plan = plan_all(SOAP, &no_secrets());
+    let text = body_text(find(&plan, "/v1/soap-two"));
+    assert_eq!(
+        text,
+        "<Envelope><wsse:Password>{{password}}</wsse:Password><wsse:Password>{{password2}}</wsse:Password><wsse:Password>{{password}}</wsse:Password></Envelope>"
+    );
+    assert_eq!(plan.new_secrets["password2"], "pw-BBBB");
+}
+
+#[test]
+fn text_body_jwt_becomes_body_token() {
+    let plan = plan_all(SOAP, &no_secrets());
+    assert_eq!(body_text(find(&plan, "/v1/text")), "id={{bodyToken}}");
+    assert_eq!(
+        plan.new_secrets["bodyToken"],
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig"
+    );
+}
+
+#[test]
+fn json_body_jwt_in_plain_key() {
+    let plan = plan_all(SOAP, &no_secrets());
+    let text = body_text(find(&plan, "/v1/note"));
+    assert_eq!(text, r#"{"note":"{{bodyToken}}","n":1}"#);
+    serde_json::from_str::<serde_json::Value>(text).unwrap();
+}
+
+#[test]
+fn imported_xml_sends_identical_bytes() {
+    let har = parse_har(SOAP).unwrap();
+    let plan = plan_all(SOAP, &no_secrets());
+    for (entry, (_, req)) in har.log.entries.iter().zip(&plan.requests) {
+        let mut filled = body_text(req).to_owned();
+        for (name, value) in &plan.new_secrets {
+            filled = filled.replace(&format!("{{{{{name}}}}}"), value);
+        }
+        let captured = entry
+            .request
+            .post_data
+            .as_ref()
+            .unwrap()
+            .text
+            .as_deref()
+            .unwrap();
+        assert_eq!(filled, captured, "{}", entry.request.url);
+    }
 }
 
 #[test]
@@ -355,20 +436,17 @@ fn pseudo_and_executor_headers_dropped() {
 #[test]
 fn no_secret_value_in_any_written_bru() {
     let plan = plan_all(SECRETS, &no_secrets());
-    let soap_free: Vec<&(String, HttpRequest)> = plan
-        .requests
-        .iter()
-        .filter(|(_, r)| !r.url.ends_with("/v1/soap"))
-        .collect();
-    assert_eq!(soap_free.len(), 8);
-    for (name, req) in soap_free {
+    let soap = plan_all(SOAP, &no_secrets());
+    let all: Vec<&(String, HttpRequest)> = plan.requests.iter().chain(&soap.requests).collect();
+    assert_eq!(all.len(), 14);
+    for (name, req) in all {
         let text = RequestFile {
             doc: BruDocument::new(),
             request: req.clone(),
         }
         .to_bru();
         RequestFile::parse(&text).unwrap();
-        for secret in SECRET_VALUES {
+        for secret in SECRET_VALUES.iter().chain(SOAP_VALUES) {
             assert!(!text.contains(secret), "{name} contains {secret}:\n{text}");
         }
     }
