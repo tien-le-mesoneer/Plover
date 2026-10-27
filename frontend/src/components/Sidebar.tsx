@@ -2,13 +2,33 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import type { CollectionSummaryDto, TreeNodeDto } from "../api/types";
 import { useTabs, tabKey } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
+import { ContextMenu } from "./ContextMenu";
 import { AlertIcon, ChevronIcon, CloseIcon, PlayIcon, RefreshIcon, SearchIcon } from "./icons";
+import { ImportHarDialog } from "./ImportHarDialog";
+import type { MenuItem } from "./Menu";
 import { Modal } from "./Modal";
 import { shortPath } from "./OpenCollectionPopover";
 
 interface Props {
   onRun?: (collectionId: string, item: string, label: string) => void;
 }
+
+/** An open context menu: where, what, and the element that gets focus back. */
+interface OpenMenu {
+  at: { x: number; y: number };
+  label: string;
+  items: MenuItem[];
+  returnTo: HTMLElement | null;
+}
+
+/** Opens a folder's or collection's menu (`folder` "" is the collection root). */
+type OpenFolderMenu = (
+  collectionId: string,
+  folder: string,
+  label: string,
+  at: { x: number; y: number },
+  returnTo: HTMLElement | null,
+) => void;
 
 /**
  * Keeps requests whose name (or "METHOD name") contains `query`, folders whose name
@@ -33,6 +53,24 @@ export function Sidebar({ onRun }: Props) {
   const { collections, trees, reload, filter, setFilter, close, retry } = useWorkspace();
   const filterInput = useRef<HTMLInputElement>(null);
   const [confirmClose, setConfirmClose] = useState<CollectionSummaryDto | null>(null);
+  const [menu, setMenu] = useState<OpenMenu | null>(null);
+  const [importing, setImporting] = useState<{ collectionId: string; folder: string } | null>(null);
+
+  const openMenu: OpenFolderMenu = (collectionId, folder, label, at, returnTo) => {
+    const items: MenuItem[] = [];
+    if (onRun) {
+      items.push({
+        label: folder ? "Run folder" : "Run collection",
+        onSelect: () => onRun(collectionId, folder, label),
+      });
+    }
+    items.push({ label: "Import HAR…", onSelect: () => setImporting({ collectionId, folder }) });
+    setMenu({ at, label, items, returnTo });
+  };
+  const closeMenu = () => {
+    menu?.returnTo?.focus();
+    setMenu(null);
+  };
 
   // Cmd/Ctrl+P: jump to the request filter (instead of the browser's print dialog).
   useEffect(() => {
@@ -85,7 +123,14 @@ export function Sidebar({ onRun }: Props) {
       {collections.map((c) =>
         c.available ? (
           <div key={c.id} className="collection">
-            <div className="collection-header" title={c.root}>
+            <div
+              className="collection-header"
+              title={c.root}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                openMenu(c.id, "", c.name, { x: e.clientX, y: e.clientY }, null);
+              }}
+            >
               <strong className="collection-name">{c.name}</strong>
               <span className="spacer" />
               {onRun && (
@@ -113,7 +158,14 @@ export function Sidebar({ onRun }: Props) {
               </button>
             </div>
             {trees[c.id] && (
-              <CollectionTree collectionId={c.id} name={c.name} root={trees[c.id]!} filter={filter} onRun={onRun} />
+              <CollectionTree
+                collectionId={c.id}
+                name={c.name}
+                root={trees[c.id]!}
+                filter={filter}
+                onRun={onRun}
+                onMenu={openMenu}
+              />
             )}
           </div>
         ) : (
@@ -134,6 +186,14 @@ export function Sidebar({ onRun }: Props) {
             </p>
           </div>
         ),
+      )}
+      {menu && <ContextMenu at={menu.at} items={menu.items} label={menu.label} onClose={closeMenu} />}
+      {importing && (
+        <ImportHarDialog
+          collectionId={importing.collectionId}
+          initialFolder={importing.folder}
+          onClose={() => setImporting(null)}
+        />
       )}
       {confirmClose && (
         <Modal title="Close collection" onDismiss={() => setConfirmClose(null)}>
@@ -177,12 +237,14 @@ function CollectionTree({
   root,
   filter,
   onRun,
+  onMenu,
 }: {
   collectionId: string;
   name: string;
   root: TreeNodeDto;
   filter: string;
   onRun?: Props["onRun"];
+  onMenu: OpenFolderMenu;
 }) {
   const saved = useWorkspace((s) => s.expanded[collectionId]);
   const toggleExpanded = useWorkspace((s) => s.toggleExpanded);
@@ -217,6 +279,13 @@ function CollectionTree({
     const { node, parent } = items[index]!;
     const isFolder = node.kind === "folder";
     const isOpen = isFolder && expanded.has(node.id);
+    if (isFolder && ((e.key === "F10" && e.shiftKey) || e.key === "ContextMenu")) {
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = e.currentTarget.getBoundingClientRect();
+      onMenu(collectionId, node.id, node.name, { x: rect.left + 16, y: rect.bottom }, e.currentTarget);
+      return;
+    }
     switch (e.key) {
       case "ArrowDown":
         focus(items[index + 1]?.node.id);
@@ -279,17 +348,22 @@ function CollectionTree({
               className="node folder"
               aria-label={node.name}
               aria-expanded={isOpen}
-              aria-keyshortcuts={onRun ? "Control+Enter Meta+Enter" : undefined}
+              aria-keyshortcuts={onRun ? "Control+Enter Meta+Enter Shift+F10" : "Shift+F10"}
               onClick={() => {
                 focus(node.id);
                 toggle(node.id);
               }}
               onContextMenu={(e) => {
-                if (!onRun) return;
                 e.preventDefault();
-                run(node);
+                focus(node.id);
+                onMenu(collectionId, node.id, node.name, { x: e.clientX, y: e.clientY }, e.currentTarget);
               }}
-              title={onRun ? "Enter: expand · Ctrl/Cmd+Enter or ▶: run this folder" : undefined}
+              aria-haspopup="menu"
+              title={
+                onRun
+                  ? "Enter: expand · Ctrl/Cmd+Enter or ▶: run this folder · Shift+F10: more"
+                  : "Enter: expand · Shift+F10: more"
+              }
             >
               <span className="caret">
                 <ChevronIcon open={isOpen} />

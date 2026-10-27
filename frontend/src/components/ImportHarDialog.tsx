@@ -28,7 +28,16 @@ function message(e: unknown): string {
  * Import a HAR file into a folder: pick the entries (assets and preflights hidden by
  * default), see the secret variables it will create (names only), then import.
  */
-export function ImportHarDialog({ collectionId, onClose }: { collectionId: string; onClose: () => void }) {
+export function ImportHarDialog({
+  collectionId,
+  onClose,
+  initialFolder,
+}: {
+  collectionId: string;
+  onClose: () => void;
+  /** The folder the import goes into at first (a folder's context menu); the root otherwise. */
+  initialFolder?: string;
+}) {
   const tree = useWorkspace((s) => s.trees[collectionId]);
   const collectionName = useWorkspace((s) => s.collections.find((c) => c.id === collectionId)?.name);
   const envs = useWorkspace((s) => s.environments[collectionId] ?? []);
@@ -38,7 +47,7 @@ export function ImportHarDialog({ collectionId, onClose }: { collectionId: strin
   const [ticked, setTicked] = useState<Set<number>>(new Set());
   const [hostsOff, setHostsOff] = useState<Set<string>>(new Set());
   const [showHidden, setShowHidden] = useState(false);
-  const [folder, setFolder] = useState("");
+  const [folder, setFolder] = useState(initialFolder ?? "");
   const [newFolder, setNewFolder] = useState("");
   const [env, setEnv] = useState<string>(activeEnv ?? "");
   // The plan for one request body (its key); a plan for an older body is not shown.

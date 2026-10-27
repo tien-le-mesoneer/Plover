@@ -1,7 +1,30 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
-function menuEntries(el: HTMLElement | null): HTMLButtonElement[] {
+export function menuEntries(el: HTMLElement | null): HTMLButtonElement[] {
   return [...(el?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])') ?? [])];
+}
+
+/**
+ * Keyboard inside an open menu: arrow keys, Home and End move between items; Esc or Tab
+ * calls `close` (which puts focus back where the menu came from).
+ */
+export function menuKeyDown(e: KeyboardEvent<HTMLElement>, menu: HTMLElement | null, close: () => void): void {
+  const list = menuEntries(menu);
+  const at = list.indexOf(document.activeElement as HTMLButtonElement);
+  let next: number | null = null;
+  if (e.key === "ArrowDown") next = (at + 1) % list.length;
+  else if (e.key === "ArrowUp") next = (at - 1 + list.length) % list.length;
+  else if (e.key === "Home") next = 0;
+  else if (e.key === "End") next = list.length - 1;
+  else if (e.key === "Escape" || e.key === "Tab") {
+    e.preventDefault();
+    e.stopPropagation();
+    close();
+    return;
+  }
+  if (next === null) return;
+  e.preventDefault();
+  list[next]?.focus();
 }
 
 export interface MenuItem {
@@ -34,8 +57,6 @@ export function Menu({
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
 
-  const entries = () => menuEntries(menu.current);
-
   useEffect(() => {
     if (!open) return;
     menuEntries(menu.current)[0]?.focus();
@@ -52,24 +73,7 @@ export function Menu({
     button.current?.focus();
   };
 
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const list = entries();
-    const at = list.indexOf(document.activeElement as HTMLButtonElement);
-    let next: number | null = null;
-    if (e.key === "ArrowDown") next = (at + 1) % list.length;
-    else if (e.key === "ArrowUp") next = (at - 1 + list.length) % list.length;
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = list.length - 1;
-    else if (e.key === "Escape" || e.key === "Tab") {
-      e.preventDefault();
-      e.stopPropagation();
-      close();
-      return;
-    }
-    if (next === null) return;
-    e.preventDefault();
-    list[next]?.focus();
-  };
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => menuKeyDown(e, menu.current, close);
 
   return (
     <span className={`menu-button ${className ?? ""}`}>
