@@ -544,3 +544,18 @@ mod create {
         assert_eq!(store::unique_file_name(&root, "PING"), "PING 3");
     }
 }
+
+#[test]
+fn remove_and_clear_runtime_vars() {
+    let (_dir, root) = fixture_copy();
+    let ws = Workspace::new(ExecOptions::default());
+    let id = ws.open(&root).unwrap();
+    let open = ws.get(&id).unwrap();
+    open.set_runtime_var("a", serde_json::json!(1));
+    open.set_runtime_var("b", serde_json::json!("x"));
+    assert!(open.remove_runtime_var("a"));
+    assert!(!open.remove_runtime_var("a"));
+    assert_eq!(open.runtime().len(), 1);
+    open.clear_runtime();
+    assert!(open.runtime().is_empty());
+}

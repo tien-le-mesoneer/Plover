@@ -399,6 +399,12 @@ export type VarsDto = { vars: Array<VarDto>,
  */
 setLater: Array<SetLaterDto>, };
 
+export type RuntimeVarsDto = { 
+/**
+ * Sorted by name; `source` is always `runtime`.
+ */
+vars: Array<VarDto>, };
+
 export type ResolvedUrlDto = { url: string, 
 /**
  * Some secret value was replaced.

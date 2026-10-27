@@ -154,6 +154,25 @@ impl OpenCollection {
             .insert(name.to_owned(), value);
     }
 
+    /// Removes one runtime variable; `false` when it was not set. A send or run already
+    /// going still applies its own changes when it ends.
+    pub fn remove_runtime_var(&self, name: &str) -> bool {
+        self.runtime
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(name)
+            .is_some()
+    }
+
+    /// Removes every runtime variable. A send or run already going still applies its own
+    /// changes when it ends.
+    pub fn clear_runtime(&self) {
+        self.runtime
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
+    }
+
     /// Applies what one send or run changed in the runtime variables (`before` → `after`):
     /// values it set or changed, and names it deleted. Changes other sends or runs made
     /// meanwhile are kept.

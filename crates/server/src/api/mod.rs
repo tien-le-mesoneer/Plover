@@ -71,8 +71,12 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/collections/{id}/vars", post(vars::explain))
         .route(
+            "/collections/{id}/runtime-vars",
+            get(vars::list_runtime_vars).delete(vars::clear_runtime_vars),
+        )
+        .route(
             "/collections/{id}/runtime-vars/{name}",
-            put(vars::set_runtime_var),
+            put(vars::set_runtime_var).delete(vars::delete_runtime_var),
         )
         .route("/curl/parse", post(curl::parse))
         .route("/collections/{id}/curl", post(curl::copy))
