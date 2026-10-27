@@ -118,6 +118,7 @@ describe("runtime-variable panel", () => {
     render(<RuntimeVarsPanel collectionId="c" />);
     const button = screen.getByRole("button", { name: "Runtime variables" });
     const dialog = await openPanel();
+    expect(document.activeElement).toBe(dialog);
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(button);

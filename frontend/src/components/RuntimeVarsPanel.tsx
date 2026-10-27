@@ -62,6 +62,11 @@ export function RuntimeVarsPanel({ collectionId }: { collectionId: string | null
     };
   }, [open, load, collectionId]);
 
+  // Focus moves into the panel, so Esc and Tab work from the keyboard right away.
+  useEffect(() => {
+    if (open) panel.current?.focus();
+  }, [open]);
+
   if (!collectionId) return null;
 
   const close = () => {
@@ -173,7 +178,11 @@ export function RuntimeVarsPanel({ collectionId }: { collectionId: string | null
           <h3>
             Clear {count} runtime variable{count === 1 ? "" : "s"}?
           </h3>
-          <p>Requests that use them see them as undefined until a script or Save as variable sets them again.</p>
+          <p>
+            {count === 1
+              ? "Requests that use it see it as undefined until a script or Save as variable sets it again."
+              : "Requests that use them see them as undefined until a script or Save as variable sets them again."}
+          </p>
           <div className="actions">
             <button type="button" onClick={() => setConfirm(false)}>
               Cancel
