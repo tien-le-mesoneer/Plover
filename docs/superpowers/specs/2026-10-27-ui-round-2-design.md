@@ -20,9 +20,11 @@ keyboard or touch users.
    collection name (with a ▸/▾ caret) folds its whole tree. The state is remembered per
    collection across restarts. Keyboard: Enter or Space on the header toggles it, and the
    header has `aria-expanded`.
-2. **Resizable request/response split.** Drag handle between the two panes; arrow keys move
-   it, Home/End go to the limits, Enter or a double-click resets it. The split is
-   remembered across restarts, following the same pattern as the sidebar width.
+2. **Resizable request/response split, side by side or stacked.** A drag handle sits
+   between the two panes: arrow keys move it, Home/End go to the limits, and Enter or a
+   double-click resets it. A small toggle button switches between side by side
+   (left/right) and stacked (top/bottom). The ratio and the layout choice are remembered
+   across restarts, following the same pattern as the sidebar width.
 3. **Request history** (the user's answer: "every Send, saved"). Every Send from the UI,
    including scratch tabs, is recorded with its request and response. Values are masked the
    same way run history masks them. The last 100 sends are kept, in one list for all
@@ -77,20 +79,44 @@ Marked **user** where the user decided, **call** where this design decides.
   `false`), saved by the existing debounced `startUiPersistence`. Older state files read as
   expanded.
 
-### 2. Request/response split
+### 2. Request/response split and layout toggle
 
-- **call:** Store one ratio, not pixels: `splitPermille: Option<u16>` on
-  `LayoutState`/`LayoutDto`, valid 200..=800, `None` = 500. An integer keeps `Eq` on the
-  struct. The same ratio applies whether the panes are side by side (window ≥ 1100 px, as
-  today) or stacked (narrower windows, `@media (max-width: 1100px)`). The handle's
-  orientation follows the layout: `aria-orientation="vertical"` side by side,
-  `"horizontal"` stacked, read from `matchMedia("(max-width: 1100px)")`.
-- **call:** Each pane keeps at least 240 px wide (side by side) or 120 px tall (stacked)
-  whatever the ratio, matching the current `min-height` rules. Keyboard step: 2% per arrow
-  key.
-- **call:** The new `PaneResizer` copies `SidebarResizer`'s behaviour and ARIA (separator,
-  `aria-valuenow` as a percentage, `title` "Drag to resize · double-click to reset"). Run
-  tabs keep their own layout; the split is only in the request editor.
+- **user:** A button switches the split between side by side (left/right) and stacked
+  (top/bottom). The default is side by side, and the choice is remembered. If the window
+  is too narrow for side by side, the panes stack automatically. The saved choice comes
+  back when the window widens. This replaces today's fixed "stacked below 1100 px" CSS
+  rule.
+- **call — storage:** Each orientation keeps its own ratio, because a 30 % width does not
+  mean a useful 30 % height. `LayoutState`/`LayoutDto` gain three fields:
+  - `splitOrientation: "side" | "stacked" | null`, where `null` = side;
+  - `splitPermille: Option<u16>`, the side-by-side ratio;
+  - `stackedSplitPermille: Option<u16>`.
+
+  Both ratios are valid 200..=800, and `None` = 500. Integers keep `Eq` on the struct.
+- **call — "too narrow":** Side by side needs the `.split` box (measured with
+  `ResizeObserver`, not the window) to be at least `2 × 240 + 6` px. That is both panes'
+  240 px minimum plus the handle. Below that the panes are stacked whatever the choice,
+  and nothing is saved, so the stored choice survives.
+- **call — button when forced:** The button shows the **effective** state (stacked,
+  `aria-pressed="true"`). It uses `aria-disabled="true"`, not `disabled`, so it stays
+  focusable and its tooltip can give the reason: "Too narrow to place side by side".
+  Activating it then does nothing.
+- **call — placement:** The button sits at the right end of the request pane's section tab
+  bar (Params · Headers · … · Body). That bar is always visible, unlike the response
+  status line, which only appears after a send. The button is a 24 × 24 px icon-only
+  toggle with two SVG icons (two columns or two rows, in the stroke style of `icons.tsx`).
+  - `aria-label` is "Stack request and response" when side by side, and "Place request
+    and response side by side" when stacked.
+  - `aria-pressed` is true when stacked.
+  - The tooltip (`title`) repeats the label.
+  - It has the standard visible focus ring.
+- **call:** Each pane keeps a minimum of 240 px wide (side by side) or 120 px tall
+  (stacked), whatever the ratio. Keyboard step: 2 % per arrow key.
+- **call:** The new `PaneResizer` copies `SidebarResizer`'s behaviour and ARIA: separator,
+  `aria-valuenow` as a percentage, and the title "Drag to resize · double-click to reset".
+  Its `aria-orientation` follows the effective layout: `vertical` side by side,
+  `horizontal` stacked. Run tabs keep their own layout; the split is only in the request
+  editor.
 
 ### 3. Request history
 
