@@ -11,6 +11,7 @@ mod history;
 mod import;
 mod native;
 mod requests;
+mod resolve_text;
 mod session;
 mod vars;
 pub use requests::MAX_INLINE_BODY;
@@ -81,6 +82,10 @@ pub fn routes() -> Router<AppState> {
         .route("/curl/parse", post(curl::parse))
         .route("/collections/{id}/curl", post(curl::copy))
         .route("/collections/{id}/resolved-url", post(curl::resolved))
+        .route(
+            "/collections/{id}/resolve-text",
+            post(resolve_text::resolve_text),
+        )
         .route(
             "/collections/{id}/import/har/preview",
             post(import::preview_har),

@@ -423,6 +423,22 @@ export type RuntimeVarsDto = {
  */
 vars: Array<VarDto>, };
 
+export type ResolveTextBody = { item: string | null, draft: HttpRequestDto | null, env: string | null, 
+/**
+ * At most 1 MiB.
+ */
+text: string, 
+/**
+ * Return the text even when it contains a secret.
+ */
+reveal: boolean, };
+
+export type ResolveTextDto = { 
+/**
+ * `null` when the text contains a secret and `reveal` was false.
+ */
+text: string | null, containsSecret: boolean, };
+
 export type ResolvedUrlDto = { url: string, 
 /**
  * Some secret value was replaced.

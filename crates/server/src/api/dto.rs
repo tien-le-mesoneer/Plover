@@ -1219,6 +1219,8 @@ pub fn typescript_bindings() -> String {
         super::vars::SetLaterDto::decl(&cfg),
         super::vars::VarsDto::decl(&cfg),
         super::vars::RuntimeVarsDto::decl(&cfg),
+        super::resolve_text::ResolveTextBody::decl(&cfg),
+        super::resolve_text::ResolveTextDto::decl(&cfg),
         ResolvedUrlDto::decl(&cfg),
         RevealBody::decl(&cfg),
         CurlTextDto::decl(&cfg),

@@ -1,6 +1,8 @@
 // The only module that talks to the backend (fetch + WebSocket).
 import type {
   ResolvedUrlBody,
+  ResolveTextBody,
+  ResolveTextDto,
   ResolvedUrlDto,
   LayoutDto,
   ApiErrorDto,
@@ -114,6 +116,8 @@ export interface ApiClient {
   copyCurl(id: string, body: CopyCurlBody): Promise<CurlTextDto>;
   /** The URL Send would use, variables filled in and secret values masked. */
   resolvedUrl(id: string, body: ResolvedUrlBody): Promise<ResolvedUrlDto>;
+  /** `{{variables}}` filled in for copying; `text` is null for a secret unless `reveal`. */
+  resolveText(id: string, body: ResolveTextBody): Promise<ResolveTextDto>;
   /** Where each variable a send would use comes from; masked, runs nothing. */
   vars(id: string, body: VarsBody): Promise<VarsDto>;
   /** Sets a runtime variable like `bru.setVar`; the next send sees it. */
@@ -291,6 +295,7 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     parseCurl: (text) => call("POST", "/curl/parse", { text }),
     copyCurl: (id, body) => call("POST", `${collections(id)}/curl`, body),
     resolvedUrl: (id, body) => call("POST", `${collections(id)}/resolved-url`, body),
+    resolveText: (id, body) => call("POST", `${collections(id)}/resolve-text`, body),
     reveal: (collection, item) => call("POST", "/native/reveal", { collection, item }),
     vars: (id, body) => call("POST", `${collections(id)}/vars`, body),
     setRuntimeVar: (id, name, value) => call("PUT", `${collections(id)}/runtime-vars/${enc(name)}`, { value }),
