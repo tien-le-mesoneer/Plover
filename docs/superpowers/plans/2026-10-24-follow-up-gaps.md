@@ -34,6 +34,11 @@ Decisions made in this plan are marked *Claude's call*.
 
 **Verified on `b31d443`** (all five plans merged and pushed).
 
+**Later work:** `2026-10-27-ui-round-2.md` builds on this plan and should run after it.
+Its send history reuses the `Masker` from Task 3, and it changes the collection header that
+Task 7 adds a context menu to; keep that header's right-click and Shift+F10 menu working
+when round 2 adds the collapse toggle and hover-only buttons.
+
 ## Global Constraints
 
 ### Credential names
