@@ -434,3 +434,206 @@ fn masked_iteration_live() {
     assert_eq!(live.data["user"], json!("u"));
     assert!(r.masked_iteration(1).is_none());
 }
+
+const JWT: &str = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig";
+
+fn request_body(record: &plover_core::run_record::RunRecord, i: usize) -> &BodyDetail {
+    &record.results[i].outcome.request.as_ref().unwrap().body
+}
+
+fn response_body(record: &plover_core::run_record::RunRecord, i: usize) -> &BodyDetail {
+    &record.results[i].outcome.response.as_ref().unwrap().body
+}
+
+#[test]
+fn xml_password_in_request_masked_by_name() {
+    let mut r = recorder(&[]);
+    push(
+        &mut r,
+        outcome(Exchange {
+            request_body: text("<login><user>u</user><password>ab</password></login>"),
+            ..Exchange::default()
+        }),
+    );
+    let record = r.finish(finished());
+    assert_eq!(
+        body_text(request_body(&record, 0)),
+        "<login><user>u</user><password>***</password></login>"
+    );
+}
+
+#[test]
+fn json_number_credential_becomes_masked_string() {
+    let mut r = recorder(&[]);
+    push(
+        &mut r,
+        outcome(Exchange {
+            request_body: text(r#"{"pin":1234,"count":1234,"password":1234}"#),
+            ..Exchange::default()
+        }),
+    );
+    let record = r.finish(finished());
+    let body = body_text(request_body(&record, 0));
+    assert_eq!(body, r#"{"pin":1234,"count":1234,"password":"***"}"#);
+    serde_json::from_str::<serde_json::Value>(body).unwrap();
+}
+
+#[test]
+fn response_jwt_never_sent_is_masked() {
+    let mut r = recorder(&[]);
+    let body = format!(r#"{{"refresh_token":"{JWT}","x":"{JWT}2"}}"#);
+    push(
+        &mut r,
+        outcome(Exchange {
+            response_body: text(&body),
+            ..Exchange::default()
+        }),
+    );
+    push(
+        &mut r,
+        outcome(Exchange {
+            url: "http://h/next",
+            ..Exchange::default()
+        }),
+    );
+    let record = r.finish(finished());
+    assert_eq!(
+        body_text(response_body(&record, 0)),
+        r#"{"refresh_token":"***","x":"***"}"#
+    );
+}
+
+#[test]
+fn x_api_key_masked_whole_and_by_value() {
+    let mut r = recorder(&[]);
+    push(
+        &mut r,
+        outcome(Exchange {
+            request_headers: vec![("X-Api-Key", "tok-AAAAAAAA")],
+            ..Exchange::default()
+        }),
+    );
+    push(
+        &mut r,
+        outcome(Exchange {
+            response_body: text("echo tok-AAAAAAAA"),
+            ..Exchange::default()
+        }),
+    );
+    let record = r.finish(finished());
+    let headers = &record.results[0].outcome.request.as_ref().unwrap().headers;
+    assert_eq!(headers[0].1, "***");
+    assert_eq!(body_text(response_body(&record, 1)), "echo ***");
+}
+
+#[test]
+fn query_credential_masked_by_name() {
+    let mut r = recorder(&[]);
+    push(
+        &mut r,
+        outcome(Exchange {
+            url: "https://example.test/a?password=ab&page=2&api_key=k#f",
+            ..Exchange::default()
+        }),
+    );
+    let record = r.finish(finished());
+    let masked = "https://example.test/a?password=***&page=2&api_key=***#f";
+    assert_eq!(record.results[0].url, masked);
+    assert_eq!(
+        record.results[0].outcome.request.as_ref().unwrap().url,
+        masked
+    );
+    assert_eq!(
+        record.results[0].outcome.response.as_ref().unwrap().url,
+        masked
+    );
+}
+
+#[test]
+fn credential_form_field_and_part_masked_whole() {
+    let mut r = recorder(&[]);
+    push(
+        &mut r,
+        outcome(Exchange {
+            request_body: BodyDetail::Form {
+                fields: vec![
+                    ("password".into(), "ab".into()),
+                    ("q".into(), "about".into()),
+                ],
+            },
+            response_body: BodyDetail::Multipart {
+                parts: vec![plover_core::run_record::PartDetail::Text {
+                    name: "Token".into(),
+                    value: "t1".into(),
+                    content_type: None,
+                }],
+            },
+            ..Exchange::default()
+        }),
+    );
+    let record = r.finish(finished());
+    let BodyDetail::Form { fields } = request_body(&record, 0) else {
+        panic!()
+    };
+    assert_eq!(fields[0].1, "***");
+    assert_eq!(fields[1].1, "about");
+    let BodyDetail::Multipart { parts } = response_body(&record, 0) else {
+        panic!()
+    };
+    let plover_core::run_record::PartDetail::Text { value, .. } = &parts[0] else {
+        panic!()
+    };
+    assert_eq!(value, "***");
+}
+
+#[test]
+fn short_named_value_not_masked_elsewhere() {
+    let mut r = recorder(&[]);
+    push(
+        &mut r,
+        outcome(Exchange {
+            request_body: text(r#"{"password":"ab"}"#),
+            response_body: text("about"),
+            ..Exchange::default()
+        }),
+    );
+    let record = r.finish(finished());
+    assert_eq!(body_text(request_body(&record, 0)), r#"{"password":"***"}"#);
+    assert_eq!(body_text(response_body(&record, 0)), "about");
+}
+
+#[test]
+fn named_value_of_four_chars_masked_elsewhere() {
+    let mut r = recorder(&[]);
+    push(
+        &mut r,
+        outcome(Exchange {
+            request_body: text("<password>pw-1</password>"),
+            response_body: text("you sent pw-1"),
+            ..Exchange::default()
+        }),
+    );
+    let record = r.finish(finished());
+    assert_eq!(body_text(response_body(&record, 0)), "you sent ***");
+}
+
+#[test]
+fn jwt_in_console_and_url_masked() {
+    let mut r = recorder(&[]);
+    let mut o = outcome(Exchange {
+        url: "http://h/cb#id_token=x",
+        ..Exchange::default()
+    });
+    o.console.push(ConsoleLine {
+        level: LogLevel::Log,
+        text: format!("got {JWT}"),
+    });
+    o.request.as_mut().unwrap().url = format!("http://h/cb?state={JWT}");
+    push(&mut r, o);
+    let record = r.finish(finished());
+    assert_eq!(record.results[0].outcome.console[0].text, "got ***");
+    assert_eq!(
+        record.results[0].outcome.request.as_ref().unwrap().url,
+        "http://h/cb?state=***"
+    );
+}

@@ -143,6 +143,24 @@ Limits (*Claude's call*):
 - Bodies stored as base64 (not UTF-8) are not searched.
 - Values read from `process.env` are not masked.
 
+**Amended by the follow-up plan** (`docs/superpowers/plans/2026-10-24-follow-up-gaps.md`,
+approved by the user on 2026-10-27). These rules replace the "`X-Api-Key` is not masked"
+limit above:
+
+- **By-name pass**, before the value pass: credential-named values are masked whole,
+  whatever their length or type. These are credential spans in text bodies
+  (`credentials::body_credential_spans`: JSON keys, XML elements and attributes),
+  form fields and multipart text parts named in `CREDENTIAL_FIELDS`, and URL query
+  values named in `CREDENTIAL_FIELDS` or `TOKEN_QUERY_PARAMS`. A JSON number becomes the
+  string `"***"` so the JSON stays valid.
+- **Token headers** (`credentials::TOKEN_HEADERS`, e.g. `X-Api-Key`) are masked whole
+  like `Authorization`, and their values (8 characters or more) are collected for the
+  value pass.
+- **Every JWT** found anywhere in the run (URLs, headers, bodies, console) is collected
+  for the value pass, whatever its length.
+- Strings found by name are collected for the value pass from 4 characters; numbers and
+  shorter strings are masked by name only, so `***` never spreads over `200` or `2024`.
+
 Masking applies to the live detail in the app too. While a run is still going, the
 detail of a finished row is masked with the values collected so far; a token first
 sent in a header by a later request is masked once the run ends, and the app refetches
