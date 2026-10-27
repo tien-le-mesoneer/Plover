@@ -32,7 +32,7 @@ The rules they extend come from:
 
 Decisions made in this plan are marked *Claude's call*.
 
-**Verified on `b31d443`** (all five plans merged and pushed).
+**Verified on `b31d443`** (all five plans merged and pushed). Re-checked on `386dbe9`: no code changed since, every name in Task 0 exists. Notes: `explain` has no `shown_value` yet (Task 5 extracts it); `Menu.tsx` exports `Menu` and `MenuItem` only (Task 7 exports `menuKeyDown`); the run tab is `components/run/RunTab.tsx`; `check:console` needs a fresh release `plv`, so the gate builds `cargo build --release -p plover-cli` before it.
 
 **Later work:** `2026-10-27-ui-round-2.md` builds on this plan and should run after it.
 Its send history reuses the `Masker` from Task 3, and it changes the collection header that
