@@ -104,16 +104,21 @@ runs ▾** lists saved runs (app and `plv`) and shows one in the same tab.
 - Bodies: each request and response body keeps at most 1 MiB, and one run at most
   50 MiB of bodies; later bodies are marked "not kept". File uploads keep only the
   file name.
-- Masking, before anything is saved or reported: the values of `Authorization`,
-  `Proxy-Authorization`, `Cookie` and `Set-Cookie` headers (and the token after
-  `Bearer `/`Basic `, and cookie values) and every secret of the environment are
-  replaced with `***` wherever they appear in the run: URLs, headers, bodies, console,
-  test and assert messages. A login token returned in a body is masked there too,
-  because it is later sent as `Authorization`. Limits:
+- Masking, before anything is saved or reported, in two passes:
+  - **by name**: credential-named values (the column names listed under data-driven
+    runs below) are masked whole, whatever their length or type, in JSON bodies (a
+    number becomes `"***"`), XML elements and attributes (`<wsse:Password>` counts),
+    form fields, multipart text parts and URL query values (also `key`);
+  - **by value**: the values of `Authorization`, `Proxy-Authorization`, `Cookie`,
+    `Set-Cookie` and token headers such as `X-Api-Key` (and the token after
+    `Bearer `/`Basic `, and cookie values), every secret of the environment, every
+    credential found by name (4 characters or more) and every JWT are replaced with
+    `***` wherever they appear in the run: URLs, headers, bodies, console, test and
+    assert messages. A login token returned in a body is masked there too.
+  Limits:
   - header-derived values shorter than 8 characters, and secrets shorter than 4, are
-    not masked;
-  - a value never sent in one of those headers and not a secret stays visible (for
-    example a token sent only as `X-Api-Key`);
+    not searched for elsewhere; a number or a 1–3 character credential is masked only
+    next to its name (so `***` does not spread over `200` or `2024`);
   - only the exact text is matched, not URL-encoded, base64 or JSON-escaped forms;
   - binary (non-UTF-8) bodies are not searched; values from `process.env` are not masked.
 
@@ -143,7 +148,8 @@ plv run coll --env local --iteration-count 5           # five times, no file
 - Values of credential-named columns (`password`, `passwd`, `client_secret`, `secret`,
   `token`, `access_token`, `refresh_token`, `id_token`, `api_key`, `apikey`,
   `assertion`, `client_assertion`) are masked everywhere: history, reports, `--verbose`
-  output and the app.
+  output and the app. Numbers and values shorter than 4 characters are masked by name
+  (the column, a JSON key, a form field), not where they appear without their name.
 - Reports: the JSON report has one `{ iterationIndex, summary, results }` entry per
   iteration (like Bruno); the HTML report has an "Iteration N of M" section with the
   row; JUnit stays one flat list with Bruno's suite names.
@@ -210,12 +216,16 @@ never secrets. `plv run` reads and writes only its `runs/` folder.
   Copy and Save always use the whole body.
 - **Sidebar width:** drag its edge (or focus it and use the arrow keys); double-click
   resets it. The width is remembered.
-- **Import HAR** (above the sidebar) turns a recorded browser session into requests and
-  moves every credential into secret variables. See
+- **Import HAR** (above the sidebar, or right-click a folder or the collection name, or
+  Shift+F10 on a folder) turns a recorded browser session into requests and moves
+  every credential into secret variables, including passwords and tokens inside XML
+  and text bodies; the request sent is byte-identical to the captured one. See
   [Capture a browser flow and import it](docs/capture-with-claude.md).
+- **Runtime variables** (`{x}` next to the environment): the values scripts and Save as
+  variable set, credentials shown as `••••`; remove one, or Clear all (asks first).
 
 Shortcuts: `⌘/Ctrl+O` open collection, `⌘/Ctrl+K` quick open, `⌘/Ctrl+P` filter
-requests (`Esc` clears), `⌘/Ctrl+Enter` send, `Esc` cancel a running send, `⌘/Ctrl+S` save, `⌘/Ctrl+F` search the response body, Enter on a
+requests (`Esc` clears), `⌘/Ctrl+Enter` send, `Esc` cancel a running send or run, `⌘/Ctrl+S` save, `⌘/Ctrl+F` search the response body, Enter on a
 JSON value for its menu, arrow keys in the sidebar tree and tab strips,
 `Esc` closes dialogs. `⌘/Ctrl+W` closes a request tab in the desktop app (browsers
 keep that shortcut for closing the window).
