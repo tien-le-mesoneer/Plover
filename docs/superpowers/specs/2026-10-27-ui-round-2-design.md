@@ -112,9 +112,9 @@ Marked **user** where the user decided, **call** where this design decides.
   is written. The page only ever receives masked records.
 - **call:** Saving never fails the send. A write error shows in the response as a small
   "Not saved to history: …" note and is logged.
-- **call:** History is not turned off by `CI` (that switch is for `plv run`). There is no
-  `--no-history` for `plv serve` yet. A **Clear history** button (with confirmation, for
-  all collections or the filtered one) covers privacy.
+- **call:** History is not turned off by `CI` (that switch is for `plv run`).
+- **user:** `plv serve` gets **no** `--no-history` flag. The **Clear history** button
+  (with confirmation, for all collections or the filtered one) is enough.
 - **call — placement:** A **History** button (clock icon) next to New request and Import
   HAR above the sidebar opens a **History tab**. The tab works like run tabs: one instance,
   never remembered across restarts. It has a list on the left (method, name or "Scratch",
@@ -153,6 +153,8 @@ Marked **user** where the user decided, **call** where this design decides.
   asks with the same confirmation Copy as cURL uses ("This value is a secret. Copy
   anyway?"), and only on yes asks again with `reveal: true` and writes the result to the
   clipboard. Undefined and "set later" variables have no copy button.
+- **user:** **Save as variable** in the JSON value menu no longer puts `{{name}}` on the
+  clipboard. It only saves the runtime variable and shows the "Saved {{name}}" note.
 
 ### 5. Copy a param's value
 
@@ -179,9 +181,12 @@ Marked **user** where the user decided, **call** where this design decides.
   under `hover: none`. They sit above the editor's scrollbar gutter. Response: Copy body
   and Save to file move out of `StatusLine` into the body box corner. The "Copied" live
   note stays in the status line so screen readers keep hearing it. Request: the Body tab's
-  text editors (JSON, XML, text, GraphQL query) get Copy request body, which copies the
-  draft text as written, with `{{vars}}` unfilled. Form and multipart bodies have no
-  corner copy.
+  text editors (JSON, XML, text, GraphQL query) get Copy request body. Form and multipart
+  bodies have no corner copy.
+- **user:** Copy request body copies the **resolved** text, with variables filled in for
+  the selected environment. It goes through `resolve-text`, with the same secret rule as
+  the variable card: when a secret is involved, confirm first, and only then fetch with
+  `reveal: true`. `resolve-text` therefore accepts up to 1 MiB of text, the body cap.
 - **call:** When a JSONPath filter is active, Copy still copies the filtered result, as
   today.
 
