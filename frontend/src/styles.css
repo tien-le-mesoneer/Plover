@@ -199,6 +199,16 @@ td .var-input { display: flex; }
 .var-setlater { text-decoration: underline dotted var(--warn); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .var-undefined { text-decoration: underline wavy var(--err); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
 .var-hover { position: fixed; z-index: 20; max-width: min(420px, 90vw); background: var(--bg); color: var(--fg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 16px var(--scrim); display: flex; flex-direction: column; gap: 2px; }
+.var-suggest {
+  position: fixed; z-index: 21; margin: 0; padding: 2px 0; list-style: none; min-width: 200px; max-width: min(420px, 90vw);
+  max-height: 240px; overflow-y: auto; background: var(--bg); color: var(--fg); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); box-shadow: 0 4px 16px var(--scrim); font-size: 12px;
+}
+.var-suggest li { display: flex; align-items: baseline; gap: 12px; justify-content: space-between; min-height: 24px; padding: 3px 10px; cursor: pointer; }
+.var-suggest li:hover { background: var(--bg-2); }
+.var-suggest li.active { background: var(--bg-3); box-shadow: inset 2px 0 0 var(--focus); }
+.var-suggest-name { font-family: var(--font-mono); overflow-wrap: anywhere; }
+.var-suggest-scope { color: var(--muted); white-space: nowrap; flex: none; }
 .var-hover-head { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
 .var-hover-name { font-family: var(--font-mono); font-weight: 600; }
 .var-hover code { font-family: var(--font-mono); overflow-wrap: anywhere; }

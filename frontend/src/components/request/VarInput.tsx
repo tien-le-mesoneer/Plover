@@ -1,5 +1,16 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type InputHTMLAttributes, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type InputHTMLAttributes,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { copyResolved } from "../../lib/copyResolved";
+import { acceptSuggestion, openToken, suggestions, type VarSuggestion } from "../../lib/varSuggest";
 import { copiedValueNote } from "../../lib/varText";
 import { explain, tokenize, type VarToken } from "../../lib/varTokens";
 import { useTabs } from "../../store/tabs";
@@ -7,6 +18,7 @@ import { useVars } from "../../store/vars";
 import { useWorkspace } from "../../store/workspace";
 import { useCopy } from "../response/useCopy";
 import { VarHover } from "./VarHover";
+import { VarSuggest } from "./VarSuggest";
 
 type Props = InputHTMLAttributes<HTMLInputElement> & {
   /** The request tab whose variables explain the `{{tokens}}`. */
@@ -24,10 +36,19 @@ const LEAVE_DELAY = 150;
 const isCopyShortcut = (e: KeyboardEvent<HTMLInputElement>) =>
   (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "c";
 
+type Anchor = { left: number; bottom: number };
+
+/** Sets an input's value the way typing does, so React's `onChange` sees it. */
+function typeValue(el: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(el, value);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 /**
  * A plain `<input>` with `{{variables}}` underlined by class (defined, set later,
- * undefined) on an `aria-hidden` mirror behind it, and a hover card for the token under
- * the pointer or the caret. The input keeps its value, selection and events.
+ * undefined) on an `aria-hidden` mirror behind it, a hover card for the token under the
+ * pointer or the caret, and a list of variable names while a `{{` is being typed (an
+ * ARIA combobox while the list is open). The input keeps its value, selection and events.
  */
 export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
   const vars = useVars((s) => s.byTab[tabKey]);
@@ -37,9 +58,12 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
   const mirror = useRef<HTMLDivElement>(null);
   const caretTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pendingCaret = useRef<number | null>(null);
   const { note, say } = useCopy();
-  const [shown, setShown] = useState<{ token: VarToken; anchor: { left: number; bottom: number } } | null>(null);
+  const [shown, setShown] = useState<{ token: VarToken; anchor: Anchor } | null>(null);
+  const [suggest, setSuggest] = useState<{ start: number; items: VarSuggestion[]; active: number } | null>(null);
   const tooltipId = useId();
+  const listId = useId();
   const text = String(props.value ?? "");
   const tokens = tokenize(text);
 
@@ -53,6 +77,11 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
       m.style[p] = cs[p];
     }
     m.scrollLeft = el.scrollLeft;
+    // After a picked suggestion re-renders the value, put the caret after its `}}`.
+    if (pendingCaret.current !== null) {
+      el.setSelectionRange(pendingCaret.current, pendingCaret.current);
+      pendingCaret.current = null;
+    }
   });
   useEffect(
     () => () => {
@@ -66,27 +95,55 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
   const copyable = (name: string) => explain(name, vars)?.kind === "defined";
 
   const tokenAt = (offset: number) => tokens.find((t) => offset > t.start && offset < t.end);
-  const spanBox = (token: VarToken) => {
-    const span = mirror.current?.querySelector<HTMLElement>(`[data-start="${token.start}"]`);
+  const spanBox = (start: number): Anchor => {
+    const span = mirror.current?.querySelector<HTMLElement>(`[data-start="${start}"]`);
     const r = span?.getBoundingClientRect() ?? input.current?.getBoundingClientRect();
     return { left: r?.left ?? 0, bottom: r?.bottom ?? 0 };
+  };
+
+  /**
+   * Narrows or closes the name list for the caret position; it opens only while typing
+   * (`mayOpen`), not when the caret is merely moved into a `{{token}}`.
+   */
+  const updateSuggest = (el: HTMLInputElement, mayOpen: boolean) => {
+    if (!suggest && !mayOpen) return;
+    const caret = el.selectionStart;
+    const open = caret !== null && caret === el.selectionEnd ? openToken(el.value, caret) : null;
+    const items = open ? suggestions(vars, open.query, env) : [];
+    if (!open || items.length === 0) {
+      if (suggest) setSuggest(null);
+      return;
+    }
+    setShown(null);
+    setSuggest((s) => ({ start: open.start, items, active: s && s.start === open.start ? Math.min(s.active, items.length - 1) : 0 }));
+  };
+
+  const pick = (item: VarSuggestion) => {
+    const el = input.current;
+    if (!el || el.selectionStart === null) return;
+    const next = acceptSuggestion(el.value, el.selectionStart, item.name);
+    pendingCaret.current = next.caret;
+    setSuggest(null);
+    typeValue(el, next.text);
+    el.setSelectionRange(next.caret, next.caret);
   };
 
   const onCaret = () => {
     clearTimeout(caretTimer.current);
     const el = input.current;
-    if (!el || el.selectionStart !== el.selectionEnd || el.selectionStart === null) return;
+    if (suggest || !el || el.selectionStart !== el.selectionEnd || el.selectionStart === null) return;
     const token = tokenAt(el.selectionStart);
     if (!token) {
       if (shown) setShown(null);
       return;
     }
-    caretTimer.current = setTimeout(() => setShown({ token, anchor: spanBox(token) }), CARET_DELAY);
+    caretTimer.current = setTimeout(() => setShown({ token, anchor: spanBox(token.start) }), CARET_DELAY);
   };
 
   const onMouseMove = (e: MouseEvent<HTMLInputElement>) => {
     props.onMouseMove?.(e);
     clearTimeout(leaveTimer.current);
+    if (suggest) return;
     const spans = mirror.current?.querySelectorAll<HTMLElement>("[data-start]") ?? [];
     for (const span of spans) {
       const r = span.getBoundingClientRect();
@@ -100,6 +157,26 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (suggest) {
+      const last = suggest.items.length - 1;
+      const move = (active: number) => {
+        e.preventDefault();
+        setSuggest({ ...suggest, active });
+      };
+      if (e.key === "ArrowDown") return move(suggest.active >= last ? 0 : suggest.active + 1);
+      if (e.key === "ArrowUp") return move(suggest.active <= 0 ? last : suggest.active - 1);
+      if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        pick(suggest.items[suggest.active]!);
+        return;
+      }
+      if (e.key === "Escape") {
+        // Closes the list only: Esc must not also cancel a running send.
+        e.preventDefault();
+        setSuggest(null);
+        return;
+      }
+    }
     const el = input.current;
     if (isCopyShortcut(e) && el && el.selectionStart !== null && el.selectionStart === el.selectionEnd) {
       const token = tokenAt(el.selectionStart);
@@ -118,10 +195,16 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
   };
 
   const info = shown && vars ? explain(shown.token.name, vars) : null;
+  // The mirror, with an empty marker where an open `{{` starts (the list sits under it).
+  const anchorAt = suggest && !tokens.some((t) => t.start === suggest.start) ? suggest.start : null;
+  const plain = (from: number, to: number): ReactNode[] => {
+    if (anchorAt === null || anchorAt < from || anchorAt >= to) return [text.slice(from, to)];
+    return [text.slice(from, anchorAt), <span key="anchor" data-start={anchorAt} />, text.slice(anchorAt, to)];
+  };
   const pieces: ReactNode[] = [];
   let at = 0;
   for (const t of tokens) {
-    pieces.push(text.slice(at, t.start));
+    pieces.push(...plain(at, t.start));
     const cls = vars ? explain(t.name, vars)?.kind : undefined;
     pieces.push(
       <span key={t.start} data-start={t.start} className={cls ? `var var-${cls.toLowerCase()}` : "var"}>
@@ -130,7 +213,17 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
     );
     at = t.end;
   }
-  pieces.push(text.slice(at));
+  pieces.push(...plain(at, text.length));
+  const optionId = (i: number) => `${listId}-${i}`;
+  const combobox = suggest
+    ? {
+        role: "combobox",
+        "aria-expanded": true,
+        "aria-controls": listId,
+        "aria-autocomplete": "list" as const,
+        "aria-activedescendant": optionId(suggest.active),
+      }
+    : {};
 
   return (
     <span className={`var-input ${wrapperClassName ?? ""}`.trim()}>
@@ -139,11 +232,19 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
       </div>
       <input
         {...props}
+        {...combobox}
         ref={input}
         aria-describedby={info ? tooltipId : props["aria-describedby"]}
+        onChange={(e) => {
+          props.onChange?.(e);
+          updateSuggest(e.currentTarget, true);
+        }}
         onKeyDown={onKeyDown}
         onKeyUp={(e) => {
           props.onKeyUp?.(e);
+          if (!["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(e.key)) {
+            updateSuggest(e.currentTarget, e.key.length === 1 && !e.metaKey && !e.ctrlKey);
+          }
           onCaret();
         }}
         onSelect={(e) => {
@@ -152,12 +253,14 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
         }}
         onClick={(e) => {
           props.onClick?.(e);
+          updateSuggest(e.currentTarget, false);
           onCaret();
         }}
         onBlur={(e) => {
           props.onBlur?.(e);
           clearTimeout(caretTimer.current);
           setShown(null);
+          setSuggest(null);
         }}
         onMouseMove={onMouseMove}
         onMouseLeave={(e) => {
@@ -174,7 +277,17 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
       <span className="sr-only" aria-live="polite">
         {note}
       </span>
-      {shown && info && (
+      {suggest && (
+        <VarSuggest
+          id={listId}
+          optionId={optionId}
+          items={suggest.items}
+          active={suggest.active}
+          onPick={pick}
+          anchor={() => spanBox(suggest.start)}
+        />
+      )}
+      {!suggest && shown && info && (
         <VarHover
           id={tooltipId}
           name={shown.token.name}

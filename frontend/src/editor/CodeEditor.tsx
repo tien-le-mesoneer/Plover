@@ -4,6 +4,7 @@ import { useVars } from "../store/vars";
 import { useWorkspace } from "../store/workspace";
 import { currentTheme, monaco } from "./monaco";
 import { copyResolved } from "../lib/copyResolved";
+import { registerVarCompletion } from "../lib/varSuggest";
 import { copiedValueNote } from "../lib/varText";
 import { explain } from "../lib/varTokens";
 import { varDecorations, varHoverAt, varTokenAt } from "./varDecorations";
@@ -37,10 +38,23 @@ export interface CodeEditorProps {
 const varModels = new Map<string, string>();
 let varHoverReady = false;
 
-/** One hover provider per body language, shared by all editors (Monaco providers are global). */
+/** The variables and environment of the request tab a body model belongs to. */
+function varsOfModel(model: monaco.editor.ITextModel) {
+  const key = varModels.get(model.uri.toString());
+  if (!key) return null;
+  const tab = useTabs.getState().tabs.find((t) => t.key === key);
+  const env = tab ? (useWorkspace.getState().activeEnv[tab.collectionId] ?? null) : null;
+  return { vars: useVars.getState().byTab[key], env };
+}
+
+/**
+ * One hover and one `{{` completion provider per body language, shared by all editors
+ * (Monaco providers are global).
+ */
 function ensureVarHover() {
   if (varHoverReady) return;
   varHoverReady = true;
+  registerVarCompletion(monaco, varsOfModel);
   for (const language of ["json", "plaintext", "xml"]) {
     monaco.languages.registerHoverProvider(language, {
       provideHover(model, position) {

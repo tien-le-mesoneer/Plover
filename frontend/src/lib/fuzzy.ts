@@ -66,6 +66,11 @@ function match(query: string, text: string): number | null {
   return total - text.length * 0.01;
 }
 
+/** Subsequence score of `query` in `text`, ignoring case and diacritics; `null` if no match. */
+export function matchScore(query: string, text: string): number | null {
+  return match(fold(query).trim(), fold(text));
+}
+
 /** Higher is better; matches in the name beat matches that need the folder path. */
 export function score(query: string, item: QuickItem): number | null {
   const q = fold(query).trim();
