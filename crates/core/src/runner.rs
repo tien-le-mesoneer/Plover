@@ -256,7 +256,7 @@ pub struct RequestOutcome {
 
 impl RequestOutcome {
     /// Why a completed request counts as failed, if it does.
-    fn failure_summary(&self) -> Option<String> {
+    pub(crate) fn failure_summary(&self) -> Option<String> {
         if let Some(f) = &self.script_error
             && f.phase != ScriptPhase::Tests
         {

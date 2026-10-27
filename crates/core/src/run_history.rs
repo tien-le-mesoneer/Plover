@@ -191,7 +191,7 @@ impl RunHistory {
     }
 }
 
-fn write(path: &Path, bytes: &[u8]) -> Result<(), HistoryError> {
+pub(crate) fn write(path: &Path, bytes: &[u8]) -> Result<(), HistoryError> {
     crate::store::write_atomic(path, bytes)
         .map(|_| ())
         .map_err(|e| match e {
@@ -227,7 +227,7 @@ fn read_run(dir: &Path, id: &RunId) -> Result<RunRecord, HistoryError> {
 
 /// Run IDs that have any file in `dir`, oldest first. Files whose names are not run IDs
 /// are ignored.
-fn run_ids(dir: &Path) -> Vec<RunId> {
+pub(crate) fn run_ids(dir: &Path) -> Vec<RunId> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -254,7 +254,7 @@ fn prune(dir: &Path) -> Result<(), HistoryError> {
 }
 
 /// Removes both files of a run; one that is already gone (a concurrent prune) is fine.
-fn remove(dir: &Path, id: &RunId) -> Result<(), HistoryError> {
+pub(crate) fn remove(dir: &Path, id: &RunId) -> Result<(), HistoryError> {
     for ext in [META_EXT, RUN_EXT] {
         match std::fs::remove_file(dir.join(format!("{id}{ext}"))) {
             Ok(()) => {}

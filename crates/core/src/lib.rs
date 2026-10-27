@@ -19,6 +19,7 @@ pub mod run_record;
 pub mod runner;
 pub mod script;
 pub mod secrets;
+pub mod send_history;
 mod serde_ms;
 pub mod session_host;
 pub mod store;
