@@ -45,6 +45,10 @@ keyboard or touch users.
    it) sits in the body box's top-right corner and appears on hover or focus. The same
    applies to the request body editor, which gets a Copy request body button.
 
+8. **Variable-name autocomplete** (user, added later). Typing `{{` in any field that has
+   variable hover today opens a list of variable names: URL, params, headers, auth, form
+   fields and the Monaco body editor.
+
 ## Non-goals
 
 - No history of `plv run` sends: those are already in run history.
@@ -53,6 +57,7 @@ keyboard or touch users.
 - No search inside history bodies. Filtering by collection is enough for 100 entries.
 - No re-send straight from history: **Open as new request**, then Send.
 - No grouping of several collections into named groups (the user chose collapse only).
+- No autocomplete for header names, past values or URLs. Only variable names (user).
 
 ## Anti-goals
 
@@ -78,6 +83,15 @@ Marked **user** where the user decided, **call** where this design decides.
 - **call:** Storage is a new `collapsed: bool` on `UiState`/`UiStateDto` (default
   `false`), saved by the existing debounced `startUiPersistence`. Older state files read as
   expanded.
+
+### 1b. Keyboard access to the collection menu
+
+- **call:** The follow-up work added a right-click menu on the collection header (Run,
+  Import HAR…), but the header itself cannot get keyboard focus, so that menu opens by
+  mouse only. Round 2's collapse toggle is focusable. **Shift+F10** and the
+  **ContextMenu** key on the toggle open the same menu, anchored to the toggle's
+  bottom-left corner, and focus moves into it (the folder rows already work this way).
+  The toggle gets `aria-keyshortcuts="Shift+F10"` and `aria-haspopup="menu"`.
 
 ### 2. Request/response split and layout toggle
 
@@ -133,8 +147,8 @@ Marked **user** where the user decided, **call** where this design decides.
   `KEEP_SENDS = 100` after each save. Without a state directory, history is kept in memory
   only, like run history.
 - **call:** Masking is the same `Masker` run history uses: environment secrets, values
-  sent in credential headers, and every rule `2026-10-24-follow-up-gaps.md` Task 3 adds
-  (header tokens, JWTs, by-name passes) once that lands. A send record is masked before it
+  sent in credential headers, and every rule `2026-10-24-follow-up-gaps.md` Task 3 added
+  (header tokens, JWTs, by-name passes; now on `main`). A send record is masked before it
   is written. The page only ever receives masked records.
 - **call:** Saving never fails the send. A write error shows in the response as a small
   "Not saved to history: …" note and is logged.
@@ -200,6 +214,36 @@ Marked **user** where the user decided, **call** where this design decides.
   is unchanged. Retry/Remove on an unavailable collection stay **always visible**: they
   are the only way out of that state.
 
+### 8. Variable-name autocomplete
+
+- **user:** Typing `{{` opens suggestions in every field with variable hover (URL, params,
+  headers, auth, form fields, Monaco body). Only variable names are suggested.
+- **user:** Each suggestion shows the name and its scope label (Environment: Dev,
+  Collection, Folder, Request, Runtime, Data row). Names that scripts set later are
+  included, labelled "set later". Secrets show **only the name**: no value and no preview.
+- **call:** The names come from the tab's existing `/vars` cache (`useVars.byTab`):
+  `vars` plus `setLater`. There is no new route and no request per keystroke.
+  `process.env.*` names are left out: the user listed env, collection, folder and runtime,
+  and `process.env` values are always masked anyway. The list shows no values at all, so
+  nothing secret can leak through it.
+- **call:** Plain inputs (`VarInput`) follow the ARIA 1.2 combobox pattern:
+  - the input gets `role="combobox"`, `aria-expanded`, `aria-controls` and
+    `aria-activedescendant`;
+  - a `role="listbox"` below the caret holds `role="option"` items.
+
+  Keys: ↑/↓ move, Enter or Tab accepts, Esc closes (and only closes: Esc doesn't also
+  cancel a running send while the list is open). Clicking an option accepts it. The list
+  closes when the caret leaves the `{{…` token.
+- **call:** Filtering uses the text typed after `{{`. Prefix matches come first, then the
+  existing `fuzzy.ts` matches, capped at 50 items. Accepting replaces the partial token
+  with `{{name}}` and adds the closing `}}` only if it isn't there already. The caret ends
+  after `}}`.
+- **call:** Monaco gets a `CompletionItemProvider` per body language, triggered by `{`.
+  It returns the same names (built by the same function as the plain inputs) with the
+  scope label as `detail`, `kind: Variable`, and an insert text that completes `}}`.
+- **call:** The new list and the variable card don't show at the same time: while the
+  list is open, the card stays hidden.
+
 ### 7. Copy in the corner
 
 - **call:** A small `CornerActions` wrapper places icon buttons absolutely in the top-right
@@ -218,17 +262,21 @@ Marked **user** where the user decided, **call** where this design decides.
 
 ## Interaction with `2026-10-24-follow-up-gaps.md`
 
-Both plans touch `Sidebar.tsx`, the masking code and the top bar:
+Both plans touch `Sidebar.tsx`, the masking code and the top bar. **Status:** the follow-up
+plan is implemented on local `main` (`1269eb7..3d4f09d`). Round 2 builds on it:
 
-- Follow-up Task 7 adds a context menu on the collection header and folders. Round-2 items
-  1 and 6 change the same header markup. The toggle button and the hidden actions must
-  keep the context menu (and Shift+F10) on the header row.
+- Follow-up Task 7 added a context menu on the collection header (mouse only) and folders
+  (mouse and Shift+F10). Round-2 items 1 and 6 change the same header markup: the toggle
+  keeps the right-click menu and adds Shift+F10/ContextMenu (decision 1b), and the hidden
+  actions stay outside the toggle.
 - Follow-up Task 3 widens `Masker`. Send history reuses `Masker`, so it inherits the
   stricter rules for free if the follow-up work lands first.
-- Follow-up Task 8 fixes the Send/Cancel width in `UrlBar`. Round 2 does not touch
-  `UrlBar`.
-- Follow-up Task 6 adds the runtime-variable panel next to the environment label. Round 2
-  adds nothing there.
+- Follow-up Task 8 fixed the Send/Cancel width in `UrlBar` (a fixed slot). Autocomplete
+  lives in `VarInput`, which the URL field uses, so the slot is untouched.
+- Follow-up Task 6 added the runtime-variable panel next to the environment label. Round 2
+  adds nothing there, but autocomplete's Runtime names come from the same `/vars` data, so
+  clearing a runtime variable in the panel removes it from suggestions after the
+  `refreshCollection` the panel already triggers.
 
 **Recommended order: follow-up gaps first, then round 2.** The follow-up work is mostly
 masking (safety), and send history should be born with the stricter masking. Round 2's
