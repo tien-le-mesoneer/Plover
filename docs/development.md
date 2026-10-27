@@ -71,7 +71,7 @@ in that round). `opt-level = "z"` exceeds the 10% budget. `panic` stays `unwind`
 
 1. Set the same version in `crates/{core,cli,desktop}/Cargo.toml` and
    `crates/desktop/tauri.conf.json`; `scripts/check-version.sh` checks they match.
-2. Commit, then tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
+2. Commit, then tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
 3. The workflow checks the tag against the version and builds, on three runners: `plv`
    (macOS universal, Linux x64, Windows x64) and the desktop bundles (`.dmg`, `.exe`,
    `.deb`, `.AppImage`). It then creates a **draft** release with `SHA256SUMS` and

@@ -3429,7 +3429,7 @@ dependencies = [
 
 [[package]]
 name = "plover-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -3447,7 +3447,7 @@ dependencies = [
 
 [[package]]
 name = "plover-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.23.1",
  "brotli",
@@ -3477,7 +3477,7 @@ dependencies = [
 
 [[package]]
 name = "plover-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "futures-util",
  "plover-cli",
@@ -3499,7 +3499,7 @@ dependencies = [
 
 [[package]]
 name = "plover-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
