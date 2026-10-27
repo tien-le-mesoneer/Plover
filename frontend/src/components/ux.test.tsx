@@ -239,7 +239,7 @@ describe("response header (A9, quick wins)", () => {
     expect(screen.getByText("200 OK")).toBeTruthy();
   });
 
-  it("signals a failed test before the green status and opens the Tests tab", () => {
+  it("signals a failed test before the green status but a single send stays on the body", () => {
     render(
       <ResponseViewer
         result={result({ tests: [{ name: "t", passed: false, error: "boom" }] } as Partial<SendResultDto>)}
@@ -247,7 +247,25 @@ describe("response header (A9, quick wins)", () => {
       />,
     );
     expect(screen.getByRole("img", { name: "Checks: 0 of 1 passed" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Response body", selected: true })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Tests, 0 of 1 passed" })).toBeTruthy();
+  });
+
+  it("a run result with a failed test opens the Tests tab", () => {
+    render(
+      <ResponseViewer
+        result={result({ tests: [{ name: "t", passed: false, error: "boom" }] } as Partial<SendResultDto>)}
+        request={{ method: "GET", url: "http://x", headers: [], body: { kind: "none" } } as never}
+        sending={false}
+      />,
+    );
     expect(screen.getByRole("tab", { name: /Tests/, selected: true })).toBeTruthy();
+  });
+
+  it("a single send without tests has no Tests tab", () => {
+    render(<ResponseViewer result={result()} sending={false} />);
+    expect(screen.queryByRole("tab", { name: /Tests/ })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Response body", selected: true })).toBeTruthy();
   });
 
   it("signals a script error", () => {

@@ -139,8 +139,9 @@ function bodyView(response: SendResultDto["response"]): BodyView | null {
 
 export function ResponseViewer({ result, sending, onOpenScript, request, bodyNote, name, collectionId, cancelledAfterMs }: Props) {
   const failedChecks = result ? testSummary(result.tests, result.asserts) : { passed: 0, total: 0 };
-  const hasFailures = failedChecks.passed < failedChecks.total;
-  const [view, setView] = useState<View>(hasFailures ? "tests" : "body");
+  // A single send opens on the response; only a run result jumps to failing checks.
+  const opensTests = request !== undefined && failedChecks.passed < failedChecks.total;
+  const [view, setView] = useState<View>(opensTests ? "tests" : "body");
   const [shown, setShown] = useState(result);
   const { note, copy, say } = useCopy();
   const [mode, setMode] = useState<BodyMode>("pretty");
@@ -150,13 +151,13 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
   const [picked, setPicked] = useState<{ at: { x: number; y: number }; value: ValueAt } | null>(null);
   const bodyInfo = useMemo(() => bodyView(result?.response ?? null), [result]);
 
-  // A new result with failing checks opens the Tests tab, so the failure is not
+  // A new run result with failing checks opens the Tests tab, so the failure is not
   // hidden behind a green 200 (state adjusted during render, not in an effect).
   if (result !== shown) {
     setShown(result);
     setShowAll(false);
     setPicked(null);
-    if (hasFailures) setView("tests");
+    if (opensTests) setView("tests");
   }
 
   if (sending) {
@@ -195,6 +196,8 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
     </>
   );
   const consoleCount = result.console.length + result.scriptedRequests.length;
+  // A single send without tests or asserts has nothing to show there.
+  const showsTests = request !== undefined || summary.total > 0;
   const tabList: SubTab<View>[] = [
     ...(response
       ? [
@@ -211,27 +214,33 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
         ]
       : []),
     ...(request ? [{ id: "request" as const, label: "Request", name: "Request as sent" }] : []),
-    {
-      id: "tests",
-      label: (
-        <>
-          Tests
-          {summary.total > 0 && (
-            <sup aria-hidden="true" className={summary.passed === summary.total ? "ok" : "err"}>
-              {summary.passed}/{summary.total}
-            </sup>
-          )}
-        </>
-      ),
-      name: summary.total > 0 ? `Tests, ${summary.passed} of ${summary.total} passed` : "Tests",
-    },
+    ...(showsTests
+      ? [
+          {
+            id: "tests" as const,
+            label: (
+              <>
+                Tests
+                {summary.total > 0 && (
+                  <sup aria-hidden="true" className={summary.passed === summary.total ? "ok" : "err"}>
+                    {summary.passed}/{summary.total}
+                  </sup>
+                )}
+              </>
+            ),
+            name: summary.total > 0 ? `Tests, ${summary.passed} of ${summary.total} passed` : "Tests",
+          },
+        ]
+      : []),
     {
       id: "console",
       label: <>Console{consoleCount > 0 && <sup aria-hidden="true">{consoleCount}</sup>}</>,
       name: consoleCount > 0 ? `Console, ${consoleCount} entries` : "Console",
     },
   ];
-  const current: View = !response && (view === "body" || view === "headers") ? "console" : view;
+  const fallback: View = response ? "body" : "console";
+  const current: View =
+    (!response && (view === "body" || view === "headers")) || (!showsTests && view === "tests") ? fallback : view;
   const tabs = <SubTabs tabs={tabList} value={current} onChange={setView} label="Response sections" />;
   const extra =
     current === "tests" ? (
