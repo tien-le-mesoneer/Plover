@@ -12,6 +12,7 @@ import { RequestEditor } from "./components/request/RequestEditor";
 import { RequestTabs } from "./components/RequestTabs";
 import { QuickOpen } from "./components/QuickOpen";
 import { RunTab } from "./components/run/RunTab";
+import { HistoryTab } from "./components/history/HistoryTab";
 import { SaveRequestDialog } from "./components/SaveRequestDialog";
 import { Sidebar } from "./components/Sidebar";
 import { SidebarHeader } from "./components/SidebarHeader";
@@ -27,7 +28,7 @@ import { useWorkspace } from "./store/workspace";
 const OVERLAY = '[aria-modal="true"], [role="dialog"], [role="menu"], [role="tooltip"]';
 
 export default function App({ hasToken }: { hasToken: boolean }) {
-  const { tabs, runTabs, active, requestSave, send, cancel, saveDialog, closeSaveDialog, openRun } = useTabs();
+  const { tabs, runTabs, historyTab, active, requestSave, send, cancel, saveDialog, closeSaveDialog, openRun } = useTabs();
   const { collections, activeEnv, error, clearError, capabilities, openInBrowser, activeCollection } =
     useWorkspace();
   const anyDirty = useTabs((s) => s.tabs.some((t) => s.isDirty(t.key)));
@@ -198,7 +199,9 @@ export default function App({ hasToken }: { hasToken: boolean }) {
         <SidebarResizer width={sidebarWidth} />
         <main className="main">
           <RequestTabs />
-          {runTab ? (
+          {historyTab && active === historyTab.key ? (
+            <HistoryTab />
+          ) : runTab ? (
             <RunTab key={runTab.key} tab={runTab} />
           ) : tab ? (
             <RequestEditor key={tab.key} tab={tab} />

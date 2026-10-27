@@ -120,6 +120,11 @@ export function RequestEditor({ tab }: { tab: Tab }) {
           onDismiss={() => setPasted(null)}
         />
       )}
+      {tab.banner && (
+        <Banner kind="info" role="status">
+          {tab.banner}
+        </Banner>
+      )}
       {pasteError && (
         <Banner kind="error" role="alert">
           {pasteError}

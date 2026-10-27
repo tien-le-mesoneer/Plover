@@ -70,6 +70,9 @@ function snapshot(): Record<string, UiStateDto> {
   return out;
 }
 
+/** What would be saved now (tests check what is never remembered). */
+export const snapshotForTest = () => snapshot();
+
 /**
  * Saves layout changes (debounced, per collection). A collection that becomes available
  * later (opened, reopened from Recent, retried) first gets its remembered layout back, so

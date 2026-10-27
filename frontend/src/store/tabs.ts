@@ -1,8 +1,10 @@
 import { create } from "zustand";
 import { ApiError } from "../api/client";
 import { api } from "../api/instance";
-import type { ConflictDto, HttpRequestDto, SendResultDto } from "../api/types";
+import type { BodyDto, ConflictDto, HttpRequestDto, RequestDetailDto, SendResultDto } from "../api/types";
 import { blankRequest } from "../lib/request";
+import { syncQueryFromUrl } from "../lib/url";
+import { useHistory } from "./history";
 import { useWorkspace } from "./workspace";
 
 export interface Tab {
@@ -25,7 +27,15 @@ export interface Tab {
   error?: string;
   /** Set when a save found the file changed on disk. */
   conflict?: ConflictDto;
+  /** A note shown above the request (a scratch opened from history). */
+  banner?: string;
 }
+
+/** The History tab's note on a request reopened from a past send. */
+export const HISTORY_BANNER = "Opened from history. Values that were masked show as ***; replace them before sending.";
+
+/** The History tab's key; there is at most one. */
+export const HISTORY_KEY = "history";
 
 /** A collection or folder run shown in its own tab (never remembered across restarts). */
 export interface RunTab {
@@ -42,6 +52,8 @@ export interface TabsState {
   tabs: Tab[];
   /** Run tabs, after the request tabs in the tab strip; they share `active`. */
   runTabs: RunTab[];
+  /** The History tab, last in the strip; never remembered across restarts. */
+  historyTab: { key: typeof HISTORY_KEY } | null;
   active: string | null;
   /** Request tab keys opened during this page life, newest first (quick open). */
   recent: string[];
@@ -72,6 +84,26 @@ export interface TabsState {
   openRun(collectionId: string, runId: string | null, label: string): string;
   /** Shows another run in an existing run tab (Re-run, a previous run). */
   retargetRun(key: string, runId: string, label?: string): void;
+  /** Opens (or focuses) the History tab. */
+  openHistory(): void;
+  /** A new scratch tab with a past send's request, as it was sent; returns its key. */
+  openScratchFrom(collectionId: string, request: RequestDetailDto, banner: string): string;
+}
+
+/** A stored request body as an editable one (text stays text: it is shown as sent). */
+function bodyOf(request: RequestDetailDto): BodyDto {
+  const b = request.body;
+  if (b.kind === "text") return { mode: "text", text: b.text ?? "" };
+  if (b.kind === "form") return { mode: "formUrlEncoded", fields: b.fields.map(([name, value]) => ({ name, value, enabled: true, local: false })) };
+  if (b.kind === "multipart") {
+    return {
+      mode: "multipartForm",
+      fields: b.parts
+        .filter((p) => p.fileName === null)
+        .map((p) => ({ name: p.name, value: { type: "text" as const, value: p.value ?? "" }, enabled: true, contentType: p.contentType })),
+    };
+  }
+  return { mode: "none" };
 }
 
 export const tabKey = (collectionId: string, item: string) => `${collectionId}:${item}`;
@@ -130,6 +162,7 @@ export const useTabs = create<TabsState>()((set, get) => {
   return {
     tabs: [],
     runTabs: [],
+    historyTab: null,
     active: null,
     recent: [],
     saveDialog: null,
@@ -176,7 +209,11 @@ export const useTabs = create<TabsState>()((set, get) => {
 
     close(key) {
       set((s) => {
-        const all = [...s.tabs.map((t) => t.key), ...s.runTabs.map((t) => t.key)];
+        const all = [
+          ...s.tabs.map((t) => t.key),
+          ...s.runTabs.map((t) => t.key),
+          ...(s.historyTab ? [s.historyTab.key] : []),
+        ];
         const index = all.indexOf(key);
         if (index < 0) return s;
         const rest = all.filter((k) => k !== key);
@@ -184,6 +221,7 @@ export const useTabs = create<TabsState>()((set, get) => {
         return {
           tabs: s.tabs.filter((t) => t.key !== key),
           runTabs: s.runTabs.filter((t) => t.key !== key),
+          historyTab: s.historyTab?.key === key ? null : s.historyTab,
           active,
         };
       });
@@ -248,6 +286,8 @@ export const useTabs = create<TabsState>()((set, get) => {
         else update(key, { ...done, error: message(e), result: undefined });
       } finally {
         inFlight.delete(sendId);
+        // A finished send is in the history now (a cancelled one is not; reloading is harmless).
+        void useHistory.getState().load();
       }
     },
 
@@ -351,6 +391,29 @@ export const useTabs = create<TabsState>()((set, get) => {
       runTabCount += 1;
       const key = `${collectionId}:run:${runTabCount}`;
       set((s) => ({ runTabs: [...s.runTabs, { kind: "run", key, collectionId, runId, label }], active: key }));
+      return key;
+    },
+
+    openHistory() {
+      set({ historyTab: { key: HISTORY_KEY }, active: HISTORY_KEY });
+    },
+
+    openScratchFrom(collectionId, request, banner) {
+      const key = get().newScratch(collectionId);
+      update(key, (t) => {
+        const draft: HttpRequestDto = {
+          ...t.draft,
+          name: "From history",
+          method: request.method,
+          url: request.url,
+          query: syncQueryFromUrl(request.url, []),
+          headers: request.headers.map(([name, value]) => ({ name, value, enabled: true, local: false })),
+          body: bodyOf(request),
+          // The headers already hold the auth as it was sent.
+          auth: { mode: "none" },
+        };
+        return { draft, banner };
+      });
       return key;
     },
 

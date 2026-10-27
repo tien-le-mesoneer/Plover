@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTabs } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
-import { ImportIcon, LogoMark, NewRequestIcon, PlusIcon } from "./icons";
+import { ClockIcon, ImportIcon, LogoMark, NewRequestIcon, PlusIcon } from "./icons";
 import { ImportHarDialog } from "./ImportHarDialog";
 import { OpenCollectionPopover } from "./OpenCollectionPopover";
 
@@ -56,6 +56,15 @@ export function SidebarHeader() {
         onClick={() => target && useTabs.getState().newScratch(target)}
       >
         <NewRequestIcon />
+      </button>
+      <button
+        type="button"
+        className="icon"
+        title="History: past sends"
+        aria-label="History"
+        onClick={() => useTabs.getState().openHistory()}
+      >
+        <ClockIcon />
       </button>
       <button
         type="button"

@@ -153,3 +153,10 @@ export const SplitStackedIcon = () => (
     <line x1="3" y1="12" x2="21" y2="12" />
   </Icon>
 );
+/** History: a clock. */
+export const ClockIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="9" />
+    <polyline points="12 7 12 12 15 14" />
+  </Icon>
+);

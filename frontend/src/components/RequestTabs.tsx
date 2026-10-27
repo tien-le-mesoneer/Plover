@@ -1,12 +1,12 @@
 import type { KeyboardEvent, ReactNode } from "react";
 import { useRuns } from "../store/runs";
 import { useTabs } from "../store/tabs";
-import { CloseIcon, PlayIcon } from "./icons";
+import { ClockIcon, CloseIcon, PlayIcon } from "./icons";
 
 /** Asks before discarding unsaved edits; returns whether the tab was closed. */
 export function closeTabWithConfirm(key: string): boolean {
-  const { tabs, runTabs, isDirty, close } = useTabs.getState();
-  if (runTabs.some((t) => t.key === key)) {
+  const { tabs, runTabs, historyTab, isDirty, close } = useTabs.getState();
+  if (runTabs.some((t) => t.key === key) || historyTab?.key === key) {
     close(key);
     return true;
   }
@@ -31,7 +31,7 @@ interface Entry {
  * Delete closes the focused one.
  */
 export function RequestTabs() {
-  const { tabs, runTabs, active, activate, isDirty } = useTabs();
+  const { tabs, runTabs, historyTab, active, activate, isDirty } = useTabs();
   const runs = useRuns((s) => s.runs);
   const entries: Entry[] = [
     ...tabs.map((t) => {
@@ -73,6 +73,23 @@ export function RequestTabs() {
         ),
       };
     }),
+    ...(historyTab
+      ? [
+          {
+            key: historyTab.key,
+            name: "History",
+            title: "Past sends",
+            content: (
+              <>
+                <span className="tab-run-icon" aria-hidden="true">
+                  <ClockIcon />
+                </span>
+                <span className="tab-name">History</span>
+              </>
+            ),
+          },
+        ]
+      : []),
   ];
   if (entries.length === 0) return null;
 

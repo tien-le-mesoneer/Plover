@@ -58,27 +58,34 @@ export function RunResultDetail({ runId }: { runId: string }) {
         </p>
       )}
       {detail.error && <p className="err">{detail.error}</p>}
-      {data &&
-        (data.status === "skipped" ? (
-          <p className="muted">Skipped: {data.skipReason}</p>
-        ) : (
-          <>
-            {failureReason(data) && (
-              <p className="failure-reason" role="alert">
-                <span aria-hidden="true">✕ </span>
-                {failureReason(data)}
-              </p>
-            )}
-            <ResponseViewer
-              result={data.result}
-              sending={false}
-              request={data.request}
-              bodyNote={bodyNote(data.responseBody)}
-              name={data.name}
-              collectionId={run.collectionId}
-            />
-          </>
-        ))}
+      {data && <OutcomeDetail data={data} collectionId={run.collectionId} />}
     </section>
+  );
+}
+
+/**
+ * A stored result, read only: why it failed (first), then the request as sent and the
+ * response. Used by run results and the History tab.
+ */
+export function OutcomeDetail({ data, collectionId }: { data: RunResultDetailDto; collectionId: string }) {
+  if (data.status === "skipped") return <p className="muted">Skipped: {data.skipReason}</p>;
+  const reason = failureReason(data);
+  return (
+    <>
+      {reason && (
+        <p className="failure-reason" role="alert">
+          <span aria-hidden="true">✕ </span>
+          {reason}
+        </p>
+      )}
+      <ResponseViewer
+        result={data.result}
+        sending={false}
+        request={data.request}
+        bodyNote={bodyNote(data.responseBody)}
+        name={data.name}
+        collectionId={collectionId}
+      />
+    </>
   );
 }
