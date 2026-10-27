@@ -182,6 +182,8 @@ pub struct UiStateDto {
     pub expanded: Vec<String>,
     /// Selected environment.
     pub env: Option<String>,
+    /// The whole collection is folded in the sidebar.
+    pub collapsed: bool,
 }
 
 impl From<plover_core::app_state::UiState> for UiStateDto {
@@ -191,6 +193,7 @@ impl From<plover_core::app_state::UiState> for UiStateDto {
             active: u.active,
             expanded: u.expanded,
             env: u.env,
+            collapsed: u.collapsed,
         }
     }
 }
@@ -202,6 +205,7 @@ impl From<UiStateDto> for plover_core::app_state::UiState {
             active: u.active,
             expanded: u.expanded,
             env: u.env,
+            collapsed: u.collapsed,
         }
     }
 }

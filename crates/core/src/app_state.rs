@@ -30,6 +30,8 @@ pub struct UiState {
     pub expanded: Vec<String>,
     /// Selected environment name.
     pub env: Option<String>,
+    /// The whole collection is folded in the sidebar.
+    pub collapsed: bool,
 }
 
 impl UiState {

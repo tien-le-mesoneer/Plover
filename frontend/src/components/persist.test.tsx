@@ -220,6 +220,7 @@ describe("remembered UI state", () => {
       active: null,
       expanded: ["users", "auth"],
       env: null,
+      collapsed: false,
     });
     stop();
   });
@@ -240,8 +241,26 @@ describe("remembered UI state", () => {
       active: null,
       expanded: ["users"],
       env: null,
+      collapsed: false,
     });
     expect(JSON.stringify(client.saveUiState!.mock.calls)).not.toContain("tok-SCRATCH");
     stop();
+  });
+
+  it("collapsed_is_restored_after_restart", async () => {
+    vi.useFakeTimers();
+    const stop = startUiPersistence();
+    act(() => useWorkspace.getState().toggleCollapsed("c1"));
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+    });
+    const saved = client.saveUiState!.mock.calls.at(-1)![1] as { collapsed: boolean };
+    expect(saved.collapsed).toBe(true);
+    stop();
+    // A new start: the remembered layout folds the collection again.
+    useWorkspace.setState({ collapsed: {} });
+    client.uiState!.mockResolvedValue({ c1: { ...saved } });
+    await restoreUiState();
+    expect(useWorkspace.getState().collapsed.c1).toBe(true);
   });
 });

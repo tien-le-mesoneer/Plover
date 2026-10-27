@@ -50,7 +50,8 @@ function folderIds(node: TreeNodeDto): string[] {
 }
 
 export function Sidebar({ onRun }: Props) {
-  const { collections, trees, reload, filter, setFilter, close, retry } = useWorkspace();
+  const { collections, trees, reload, filter, setFilter, close, retry, collapsed, toggleCollapsed } = useWorkspace();
+  const filtering = filter.trim() !== "";
   const filterInput = useRef<HTMLInputElement>(null);
   const [confirmClose, setConfirmClose] = useState<CollectionSummaryDto | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
@@ -120,18 +121,43 @@ export function Sidebar({ onRun }: Props) {
           />
         </div>
       )}
-      {collections.map((c) =>
-        c.available ? (
+      {collections.map((c) => {
+        if (!c.available) return <Unavailable key={c.id} c={c} onRetry={() => void retry(c.id)} onRemove={() => void close(c.id)} />;
+        // A filter shows matches even in a folded collection; clearing it folds it again.
+        const folded = Boolean(collapsed[c.id]) && !filtering;
+        const treeId = `tree-${c.id}`;
+        return (
           <div key={c.id} className="collection">
             <div
               className="collection-header"
               title={c.root}
               onContextMenu={(e) => {
                 e.preventDefault();
-                openMenu(c.id, "", c.name, { x: e.clientX, y: e.clientY }, null);
+                const toggle = e.currentTarget.querySelector<HTMLElement>(".collection-toggle");
+                openMenu(c.id, "", c.name, { x: e.clientX, y: e.clientY }, toggle);
               }}
             >
-              <strong className="collection-name">{c.name}</strong>
+              <button
+                type="button"
+                className="collection-toggle"
+                aria-expanded={!folded}
+                aria-controls={treeId}
+                aria-haspopup="menu"
+                aria-keyshortcuts="Shift+F10"
+                title={`${folded ? "Unfold" : "Fold"} ${c.name} · Shift+F10: more`}
+                onClick={() => toggleCollapsed(c.id)}
+                onKeyDown={(e) => {
+                  if ((e.key === "F10" && e.shiftKey) || e.key === "ContextMenu") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    openMenu(c.id, "", c.name, { x: rect.left, y: rect.bottom }, e.currentTarget);
+                  }
+                }}
+              >
+                <ChevronIcon open={!folded} />
+                <strong className="collection-name">{c.name}</strong>
+              </button>
               <span className="spacer" />
               {onRun && (
                 <button
@@ -157,8 +183,9 @@ export function Sidebar({ onRun }: Props) {
                 <CloseIcon />
               </button>
             </div>
-            {trees[c.id] && (
+            {trees[c.id] && !folded && (
               <CollectionTree
+                id={treeId}
                 collectionId={c.id}
                 name={c.name}
                 root={trees[c.id]!}
@@ -168,25 +195,8 @@ export function Sidebar({ onRun }: Props) {
               />
             )}
           </div>
-        ) : (
-          <div key={c.id} className="collection unavailable">
-            <div className="collection-header" title={`${c.root}\n${c.error ?? "not available"}`}>
-              <AlertIcon />
-              <span className="collection-name">{c.name}</span>
-              <span className="spacer" />
-              <button type="button" className="text" aria-label={`Retry opening ${c.name}`} onClick={() => void retry(c.id)}>
-                Retry
-              </button>
-              <button type="button" className="text" aria-label={`Remove ${c.name}`} onClick={() => void close(c.id)}>
-                Remove
-              </button>
-            </div>
-            <p className="unavailable-reason" title={c.error ?? undefined}>
-              Not found at <span className="mono">{shortPath(c.root)}</span> — moved or deleted?
-            </p>
-          </div>
-        ),
-      )}
+        );
+      })}
       {menu && <ContextMenu at={menu.at} items={menu.items} label={menu.label} onClose={closeMenu} />}
       {importing && (
         <ImportHarDialog
@@ -211,6 +221,28 @@ export function Sidebar({ onRun }: Props) {
   );
 }
 
+/** A remembered collection whose root is gone: Retry and Remove stay visible. */
+function Unavailable({ c, onRetry, onRemove }: { c: CollectionSummaryDto; onRetry: () => void; onRemove: () => void }) {
+  return (
+    <div className="collection unavailable">
+      <div className="collection-header" title={`${c.root}\n${c.error ?? "not available"}`}>
+        <AlertIcon />
+        <span className="collection-name">{c.name}</span>
+        <span className="spacer" />
+        <button type="button" className="text" aria-label={`Retry opening ${c.name}`} onClick={onRetry}>
+          Retry
+        </button>
+        <button type="button" className="text" aria-label={`Remove ${c.name}`} onClick={onRemove}>
+          Remove
+        </button>
+      </div>
+      <p className="unavailable-reason" title={c.error ?? undefined}>
+        Not found at <span className="mono">{shortPath(c.root)}</span> — moved or deleted?
+      </p>
+    </div>
+  );
+}
+
 interface Visible {
   node: TreeNodeDto;
   level: number;
@@ -232,6 +264,7 @@ function visibleItems(nodes: TreeNodeDto[], expanded: Set<string>, level = 1, pa
  * folder, Ctrl/Cmd+Enter to run a folder.
  */
 function CollectionTree({
+  id,
   collectionId,
   name,
   root,
@@ -239,6 +272,7 @@ function CollectionTree({
   onRun,
   onMenu,
 }: {
+  id: string;
   collectionId: string;
   name: string;
   root: TreeNodeDto;
@@ -324,7 +358,7 @@ function CollectionTree({
 
   if (filtering && items.length === 0) return <p className="muted no-matches">No matching requests</p>;
   return (
-    <ul className="tree" role="tree" aria-label={name}>
+    <ul id={id} className="tree" role="tree" aria-label={name}>
       {items.map((item, index) => {
         const { node, level } = item;
         const common = {

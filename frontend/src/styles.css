@@ -153,6 +153,12 @@ button.text:hover { background: var(--bg-3); }
 .empty-state .actions button { display: inline-flex; align-items: center; gap: 6px; }
 .collection-header { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-top: 1px solid var(--border); }
 .collection-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.collection-toggle {
+  display: flex; align-items: center; gap: 4px; min-width: 0; min-height: 24px; flex: 0 1 auto;
+  margin-left: -4px; padding: 2px 4px; border: none; background: none; color: var(--fg); text-align: left;
+}
+.collection-toggle:hover { background: var(--bg-3); }
+.collection-toggle svg { color: var(--muted); flex: none; }
 .tree { list-style: none; margin: 0; padding: 0; }
 .node { display: flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 6px; cursor: pointer; white-space: nowrap; }
 .node:hover { background: var(--bg-3); }

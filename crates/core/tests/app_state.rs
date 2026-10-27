@@ -30,6 +30,7 @@ fn ui(tabs: &[&str]) -> UiState {
         active: tabs.first().map(|s| s.to_string()),
         expanded: vec!["users".into()],
         env: Some("local".into()),
+        ..UiState::default()
     }
 }
 
@@ -218,4 +219,13 @@ fn layout_defaults_and_round_trips() {
             .is_err()
     );
     assert_eq!(again.layout().sidebar_width, Some(320));
+}
+
+#[test]
+fn ui_state_without_collapsed_reads_as_expanded() {
+    let ui: UiState =
+        serde_json::from_str(r#"{"tabs":[],"active":null,"expanded":[],"env":null}"#).unwrap();
+    assert!(!ui.collapsed);
+    let folded: UiState = serde_json::from_str(r#"{"collapsed":true}"#).unwrap();
+    assert!(folded.collapsed);
 }

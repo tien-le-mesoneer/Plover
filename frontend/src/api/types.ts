@@ -75,7 +75,11 @@ expanded: Array<string>,
 /**
  * Selected environment.
  */
-env: string | null, };
+env: string | null, 
+/**
+ * The whole collection is folded in the sidebar.
+ */
+collapsed: boolean, };
 
 export type LayoutDto = { 
 /**

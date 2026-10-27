@@ -13,6 +13,7 @@ async function apply(id: string, ui: UiStateDto): Promise<string | null> {
   const names = new Set((useWorkspace.getState().environments[id] ?? []).map((e) => e.name));
   useWorkspace.setState((s) => ({
     expanded: { ...s.expanded, [id]: ui.expanded },
+    collapsed: { ...s.collapsed, [id]: ui.collapsed },
     activeEnv: ui.env !== null && names.has(ui.env) ? { ...s.activeEnv, [id]: ui.env } : s.activeEnv,
   }));
   for (const item of ui.tabs) {
@@ -48,7 +49,7 @@ export async function restoreUiState(): Promise<void> {
 }
 
 function snapshot(): Record<string, UiStateDto> {
-  const { collections, expanded, activeEnv } = useWorkspace.getState();
+  const { collections, expanded, collapsed, activeEnv } = useWorkspace.getState();
   const { tabs, active } = useTabs.getState();
   const out: Record<string, UiStateDto> = {};
   for (const c of collections) {
@@ -63,6 +64,7 @@ function snapshot(): Record<string, UiStateDto> {
       active: own.find((t) => t.key === active)?.item ?? null,
       expanded: expanded[c.id] ?? [],
       env: activeEnv[c.id] ?? null,
+      collapsed: collapsed[c.id] ?? false,
     };
   }
   return out;

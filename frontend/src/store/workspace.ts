@@ -23,6 +23,8 @@ export interface WorkspaceState {
   activeCollection: string | null;
   /** Expanded folder IDs per collection, in the order they were expanded. */
   expanded: Record<string, string[]>;
+  /** Collections folded in the sidebar (missing = expanded). */
+  collapsed: Record<string, boolean>;
   /** Sidebar request filter (case-insensitive substring). */
   filter: string;
   recent: RecentDto[];
@@ -38,6 +40,8 @@ export interface WorkspaceState {
   loadRecent(): Promise<void>;
   removeRecent(root: string): Promise<void>;
   toggleExpanded(id: string, folder: string, open?: boolean): void;
+  /** Folds or unfolds a whole collection in the sidebar. */
+  toggleCollapsed(id: string): void;
   setFilter(filter: string): void;
   setPickerOpen(open: boolean): void;
   reload(id: string): Promise<void>;
@@ -92,6 +96,7 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => {
     capabilities: null,
     activeCollection: null,
     expanded: {},
+    collapsed: {},
     filter: "",
     recent: [],
     pickerOpen: false,
@@ -133,6 +138,7 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => {
           environments: without(s.environments),
           activeEnv: without(s.activeEnv),
           expanded: without(s.expanded),
+          collapsed: without(s.collapsed),
           activeCollection: s.activeCollection === id ? null : s.activeCollection,
         };
       });
@@ -168,6 +174,10 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => {
         const next = (open ?? !isOpen) ? (isOpen ? current : [...current, folder]) : current.filter((f) => f !== folder);
         return next === current ? s : { expanded: { ...s.expanded, [id]: next } };
       });
+    },
+
+    toggleCollapsed(id) {
+      set((s) => ({ collapsed: { ...s.collapsed, [id]: !s.collapsed[id] } }));
     },
 
     setFilter(filter) {

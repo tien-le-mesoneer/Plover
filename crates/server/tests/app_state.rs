@@ -121,8 +121,7 @@ async fn ui_state_round_trips_and_is_validated() {
     let (_dir, root) = fixture_copy();
     let app = router(state_with(state_dir.path()));
     let id = open(&app, &root).await;
-    let ui =
-        json!({ "tabs": ["ping.bru"], "active": "ping.bru", "expanded": ["echo"], "env": "Prod" });
+    let ui = json!({ "tabs": ["ping.bru"], "active": "ping.bru", "expanded": ["echo"], "env": "Prod", "collapsed": false });
 
     let (status, body) = call(
         &app,
@@ -261,4 +260,24 @@ async fn layout_rejects_out_of_range() {
             "{method} needs the token"
         );
     }
+}
+
+#[tokio::test]
+async fn put_ui_state_round_trips_collapsed() {
+    let state_dir = tempfile::tempdir().unwrap();
+    let (_dir, root) = fixture_copy();
+    let app = router(state_with(state_dir.path()));
+    let id = open(&app, &root).await;
+    let (status, body) = call(
+        &app,
+        "PUT",
+        &format!("/api/ui-state/{id}"),
+        Some(json!({ "collapsed": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let state = state_with(state_dir.path());
+    state.workspace.restore();
+    let (_, all) = call(&router(state), "GET", "/api/ui-state", None).await;
+    assert_eq!(all[&id]["collapsed"], true);
 }
