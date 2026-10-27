@@ -111,3 +111,15 @@ describe("no clash with Monaco's class names", () => {
   });
 });
 
+describe("history row status colours", () => {
+  it("the selected row keeps --ok and --err readable (AA on --bg-2, not --bg-3)", () => {
+    const rule = css.match(/\.history-row\.selected \{([^}]*)\}/)?.[1] ?? "";
+    expect(rule).toContain("var(--bg-2)");
+    expect(rule).not.toContain("var(--bg-3)");
+    for (const t of Object.values(themes)) {
+      expect(contrast(t.ok!, t["bg-2"]!)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(t.err!, t["bg-2"]!)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+

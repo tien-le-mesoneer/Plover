@@ -473,7 +473,7 @@ kbd { font-family: var(--font-mono); font-size: 11px; padding: 0 4px; border: 1p
 .history-list { list-style: none; margin: 0; padding: 0; width: min(420px, 40%); min-width: 240px; overflow-y: auto; border-right: 1px solid var(--border); }
 .history-row { display: grid; grid-template-columns: auto 1fr auto; column-gap: 8px; row-gap: 2px; align-items: baseline; padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--border); }
 .history-row:hover { background: var(--bg-2); }
-.history-row.selected { background: var(--bg-3); box-shadow: inset 2px 0 0 var(--focus); }
+.history-row.selected { background: var(--bg-2); box-shadow: inset 3px 0 0 var(--focus); font-weight: 600; }
 .history-row:focus-visible { outline-offset: -2px; }
 .history-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-meta { grid-column: 1 / -1; font-size: 12px; }
