@@ -273,6 +273,22 @@ async fn verbose_row_masked() {
 }
 
 #[tokio::test]
+async fn verbose_row_masks_numeric_password() {
+    let server = MockServer::start().await;
+    let dir = collection(&server).await;
+    let state = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("d.csv"), "user,password\nalice,12\n").unwrap();
+    let o = plv(state.path())
+        .current_dir(dir.path())
+        .args(["run", ".", "--csv-file-path", "d.csv", "--verbose"])
+        .output()
+        .unwrap();
+    let (stdout, _) = out(&o);
+    assert!(stdout.contains("\"password\": \"***\""), "{stdout}");
+    assert!(!stdout.contains("\"password\": \"12\""), "{stdout}");
+}
+
+#[tokio::test]
 async fn exit_one_if_any_iteration_fails() {
     let server = MockServer::start().await;
     let dir = collection(&server).await;

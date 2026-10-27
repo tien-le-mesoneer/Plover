@@ -211,11 +211,16 @@ impl Masker {
         }
     }
 
-    /// String values of the row at any depth (data-file credentials are among the
-    /// secrets the caller passed in).
+    /// The row: credential-named keys at any depth become `"***"` whatever their type
+    /// or length (a numeric or short data-file credential is masked by name only), then
+    /// the other string values are searched for the collected values.
     pub fn mask_iteration(&self, iteration: &mut IterationRecord) {
-        for value in iteration.data.values_mut() {
-            self.mask_value(value);
+        for (key, value) in iteration.data.iter_mut() {
+            if is_credential_field(key) {
+                *value = serde_json::Value::String(MASK.to_owned());
+            } else {
+                self.mask_value(value);
+            }
         }
     }
 
@@ -223,7 +228,15 @@ impl Masker {
         match value {
             serde_json::Value::String(s) => self.mask(s),
             serde_json::Value::Array(items) => items.iter_mut().for_each(|v| self.mask_value(v)),
-            serde_json::Value::Object(map) => map.values_mut().for_each(|v| self.mask_value(v)),
+            serde_json::Value::Object(map) => {
+                for (key, v) in map.iter_mut() {
+                    if is_credential_field(key) {
+                        *v = serde_json::Value::String(MASK.to_owned());
+                    } else {
+                        self.mask_value(v);
+                    }
+                }
+            }
             _ => {}
         }
     }

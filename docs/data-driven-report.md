@@ -42,5 +42,5 @@
 1. The desktop save dialog (`DesktopHost::save_file`) compiles and the route is tested with a fake host, but it was not exercised in the built desktop app.
 2. Windows and Linux CI have not run these commits.
 3. `--parallel` runs iterations one after another.
-4. Credential-column values that are not strings (a numeric `password` in JSON) and values shorter than 4 characters are not masked (the run-history minimum).
+4. ~~Credential-column values that are not strings (a numeric `password` in JSON) and values shorter than 4 characters are not masked (the run-history minimum).~~ Fixed by the follow-up plan: credential-named row keys are masked by name whatever their type or length, and so are credential-named body, form and query values. Such a value that appears away from its name (a URL path, a `console.log`) stays visible.
 5. Bruno's report has fields Plover's does not (`uid`, `suitename`, transport headers, pre-request test counts in the summary); the comparison test ignores them because they are not about iterations.

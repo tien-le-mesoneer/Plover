@@ -637,3 +637,52 @@ fn jwt_in_console_and_url_masked() {
         "http://h/cb?state=***"
     );
 }
+
+#[test]
+fn numeric_credential_masked_by_name_only() {
+    let row = json!({"pin":1234,"user":"a","password":1234,"n":{"token":7}});
+    let rows: Vec<ValueMap> = vec![row.as_object().unwrap().clone().into_iter().collect()];
+    let mut r = data_recorder(plover_core::data_file::credential_values(&rows), row);
+    push(
+        &mut r,
+        outcome(Exchange {
+            request_body: text(r#"{"password":1234}"#),
+            response_body: text(r#"{"count":1234}"#),
+            ..Exchange::default()
+        }),
+    );
+    let record = r.finish(finished());
+    let data = &record.iterations[0].data;
+    assert_eq!(data["password"], json!("***"));
+    assert_eq!(data["n"], json!({"token":"***"}));
+    assert_eq!(data["pin"], json!(1234));
+    assert_eq!(data["user"], json!("a"));
+    assert_eq!(body_text(request_body(&record, 0)), r#"{"password":"***"}"#);
+    assert_eq!(body_text(response_body(&record, 0)), r#"{"count":1234}"#);
+}
+
+#[test]
+fn short_string_credential_masked_in_row_and_form() {
+    let row = json!({"password":"ab"});
+    let rows: Vec<ValueMap> = vec![row.as_object().unwrap().clone().into_iter().collect()];
+    let mut r = data_recorder(plover_core::data_file::credential_values(&rows), row);
+    push(
+        &mut r,
+        outcome(Exchange {
+            request_body: BodyDetail::Form {
+                fields: vec![("password".into(), "ab".into())],
+            },
+            response_body: text("about"),
+            ..Exchange::default()
+        }),
+    );
+    let live = r.masked_iteration(0).unwrap();
+    assert_eq!(live.data["password"], json!("***"));
+    let record = r.finish(finished());
+    assert_eq!(record.iterations[0].data["password"], json!("***"));
+    let BodyDetail::Form { fields } = request_body(&record, 0) else {
+        panic!()
+    };
+    assert_eq!(fields[0].1, "***");
+    assert_eq!(body_text(response_body(&record, 0)), "about");
+}
