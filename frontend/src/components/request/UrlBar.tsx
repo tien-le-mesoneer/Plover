@@ -103,13 +103,16 @@ export function UrlBar({ draft, sending, sendStartedAt, onEdit, onSend, onCancel
         }}
         />
       )}
-      {sending && onCancel ? (
-        <CancelButton startedAt={sendStartedAt} onCancel={onCancel} />
-      ) : (
-        <button type="submit" className="send" disabled={sending} title="Send (Enter, Ctrl/Cmd+Enter)">
-          {sending ? "Sending…" : "Send"}
-        </button>
-      )}
+      {/* One fixed-width slot for Send and Cancel, so the URL field keeps its width. */}
+      <span className="send-slot">
+        {sending && onCancel ? (
+          <CancelButton startedAt={sendStartedAt} onCancel={onCancel} />
+        ) : (
+          <button type="submit" className="send" disabled={sending} title="Send (Enter, Ctrl/Cmd+Enter)">
+            {sending ? "Sending…" : "Send"}
+          </button>
+        )}
+      </span>
       {actions}
     </form>
   );

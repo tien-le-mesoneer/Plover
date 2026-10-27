@@ -87,7 +87,9 @@ button:disabled { opacity: 0.5; cursor: default; }
 button.primary { border-color: var(--fg); font-weight: 600; }
 button.send { background: var(--color-send); color: var(--color-on-send); border-color: var(--color-send); font-weight: 600; padding-inline: 14px; }
 /* Replaces Send while a request runs: neutral outline, never the send colour. */
-button.cancel-send { background: var(--bg); color: var(--fg); border-color: var(--border-strong); font-variant-numeric: tabular-nums; min-width: 9.5em; }
+.send-slot { display: inline-flex; flex: none; inline-size: 9.5em; }
+.send-slot > button { inline-size: 100%; }
+button.cancel-send { background: var(--bg); color: var(--fg); border-color: var(--border-strong); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 button.cancel-send:hover { background: var(--bg-2); }
 button.send:hover:not(:disabled) { background: var(--color-send-hover); border-color: var(--color-send-hover); }
 button.icon {

@@ -1,4 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient } from "../../api/client";
 import { setApi } from "../../api/instance";
@@ -136,5 +138,14 @@ describe("cancel a send", () => {
     await startSend();
     const button = screen.getByRole("button", { name: "Cancel request" });
     expect(button.classList.contains("send")).toBe(false);
+  });
+
+  it("send_and_cancel_share_slot", async () => {
+    await startSend();
+    const cancel = screen.getByRole("button", { name: "Cancel request" });
+    expect(cancel.parentElement?.className).toBe("send-slot");
+    expect(cancel.parentElement?.children).toHaveLength(1);
+    const css = readFileSync(resolve(__dirname, "../../styles.css"), "utf8");
+    expect(css).toMatch(/\.send-slot\s*\{[^}]*inline-size:\s*9\.5em/);
   });
 });

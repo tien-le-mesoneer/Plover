@@ -60,7 +60,7 @@ export function RunTab({ tab }: { tab: RunTabState }) {
         <RunHistoryMenu collectionId={tab.collectionId} onChoose={(recordId) => retarget(tab.key, recordId)} />
         <ExportMenu collectionId={tab.collectionId} recordId={run?.recordId} disabled={!run || run.status === "running"} />
         {run?.status === "running" && !saved ? (
-          <button type="button" onClick={() => cancel(run.runId)}>
+          <button type="button" title="Cancel (Esc)" aria-keyshortcuts="Escape" onClick={() => cancel(run.runId)}>
             Cancel
           </button>
         ) : (

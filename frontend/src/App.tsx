@@ -86,17 +86,21 @@ export default function App({ hasToken }: { hasToken: boolean }) {
   }, [anyDirty]);
 
   // App shortcuts: Cmd/Ctrl+K quick open, Cmd/Ctrl+S save, Cmd/Ctrl+Enter send,
-  // Cmd/Ctrl+W close the tab, Esc cancel the running send. Monaco handles Cmd/Ctrl+Enter
+  // Cmd/Ctrl+W close the tab, Esc cancel the running send or run. Monaco handles Cmd/Ctrl+Enter
   // and Cmd/Ctrl+K itself and dispatches "plover:send" / "plover:quick-open" (see CodeEditor).
   // Browsers reserve Cmd/Ctrl+W for closing the window and never deliver it to the
   // page; it works in the desktop app and in browsers that pass it through.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Esc cancels the active tab's send, unless something on top (a dialog, a menu,
-      // a variable card) took it first.
+      // Esc cancels the active tab's send, or the active run tab's running run, unless
+      // something on top (a dialog, a menu, a variable card) took it first.
       if (e.key === "Escape") {
         if (e.defaultPrevented || !active || document.querySelector(OVERLAY)) return;
-        if (useTabs.getState().tabs.find((t) => t.key === active)?.sending) void cancel(active);
+        const { tabs, runTabs } = useTabs.getState();
+        if (tabs.find((t) => t.key === active)?.sending) void cancel(active);
+        const runId = runTabs.find((t) => t.key === active)?.runId;
+        const run = runId ? useRuns.getState().runs[runId] : undefined;
+        if (run?.status === "running" && run.source !== "history") useRuns.getState().cancel(run.runId);
         return;
       }
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;

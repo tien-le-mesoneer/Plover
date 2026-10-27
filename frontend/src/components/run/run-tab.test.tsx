@@ -199,4 +199,47 @@ describe("app wiring", () => {
     expect(screen.queryByRole("region", { name: "Run" })).toBeNull();
     expect(document.querySelector(".run-panel")).toBeNull();
   });
+
+  it("escape_cancels_running_run_tab", () => {
+    live([started("a.bru", "a")], "running");
+    const cancel = vi.fn();
+    useRuns.setState({ cancel } as never);
+    runTabFor();
+    render(<App hasToken />);
+    const button = screen.getByRole("button", { name: "Cancel" });
+    expect(button.getAttribute("aria-keyshortcuts")).toBe("Escape");
+    expect(button.getAttribute("title")).toBe("Cancel (Esc)");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(cancel).toHaveBeenCalledWith("r1");
+  });
+
+  it("escape_in_run_tab_with_menu_open_does_nothing", () => {
+    live([started("a.bru", "a")], "running");
+    const cancel = vi.fn();
+    useRuns.setState({ cancel } as never);
+    runTabFor();
+    render(
+      <>
+        <App hasToken />
+        <div role="menu" />
+      </>,
+    );
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it("escape_on_finished_or_history_run_does_nothing", () => {
+    const cancel = vi.fn();
+    useRuns.setState({ cancel } as never);
+    runTabFor();
+    const { unmount } = render(<App hasToken />);
+    fireEvent.keyDown(window, { key: "Escape" });
+    unmount();
+    live([started("a.bru", "a")], "running");
+    useRuns.setState((s) => ({ runs: { r1: { ...s.runs.r1!, source: "history" } }, cancel }) as never);
+    runTabFor();
+    render(<App hasToken />);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(cancel).not.toHaveBeenCalled();
+  });
 });
