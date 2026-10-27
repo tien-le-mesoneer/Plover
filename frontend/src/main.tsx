@@ -5,6 +5,7 @@ import { setApi } from "./api/instance";
 import { storeToken, takeLaunchCode, takeTokenFromLocation } from "./api/token";
 import App from "./App";
 import { StartupBoundary } from "./components/StartupBoundary";
+import { startTheme } from "./lib/appTheme";
 import "./assets/fonts/fonts.css";
 import "./styles.css";
 
@@ -22,6 +23,9 @@ async function sessionToken(): Promise<string | null> {
   }
   return takeTokenFromLocation(window.location, window.sessionStorage);
 }
+
+// Resolve the OS scheme before anything renders; the saved choice is applied once the layout loads.
+startTheme();
 
 void sessionToken().then((token) => {
   if (token) setApi(createApiClient("", token));

@@ -97,9 +97,15 @@ splitPermille: number | null,
 /**
  * The request pane's share when stacked, 200..=800 thousandths; `null` is half.
  */
-stackedSplitPermille: number | null, };
+stackedSplitPermille: number | null, 
+/**
+ * `system`, `light` or `dark`; `null` follows the system.
+ */
+theme: ThemeDto | null, };
 
 export type SplitOrientationDto = "side" | "stacked";
+
+export type ThemeDto = "system" | "light" | "dark";
 
 export type TreeNodeKind = "folder" | "request" | "invalid";
 

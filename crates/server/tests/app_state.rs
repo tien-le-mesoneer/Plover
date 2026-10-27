@@ -209,7 +209,7 @@ async fn layout_get_put() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         body,
-        json!({ "sidebarWidth": null, "splitOrientation": null, "splitPermille": null, "stackedSplitPermille": null })
+        json!({ "sidebarWidth": null, "splitOrientation": null, "splitPermille": null, "stackedSplitPermille": null, "theme": null })
     );
     let (status, body) = call(
         &app,
@@ -297,7 +297,7 @@ async fn put_layout_400_on_bad_split() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
         assert_eq!(res["error"], "bad_layout");
     }
-    let good = json!({ "sidebarWidth": 300, "splitOrientation": "stacked", "splitPermille": 300, "stackedSplitPermille": 650 });
+    let good = json!({ "sidebarWidth": 300, "splitOrientation": "stacked", "splitPermille": 300, "stackedSplitPermille": 650, "theme": "dark" });
     let (status, res) = call(&app, "PUT", "/api/layout", Some(good.clone())).await;
     assert_eq!(status, StatusCode::NO_CONTENT, "{res}");
     let again = router(state_with(state_dir.path()));

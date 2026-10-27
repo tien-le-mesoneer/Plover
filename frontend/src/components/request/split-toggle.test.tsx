@@ -48,7 +48,7 @@ beforeEach(() => {
     stored = { ...l };
   });
   setApi({ saveLayout, layout: vi.fn(async () => stored), vars: vi.fn(async () => ({ vars: [], setLater: [] })) } as unknown as ApiClient);
-  useLayout.setState({ sidebarWidth: null, splitOrientation: null, splitPermille: null, stackedSplitPermille: null });
+  useLayout.setState({ sidebarWidth: null, splitOrientation: null, splitPermille: null, stackedSplitPermille: null, theme: null });
   useWorkspace.setState({
     collections: [{ id: "c1", name: "Demo", root: "/x", available: true, error: null }],
     environments: { c1: [] },

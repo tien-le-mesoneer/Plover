@@ -34,34 +34,34 @@
   --sidebar-w: 260px;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #16181c;
-    --bg-2: #1d2025;
-    --bg-3: #272b31;
-    --fg: #e6e8eb; /* 14.48 / 13.31 */
-    --muted: #9ca3af; /* 7.00 / 6.43 */
-    --placeholder: #8f96a2; /* 5.97 / 5.49 */
-    --border: #30343a;
-    --border-strong: #737b87; /* 4.16 / 3.82 */
-    --focus: #60a5fa; /* 6.99 / 6.43 */
-    --scrim: #000000a0;
-    --color-send: #10b981; /* emerald-500; --color-on-send on it 7.01 */
-    --color-on-send: #16181c;
-    --color-send-hover: #34d399; /* emerald-400; 9.25 */
-    --ok: #4ade80; /* 10.20 / 9.37 */
-    --info: #60a5fa; /* 6.99 / 6.43 */
-    --warn: #fbbf24; /* 10.65 / 9.79 */
-    --err: #f87171; /* 6.43 / 5.91 */
-    --var: #22d3ee; /* 9.83 / 9.04 */
-    --get: #4ade80; /* 10.20 / 9.37 */
-    --post: #facc15; /* 11.61 / 10.67 */
-    --put: #60a5fa; /* 6.99 / 6.43 */
-    --patch: #c084fc; /* 6.73 / 6.18 */
-    --delete: #f87171; /* 6.43 / 5.91 */
-    --method-other: #9ca3af; /* 7.00 / 6.43 */
-    color-scheme: dark;
-  }
+/* Dark tokens: index.html's theme-boot.js and lib/appTheme.ts set data-theme from the
+   picked theme, or from the OS scheme when it is System. */
+:root[data-theme="dark"] {
+  --bg: #16181c;
+  --bg-2: #1d2025;
+  --bg-3: #272b31;
+  --fg: #e6e8eb; /* 14.48 / 13.31 */
+  --muted: #9ca3af; /* 7.00 / 6.43 */
+  --placeholder: #8f96a2; /* 5.97 / 5.49 */
+  --border: #30343a;
+  --border-strong: #737b87; /* 4.16 / 3.82 */
+  --focus: #60a5fa; /* 6.99 / 6.43 */
+  --scrim: #000000a0;
+  --color-send: #10b981; /* emerald-500; --color-on-send on it 7.01 */
+  --color-on-send: #16181c;
+  --color-send-hover: #34d399; /* emerald-400; 9.25 */
+  --ok: #4ade80; /* 10.20 / 9.37 */
+  --info: #60a5fa; /* 6.99 / 6.43 */
+  --warn: #fbbf24; /* 10.65 / 9.79 */
+  --err: #f87171; /* 6.43 / 5.91 */
+  --var: #22d3ee; /* 9.83 / 9.04 */
+  --get: #4ade80; /* 10.20 / 9.37 */
+  --post: #facc15; /* 11.61 / 10.67 */
+  --put: #60a5fa; /* 6.99 / 6.43 */
+  --patch: #c084fc; /* 6.73 / 6.18 */
+  --delete: #f87171; /* 6.43 / 5.91 */
+  --method-other: #9ca3af; /* 7.00 / 6.43 */
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }

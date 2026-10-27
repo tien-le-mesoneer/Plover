@@ -90,6 +90,16 @@ pub enum SplitOrientation {
     Stacked,
 }
 
+/// The colour theme the user picked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Theme {
+    /// Follow the operating system's light/dark setting.
+    System,
+    Light,
+    Dark,
+}
+
 /// Window layout that is the same for every collection.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -102,6 +112,8 @@ pub struct LayoutState {
     pub split_permille: Option<u16>,
     /// The request pane's share when stacked; `None` is half.
     pub stacked_split_permille: Option<u16>,
+    /// The picked colour theme; `None` follows the system.
+    pub theme: Option<Theme>,
 }
 
 impl LayoutState {

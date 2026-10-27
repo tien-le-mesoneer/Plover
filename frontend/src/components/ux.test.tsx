@@ -13,7 +13,6 @@ import type {
 import { useRuns } from "../store/runs";
 import { useTabs } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
-import { watchColorScheme } from "../editor/theme";
 import { EmptyState } from "./EmptyState";
 import { EnvEditor } from "./EnvEditor";
 import { Modal } from "./Modal";
@@ -164,24 +163,6 @@ describe("modal focus handling (A3)", () => {
     unmount();
     expect(document.activeElement).toBe(opener);
     opener.remove();
-  });
-});
-
-describe("Monaco follows the system colour scheme (A4)", () => {
-  it("applies the theme now and on every change", () => {
-    let listener: ((e: { matches: boolean }) => void) | undefined;
-    const mql = {
-      matches: false,
-      addEventListener: (_: string, l: (e: { matches: boolean }) => void) => (listener = l),
-      removeEventListener: vi.fn(),
-    };
-    const apply = vi.fn();
-    const stop = watchColorScheme(mql, apply);
-    expect(apply).toHaveBeenLastCalledWith("plover-light");
-    listener!({ matches: true });
-    expect(apply).toHaveBeenLastCalledWith("plover-dark");
-    stop();
-    expect(mql.removeEventListener).toHaveBeenCalled();
   });
 });
 

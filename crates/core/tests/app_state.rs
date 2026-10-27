@@ -268,3 +268,23 @@ fn layout_without_split_fields_reads_as_side_500() {
         serde_json::json!("side")
     );
 }
+
+#[test]
+fn layout_theme_defaults_to_none_and_reads_lowercase() {
+    use plover_core::app_state::{LayoutState, Theme};
+    let old: LayoutState = serde_json::from_str(r#"{"sidebarWidth":300}"#).unwrap();
+    assert_eq!(old.theme, None);
+    for (text, theme) in [
+        ("system", Theme::System),
+        ("light", Theme::Light),
+        ("dark", Theme::Dark),
+    ] {
+        let l: LayoutState = serde_json::from_str(&format!(r#"{{"theme":"{text}"}}"#)).unwrap();
+        assert_eq!(l.theme, Some(theme));
+        assert_eq!(
+            serde_json::to_value(theme).unwrap(),
+            serde_json::json!(text)
+        );
+    }
+    assert!(serde_json::from_str::<LayoutState>(r#"{"theme":"sepia"}"#).is_err());
+}

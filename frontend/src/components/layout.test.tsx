@@ -31,7 +31,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   saveLayout = vi.fn(async () => undefined);
   setApi({ saveLayout, layout: vi.fn(async () => ({ sidebarWidth: 320 })) } as unknown as ApiClient);
-  useLayout.setState({ sidebarWidth: null, splitOrientation: null, splitPermille: null, stackedSplitPermille: null });
+  useLayout.setState({ sidebarWidth: null, splitOrientation: null, splitPermille: null, stackedSplitPermille: null, theme: null });
   setWindowWidth(1000);
 });
 
@@ -56,6 +56,7 @@ describe("resizable sidebar", () => {
       splitOrientation: null,
       splitPermille: null,
       stackedSplitPermille: null,
+      theme: null,
     });
   });
 
@@ -117,6 +118,7 @@ describe("request/response split", () => {
       splitOrientation: null,
       splitPermille: 420,
       stackedSplitPermille: null,
+      theme: null,
     });
   });
 

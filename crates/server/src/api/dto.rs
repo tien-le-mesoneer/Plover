@@ -159,6 +159,36 @@ pub struct LayoutDto {
     pub split_permille: Option<u16>,
     /// The request pane's share when stacked, 200..=800 thousandths; `null` is half.
     pub stacked_split_permille: Option<u16>,
+    /// `system`, `light` or `dark`; `null` follows the system.
+    pub theme: Option<ThemeDto>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum ThemeDto {
+    System,
+    Light,
+    Dark,
+}
+
+impl From<plover_core::app_state::Theme> for ThemeDto {
+    fn from(t: plover_core::app_state::Theme) -> Self {
+        match t {
+            plover_core::app_state::Theme::System => ThemeDto::System,
+            plover_core::app_state::Theme::Light => ThemeDto::Light,
+            plover_core::app_state::Theme::Dark => ThemeDto::Dark,
+        }
+    }
+}
+
+impl From<ThemeDto> for plover_core::app_state::Theme {
+    fn from(t: ThemeDto) -> Self {
+        match t {
+            ThemeDto::System => plover_core::app_state::Theme::System,
+            ThemeDto::Light => plover_core::app_state::Theme::Light,
+            ThemeDto::Dark => plover_core::app_state::Theme::Dark,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -193,6 +223,7 @@ impl From<plover_core::app_state::LayoutState> for LayoutDto {
             split_orientation: l.split_orientation.map(Into::into),
             split_permille: l.split_permille,
             stacked_split_permille: l.stacked_split_permille,
+            theme: l.theme.map(Into::into),
         }
     }
 }
@@ -204,6 +235,7 @@ impl From<LayoutDto> for plover_core::app_state::LayoutState {
             split_orientation: l.split_orientation.map(Into::into),
             split_permille: l.split_permille,
             stacked_split_permille: l.stacked_split_permille,
+            theme: l.theme.map(Into::into),
         }
     }
 }
@@ -1175,6 +1207,7 @@ pub fn typescript_bindings() -> String {
         UiStateDto::decl(&cfg),
         LayoutDto::decl(&cfg),
         SplitOrientationDto::decl(&cfg),
+        ThemeDto::decl(&cfg),
         TreeNodeKind::decl(&cfg),
         TreeNodeDto::decl(&cfg),
         EnvironmentDto::decl(&cfg),

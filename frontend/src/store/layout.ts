@@ -2,6 +2,7 @@ import { useEffect, useState, type RefObject } from "react";
 import { create } from "zustand";
 import { api } from "../api/instance";
 import type { LayoutDto } from "../api/types";
+import { setThemeChoice, type ThemeChoice } from "../lib/appTheme";
 
 export const SIDEBAR_DEFAULT = 260;
 export const SIDEBAR_MIN = 180;
@@ -33,12 +34,16 @@ export interface LayoutStore {
   splitPermille: number | null;
   /** The request pane's share when stacked; `null` is half. */
   stackedSplitPermille: number | null;
+  /** The picked colour theme; `null` follows the system. */
+  theme: ThemeChoice | null;
   load(): Promise<void>;
   /** Sets the width and saves it shortly after the last change. */
   setSidebarWidth(px: number | null): void;
   setSplitOrientation(o: Orientation): void;
   /** Sets one orientation's ratio (`null` resets it), clamped to 200..=800. */
   setSplitPermille(orientation: Orientation, v: number | null): void;
+  /** Sets the theme, applies it to the page and saves it. */
+  setTheme(t: ThemeChoice): void;
 }
 
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -48,8 +53,8 @@ export const useLayout = create<LayoutStore>()((set, get) => {
   const save = () => {
     clearTimeout(timer);
     timer = setTimeout(() => {
-      const { sidebarWidth, splitOrientation, splitPermille, stackedSplitPermille } = get();
-      const layout: LayoutDto = { sidebarWidth, splitOrientation, splitPermille, stackedSplitPermille };
+      const { sidebarWidth, splitOrientation, splitPermille, stackedSplitPermille, theme } = get();
+      const layout: LayoutDto = { sidebarWidth, splitOrientation, splitPermille, stackedSplitPermille, theme };
       void api()
         .saveLayout(layout)
         .catch(() => undefined);
@@ -60,6 +65,7 @@ export const useLayout = create<LayoutStore>()((set, get) => {
     splitOrientation: null,
     splitPermille: null,
     stackedSplitPermille: null,
+    theme: null,
     async load() {
       try {
         const layout = await api().layout();
@@ -68,7 +74,9 @@ export const useLayout = create<LayoutStore>()((set, get) => {
           splitOrientation: layout.splitOrientation ?? null,
           splitPermille: layout.splitPermille ?? null,
           stackedSplitPermille: layout.stackedSplitPermille ?? null,
+          theme: layout.theme ?? null,
         });
+        setThemeChoice(layout.theme ?? "system");
       } catch {
         // The defaults are fine when the server cannot say.
       }
@@ -84,6 +92,11 @@ export const useLayout = create<LayoutStore>()((set, get) => {
     setSplitPermille(orientation, v) {
       const value = v === null ? null : clampSplit(v);
       set(orientation === "side" ? { splitPermille: value } : { stackedSplitPermille: value });
+      save();
+    },
+    setTheme(theme) {
+      set({ theme });
+      setThemeChoice(theme);
       save();
     },
   };

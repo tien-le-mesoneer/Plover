@@ -6,10 +6,10 @@ import { contrast } from "./lib/contrast";
 const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 const fontsCss = readFileSync(new URL("./assets/fonts/fonts.css", import.meta.url), "utf8");
 
-/** The light token block (`:root { … }` first in the file) and the dark one (inside the media query). */
+/** The light token block (`:root { … }` first in the file) and the dark one (`:root[data-theme="dark"]`). */
 function blocks(): { light: string; dark: string; rest: string } {
   const light = /^:root \{([^}]*)\}/m.exec(css);
-  const dark = /@media \(prefers-color-scheme: dark\) \{\s*:root \{([^}]*)\}\s*\}/m.exec(css);
+  const dark = /^:root\[data-theme="dark"\] \{([^}]*)\}/m.exec(css);
   if (!light || !dark) throw new Error("token blocks not found");
   const rest = css.replace(light[0], "").replace(dark[0], "");
   return { light: light[1]!, dark: dark[1]!, rest };
@@ -123,3 +123,9 @@ describe("history row status colours", () => {
   });
 });
 
+
+it("one_dark_block_keyed_on_data_theme", () => {
+  // The OS scheme reaches the page only through data-theme (theme-boot.js, lib/appTheme.ts).
+  expect(css).not.toMatch(/prefers-color-scheme/);
+  expect(css.match(/data-theme="dark"/g)?.length).toBe(1);
+});
