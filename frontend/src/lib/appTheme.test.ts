@@ -67,6 +67,17 @@ describe("app theme", () => {
     expect(seen).toEqual(["dark"]);
   });
 
+  it("a listener added before start (Monaco loads first) hears the started theme", () => {
+    stop = startTheme(fakeQuery(false), document.createElement("html"));
+    stop();
+    const seen: string[] = [];
+    const off = onResolvedTheme((t) => seen.push(t));
+    stop = startTheme(fakeQuery(true), document.createElement("html"));
+    off();
+    expect(seen).toEqual(["dark"]);
+    expect(resolvedTheme()).toBe("dark");
+  });
+
   it("stop removes the OS listener", () => {
     const q = fakeQuery(false);
     startTheme(q, document.createElement("html"))();

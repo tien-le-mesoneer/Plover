@@ -39,8 +39,8 @@ export function startTheme(
   root = target;
   choice = "system";
   systemDark = query?.matches ?? false;
-  resolved = systemDark ? "dark" : "light";
-  root.dataset.theme = resolved;
+  // Modules imported before main.tsx runs (Monaco) may already be listening.
+  apply();
   const onChange = (e: { matches: boolean }) => {
     systemDark = e.matches;
     apply();
