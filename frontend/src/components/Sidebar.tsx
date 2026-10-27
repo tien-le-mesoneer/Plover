@@ -249,6 +249,11 @@ interface Visible {
   parent: string | null;
 }
 
+/** The collection header's chevron x (header padding 8 px, toggle margin -4 + padding 4; styles.css). */
+export const TREE_ORIGIN = 8;
+/** One level: a 14 px caret and the 4 px gap, so each level starts under its parent's name. */
+export const TREE_INDENT = 18;
+
 function visibleItems(nodes: TreeNodeDto[], expanded: Set<string>, level = 1, parent: string | null = null): Visible[] {
   return nodes.flatMap((node) => [
     { node, level, parent },
@@ -369,7 +374,7 @@ function CollectionTree({
           role: "treeitem",
           "aria-level": level,
           tabIndex: node.id === current ? 0 : -1,
-          style: { paddingLeft: `${4 + (level - 1) * 14}px` },
+          style: { paddingLeft: `${TREE_ORIGIN + level * TREE_INDENT}px` },
           onFocus: () => setFocusId(node.id),
           onKeyDown: (e: KeyboardEvent<HTMLLIElement>) => onKeyDown(e, index),
         } as const;
