@@ -84,3 +84,21 @@ it("font tokens name the bundled fonts", () => {
   expect(themes.light["font-ui"]).toMatch(/^"IBM Plex Sans"/);
   expect(themes.light["font-mono"]).toMatch(/^"JetBrains Mono"/);
 });
+
+describe("hover-revealed controls", () => {
+  it("css_reveals_on_hover_focus_and_no_hover", () => {
+    for (const sel of [".collection-header .icon", ".corner-actions"]) {
+      expect(css).toContain(sel);
+    }
+    expect(css).toMatch(/\.collection-header:hover \.icon/);
+    expect(css).toMatch(/\.collection-header:focus-within \.icon/);
+    expect(css).toMatch(/\.has-corner:hover \.corner-actions/);
+    expect(css).toMatch(/\.has-corner:focus-within \.corner-actions/);
+    const noHover = css.match(/@media \(hover: none\) \{([^}]*)\}/)?.[1] ?? "";
+    expect(noHover).toContain(".collection-header .icon");
+    expect(noHover).toContain(".corner-actions");
+    // Hidden with opacity, never removed from the Tab order.
+    expect(css).not.toMatch(/\.collection-header \.icon\s*\{[^}]*display:\s*none/);
+  });
+});
+

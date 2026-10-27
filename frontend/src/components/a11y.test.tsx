@@ -50,6 +50,20 @@ describe("icon-only buttons have accessible names", () => {
     expect(screen.getByRole("button", { name: "Reload from disk" })).toBeTruthy();
   });
 
+  it("header_actions_reachable_by_tab", () => {
+    render(<Sidebar onRun={() => {}} />);
+    const header = document.querySelector(".collection-header")!;
+    const buttons = [...header.querySelectorAll("button")];
+    expect(buttons.map((b) => b.getAttribute("aria-label") ?? b.textContent)).toEqual([
+      "ui-check",
+      "Run collection",
+      "Reload from disk",
+      "Close collection ui-check",
+    ]);
+    for (const b of buttons) expect(b.getAttribute("tabindex")).not.toBe("-1");
+    expect(buttons[0]!.className).toContain("collection-toggle");
+  });
+
   it("tab close button", () => {
     render(<RequestTabs />);
     const tab = screen.getByRole("tab", { name: /list users/ });

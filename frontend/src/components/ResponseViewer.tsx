@@ -4,6 +4,8 @@ import { CodeEditor } from "../editor/CodeEditor";
 import type { monaco } from "../editor/monaco";
 import { formatElapsed } from "../lib/elapsed";
 import { Banner } from "./Banner";
+import { CornerActions } from "./CornerActions";
+import { CopyIcon, DownloadIcon } from "./icons";
 import { foldTargets, renderSlice } from "../lib/body";
 import { downloadBody } from "../lib/download";
 import { formatSize, header, prettyBody } from "../lib/format";
@@ -282,12 +284,7 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
   };
   return (
     <div className="response" onKeyDown={onFind}>
-      <StatusLine
-        result={result}
-        note={note}
-        onCopyBody={textBody ? () => void copy(filtered ?? response.bodyText ?? "") : undefined}
-        onSaveBody={() => downloadBody(name ?? "response", response)}
-      />
+      <StatusLine result={result} note={note} />
       {tabs}
       {banners}
       {bodyNote ? (
@@ -324,10 +321,32 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
                 Showing the first {formatSize(slice.shown.length)} of {formatSize(slice.total)}. Copy and Save use the whole body.
               </Banner>
             )}
-            {shownMode === "preview" && preview ? (
-              <BodyPreview response={response} kind={preview} />
-            ) : textBody ? (
-              <div className="editor-box">
+            <div className="editor-box has-corner">
+              <CornerActions>
+                {textBody && (
+                  <button
+                    type="button"
+                    className="icon"
+                    aria-label="Copy body"
+                    title="Copy body"
+                    onClick={() => void copy(filtered ?? response.bodyText ?? "")}
+                  >
+                    <CopyIcon />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="icon"
+                  aria-label="Save body to file"
+                  title="Save body to file"
+                  onClick={() => downloadBody(name ?? "response", response)}
+                >
+                  <DownloadIcon />
+                </button>
+              </CornerActions>
+              {shownMode === "preview" && preview ? (
+                <BodyPreview response={response} kind={preview} />
+              ) : textBody ? (
                 <CodeEditor
                   value={shownText}
                   language={filtered !== null ? "json" : shownMode === "raw" ? "plaintext" : body.language === "text" ? "plaintext" : body.language}
@@ -336,10 +355,10 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
                   onPick={onPick}
                   foldLines={folds}
                 />
-              </div>
-            ) : (
-              <p className="muted center">{body.text}</p>
-            )}
+              ) : (
+                <p className="muted center">{body.text}</p>
+              )}
+            </div>
             <PinnedHeaders headers={response.headers} onCopy={(v) => void copy(v)} />
             {picked && (
               <ValueMenu

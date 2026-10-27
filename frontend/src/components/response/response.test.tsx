@@ -42,6 +42,17 @@ describe("response status line", () => {
     expect(screen.getByText("Copied").getAttribute("aria-live")).toBe("polite");
   });
 
+  it("response_copy_and_save_are_in_body_corner", () => {
+    render(<ResponseViewer result={result()} sending={false} />);
+    const corner = document.querySelector(".editor-box.has-corner .corner-actions")!;
+    expect(corner).toBeTruthy();
+    expect(within(corner as HTMLElement).getByRole("button", { name: "Copy body" })).toBeTruthy();
+    expect(within(corner as HTMLElement).getByRole("button", { name: "Save body to file" })).toBeTruthy();
+    const status = document.querySelector(".response-meta") as HTMLElement;
+    expect(within(status).queryByRole("button", { name: "Copy body" })).toBeNull();
+    expect(status.querySelector(".copy-live")).toBeTruthy();
+  });
+
   it("save_to_file_names_json", () => {
     const createObjectURL = vi.fn(() => "blob:x");
     Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });

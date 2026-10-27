@@ -1,5 +1,10 @@
+import { useState } from "react";
 import type { BodyDto, MultipartFieldDto } from "../../api/types";
 import { CodeEditor } from "../../editor/CodeEditor";
+import { copyResolved } from "../../lib/copyResolved";
+import { CornerActions } from "../CornerActions";
+import { CopyIcon } from "../icons";
+import { useCopy } from "../response/useCopy";
 import { KeyValueTable } from "./KeyValueTable";
 
 const MODES: { mode: Exclude<BodyDto["mode"], "unsupported">; label: string }[] = [
@@ -21,6 +26,8 @@ interface Props {
 }
 
 export function BodyTab({ body, onChange, onModeChange, tabKey }: Props) {
+  const { note, say } = useCopy();
+  const [copying, setCopying] = useState(false);
   if (body.mode === "unsupported") {
     return (
       <p className="muted">
@@ -38,7 +45,29 @@ export function BodyTab({ body, onChange, onModeChange, tabKey }: Props) {
         ))}
       </select>
       {(body.mode === "json" || body.mode === "text" || body.mode === "xml") && (
-        <div className="editor-box">
+        <div className="editor-box has-corner">
+          {tabKey && (
+            <CornerActions note={note}>
+              <span className="copy-live" aria-live="polite">
+                {note}
+              </span>
+              <button
+                type="button"
+                className="icon"
+                aria-label="Copy body"
+                title="Copy body with variables filled in"
+                disabled={copying}
+                onClick={() => {
+                  setCopying(true);
+                  void copyResolved(tabKey, body.text, "Copied")
+                    .then(say)
+                    .finally(() => setCopying(false));
+                }}
+              >
+                <CopyIcon />
+              </button>
+            </CornerActions>
+          )}
           <CodeEditor
             value={body.text}
             language={body.mode === "text" ? "plaintext" : body.mode}

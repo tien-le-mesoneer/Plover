@@ -237,6 +237,20 @@ h4 { margin: 6px 0 2px; font-size: 12px; color: var(--muted); text-transform: up
 .body-tab { display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; }
 .body-tab > select { align-self: flex-start; }
 .editor-box { flex: 1; min-height: 240px; border: 1px solid var(--border); }
+/* Hover/focus-revealed controls: hidden with opacity, never removed from the Tab order. */
+.has-corner { position: relative; }
+.corner-actions {
+  position: absolute; top: 4px; right: 18px; z-index: 3; display: flex; align-items: center; gap: 2px;
+  padding: 0 2px; background: var(--bg); border-radius: var(--radius); opacity: 0; transition: opacity 120ms ease-out;
+}
+.corner-actions .copy-live { font-size: 12px; color: var(--muted); padding: 0 4px; }
+.corner-actions .copy-live:empty { display: none; }
+.has-corner:hover .corner-actions, .has-corner:focus-within .corner-actions, .corner-actions.has-note { opacity: 1; }
+.collection-header .icon { opacity: 0; transition: opacity 120ms ease-out; }
+.collection-header:hover .icon, .collection-header:focus-within .icon { opacity: 1; }
+@media (hover: none) {
+  .collection-header .icon, .corner-actions { opacity: 1; }
+}
 
 .banner { padding: 6px 12px; display: flex; align-items: center; gap: 8px; }
 .banner-text { flex: 1; min-width: 0; }

@@ -1,7 +1,7 @@
 import type { SendResultDto } from "../../api/types";
 import { formatDuration, formatSize } from "../../lib/format";
 import { statusGroup, statusText } from "../../lib/status";
-import { CheckIcon, CopyIcon, CrossIcon, DownloadIcon } from "../icons";
+import { CheckIcon, CrossIcon } from "../icons";
 import { testSummary } from "./TestResults";
 
 /** The checks summary: script errors and failed checks win over the HTTP status. */
@@ -13,21 +13,10 @@ function outcome(result: SendResultDto): { ok: boolean; text: string; name: stri
 }
 
 /**
- * Status (colour by group, always with its text), time and size, the checks summary, then
- * small icon buttons for copying the body and saving it to a file.
+ * Status (colour by group, always with its text), time and size, the checks summary, and
+ * the live note of the body's corner Copy and Save buttons.
  */
-export function StatusLine({
-  result,
-  onCopyBody,
-  onSaveBody,
-  note,
-}: {
-  result: SendResultDto;
-  /** Absent when there is nothing to copy (no response, binary body). */
-  onCopyBody?: () => void;
-  onSaveBody?: () => void;
-  note: string | null;
-}) {
+export function StatusLine({ result, note }: { result: SendResultDto; note: string | null }) {
   const response = result.response;
   const verdict = outcome(result);
   return (
@@ -52,16 +41,6 @@ export function StatusLine({
       <span className="copy-live" aria-live="polite">
         {note}
       </span>
-      {onCopyBody && (
-        <button type="button" className="icon" aria-label="Copy body" title="Copy body" onClick={onCopyBody}>
-          <CopyIcon />
-        </button>
-      )}
-      {onSaveBody && (
-        <button type="button" className="icon" aria-label="Save body to file" title="Save body to file" onClick={onSaveBody}>
-          <DownloadIcon />
-        </button>
-      )}
     </div>
   );
 }
