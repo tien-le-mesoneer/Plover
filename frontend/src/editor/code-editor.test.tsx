@@ -41,6 +41,15 @@ vi.mock("./monaco", () => {
 
 afterEach(() => cleanup());
 
+describe("editor overlays", () => {
+  it("suggest and hover widgets are not clipped by the pane", async () => {
+    const { CodeEditor } = await import("./CodeEditor");
+    const { monaco } = await import("./monaco");
+    render(<CodeEditor value="" language="json" />);
+    expect(monaco.editor.create).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ fixedOverflowWidgets: true }));
+  });
+});
+
 describe("body editor value copy", () => {
   it("monaco_action_registered", async () => {
     const { CodeEditor } = await import("./CodeEditor");

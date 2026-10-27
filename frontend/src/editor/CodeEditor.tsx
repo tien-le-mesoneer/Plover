@@ -141,6 +141,8 @@ export function CodeEditor({ value, language, readOnly, onChange, height, onRead
       language,
       readOnly,
       automaticLayout: true,
+      // Suggestions and hovers are drawn above the page, not cut off at the pane edge.
+      fixedOverflowWidgets: true,
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
       fontSize: 13,
