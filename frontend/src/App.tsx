@@ -7,6 +7,7 @@ import { CloseIcon } from "./components/icons";
 import { Modal } from "./components/Modal";
 import { closeTabWithConfirm } from "./components/RequestTabs";
 import { EnvSelector } from "./components/EnvSelector";
+import { RuntimeVarsPanel } from "./components/RuntimeVarsPanel";
 import { RequestEditor } from "./components/request/RequestEditor";
 import { RequestTabs } from "./components/RequestTabs";
 import { QuickOpen } from "./components/QuickOpen";
@@ -154,6 +155,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
           </button>
         )}
         <EnvSelector collectionId={collectionId} />
+        <RuntimeVarsPanel collectionId={collectionId} />
       </header>
       <QuickOpen key={String(quickOpen)} open={quickOpen} onClose={() => setQuickOpen(false)} />
       {saveDialog && <SaveRequestDialog tabKey={saveDialog} onClose={closeSaveDialog} />}

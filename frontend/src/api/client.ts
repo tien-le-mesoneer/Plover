@@ -26,6 +26,7 @@ import type {
   RunDto,
   RunEventDto,
   RunMetaDto,
+  RuntimeVarsDto,
   RunResultDetailDto,
   SavedFileDto,
   SavedRequestDto,
@@ -117,6 +118,12 @@ export interface ApiClient {
   vars(id: string, body: VarsBody): Promise<VarsDto>;
   /** Sets a runtime variable like `bru.setVar`; the next send sees it. */
   setRuntimeVar(collectionId: string, name: string, value: unknown): Promise<void>;
+  /** The runtime variables, masked like `/vars` and against `env`'s secrets. */
+  runtimeVars(collectionId: string, env: string | null): Promise<RuntimeVarsDto>;
+  /** Removes one runtime variable; resolves also when it was not set. */
+  deleteRuntimeVar(collectionId: string, name: string): Promise<void>;
+  /** Removes every runtime variable of the collection. */
+  clearRuntimeVars(collectionId: string): Promise<void>;
   /** Shows a request file in the file manager (desktop only). */
   reveal(collection: string, item: string): Promise<void>;
   /** Writes a new request file; rejects with code `exists` when the name is taken. */
@@ -287,6 +294,10 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     reveal: (collection, item) => call("POST", "/native/reveal", { collection, item }),
     vars: (id, body) => call("POST", `${collections(id)}/vars`, body),
     setRuntimeVar: (id, name, value) => call("PUT", `${collections(id)}/runtime-vars/${enc(name)}`, { value }),
+    runtimeVars: (id, env) =>
+      call("GET", `${collections(id)}/runtime-vars${env ? `?env=${enc(env)}` : ""}`),
+    deleteRuntimeVar: (id, name) => call("DELETE", `${collections(id)}/runtime-vars/${enc(name)}`),
+    clearRuntimeVars: (id) => call("DELETE", `${collections(id)}/runtime-vars`),
     createRequest: (id, folder, name, request) =>
       call("POST", `${collections(id)}/requests/new`, { folder, name, request }),
     previewHar: (id, har) => call("POST", `${collections(id)}/import/har/preview`, { har }),

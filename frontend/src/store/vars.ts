@@ -9,14 +9,21 @@ import { useWorkspace } from "./workspace";
 export interface VarsState {
   byTab: Record<string, VarsDto | undefined>;
   refresh(tabKey: string): Promise<void>;
+  /** Refreshes every open tab of a collection (its runtime variables changed). */
+  refreshCollection(collectionId: string): void;
 }
 
 /** Only the latest answer per tab is kept. */
 const latest = new Map<string, number>();
 let calls = 0;
 
-export const useVars = create<VarsState>()((set) => ({
+export const useVars = create<VarsState>()((set, get) => ({
   byTab: {},
+  refreshCollection(collectionId) {
+    for (const t of useTabs.getState().tabs) {
+      if (t.collectionId === collectionId) void get().refresh(t.key);
+    }
+  },
   async refresh(tabKey) {
     const tab = useTabs.getState().tabs.find((t) => t.key === tabKey);
     if (!tab) return;
@@ -43,8 +50,7 @@ const VARS_PRE_DELAY = 300;
 export function watchVars(): () => void {
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const refresh = (key: string) => void useVars.getState().refresh(key);
-  const refreshCollection = (id: string) =>
-    useTabs.getState().tabs.filter((t) => t.collectionId === id).forEach((t) => refresh(t.key));
+  const refreshCollection = (id: string) => useVars.getState().refreshCollection(id);
 
   const onTabs = (tabs: Tab[], before: Tab[]) => {
     const old = new Map(before.map((t) => [t.key, t]));

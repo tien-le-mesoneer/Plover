@@ -124,3 +124,18 @@ export const ExternalIcon = () => (
     <line x1="10" y1="14" x2="21" y2="3" />
   </Icon>
 );
+export const VariableIcon = () => (
+  <Icon>
+    <path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1" />
+    <path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1" />
+    <line x1="9.5" y1="9.5" x2="14.5" y2="14.5" />
+    <line x1="14.5" y1="9.5" x2="9.5" y2="14.5" />
+  </Icon>
+);
+export const TrashIcon = () => (
+  <Icon size={14}>
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    <path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+  </Icon>
+);
