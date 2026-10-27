@@ -200,7 +200,12 @@ never secrets. `plv run` reads and writes only its `runs/` folder.
   and wavy red when no scope defines it. Hover it, or leave the caret in it for half a
   second, to see its value and scope (`Environment: Dev`, `Runtime`, …) and what it
   overrides. Secrets, `process.env` values and values sent in an `Authorization` or
-  `Cookie` header are shown as `•••• secret`; scripts never run for this.
+  `Cookie` header are shown as `•••• secret`; scripts never run for this. The card's
+  copy button (or `⌘/Ctrl+Shift+C` with the caret in the token) copies the resolved
+  value only, asking first for a secret.
+- **Autocomplete:** typing `{{` in the URL, params, headers, auth, form fields or the
+  body lists variable names with their scope (or `set later`), never values; ↑/↓ pick,
+  Enter or Tab inserts `{{name}}`, `Esc` closes the list without cancelling a send.
 - **Quick open** (`⌘/Ctrl+K`, also inside editors): find any request of the open
   collections by name, folder or collection; case and accents do not matter
   (`dang nhap` finds `Đăng nhập`). An empty search lists the requests you opened.
@@ -209,13 +214,26 @@ never secrets. `plv run` reads and writes only its `runs/` folder.
   command contains a secret), Copy resolved URL (secret values as `***`), Save and
   Reveal .bru file (desktop) / Copy file path (browser). A dot on a tab means unsaved.
 - **Response:** Pretty / Raw / Preview (HTML in a sandboxed frame, images, PDF), a
-  JSONPath filter (`$.items[*].id`, `..id`; Copy body then copies the result), `⌘/Ctrl+F`
+  JSONPath filter (`$.items[*].id`, `..id`; the body's corner Copy then copies the result), `⌘/Ctrl+F`
   to search, and a click (or Enter) on a JSON value to copy it, copy its path, or keep
   it as a runtime variable. `x-request-id`, `traceparent` and `location` are pinned
   under the body with a copy button. Bodies over 1 MiB render in part (Show all);
   Copy and Save always use the whole body.
 - **Sidebar width:** drag its edge (or focus it and use the arrow keys); double-click
   resets it. The width is remembered.
+- **Collections fold:** click a collection's name (or Enter/Space on it) to fold its tree;
+  Shift+F10 or the menu key on the name opens its menu. A filter still shows matches in
+  a folded collection. Run, Reload and Close show on hover or keyboard focus.
+- **Split:** drag the bar between request and response (arrow keys, Home/End, Enter or
+  double-click resets). The button at the end of the request tabs stacks the panes or
+  puts them side by side; each placement keeps its own size. A window too narrow for
+  two panes stacks them without changing your choice.
+- **Copy:** the request body's corner Copy copies it with variables filled in; query and
+  path params have a per-row copy of their resolved value. Both ask before copying a
+  secret.
+- **History** (clock above the sidebar): the last 100 sends, secrets masked before they
+  are saved. Filter by collection, view the request and response, Open request, Open as
+  new request (masked values stay `***`), or Clear.
 - **Import HAR** (above the sidebar, or right-click a folder or the collection name, or
   Shift+F10 on a folder) turns a recorded browser session into requests and moves
   every credential into secret variables, including passwords and tokens inside XML
@@ -227,7 +245,8 @@ never secrets. `plv run` reads and writes only its `runs/` folder.
 Shortcuts: `⌘/Ctrl+O` open collection, `⌘/Ctrl+K` quick open, `⌘/Ctrl+P` filter
 requests (`Esc` clears), `⌘/Ctrl+Enter` send, `Esc` cancel a running send or run, `⌘/Ctrl+S` save, `⌘/Ctrl+F` search the response body, Enter on a
 JSON value for its menu, arrow keys in the sidebar tree and tab strips,
-`Esc` closes dialogs. `⌘/Ctrl+W` closes a request tab in the desktop app (browsers
+`⌘/Ctrl+Shift+C` copy the value of the variable under the caret, Shift+F10 on a folder or
+collection name for its menu, `Esc` closes dialogs. `⌘/Ctrl+W` closes a request tab in the desktop app (browsers
 keep that shortcut for closing the window).
 
 ## Desktop app
