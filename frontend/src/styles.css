@@ -19,7 +19,7 @@
   --info: #1d4ed8; /* 6.70 / 6.25 */
   --warn: #b45309; /* 5.02 / 4.68 */
   --err: #b91c1c; /* 6.47 / 6.03 */
-  --var-defined-bg: #e0f2fe;
+  --var: #0e7490; /* 5.36 / 5.00 */
   --get: #15803d; /* 5.02 / 4.68 */
   --post: #b45309; /* 5.02 / 4.68 */
   --put: #1d4ed8; /* 6.70 / 6.25 */
@@ -53,7 +53,7 @@
     --info: #60a5fa; /* 6.99 / 6.43 */
     --warn: #fbbf24; /* 10.65 / 9.79 */
     --err: #f87171; /* 6.43 / 5.91 */
-    --var-defined-bg: #0c4a6e;
+    --var: #22d3ee; /* 9.83 / 9.04 */
     --get: #4ade80; /* 10.20 / 9.37 */
     --post: #facc15; /* 11.61 / 10.67 */
     --put: #60a5fa; /* 6.99 / 6.43 */
@@ -192,10 +192,14 @@ button.text:hover { background: var(--bg-3); }
 .urlbar .url-wrap .url { width: 100%; }
 /* {{variables}}: an aria-hidden mirror behind a transparent input draws the marks. */
 .var-input { position: relative; display: inline-flex; min-width: 0; background: var(--bg); border-radius: var(--radius); }
-.var-input > input { position: relative; z-index: 1; background: transparent; flex: 1; min-width: 0; }
-.var-mirror { position: absolute; inset: 0; overflow: hidden; white-space: pre; color: transparent; pointer-events: none; border: 1px solid transparent; box-sizing: border-box; }
+/* The input's own glyphs are transparent; the mirror under it draws the text, so `{{names}}` can take their own colour. */
+.var-input > input { position: relative; z-index: 1; background: transparent; flex: 1; min-width: 0; color: transparent; caret-color: var(--fg); }
+.var-input > input::selection { color: var(--fg); }
+.var-mirror { position: absolute; inset: 0; overflow: hidden; white-space: pre; color: var(--fg); pointer-events: none; border: 1px solid transparent; box-sizing: border-box; }
 td .var-input { display: flex; }
-.var-defined { background: var(--var-defined-bg); border-radius: 2px; }
+.var-defined, .monaco-editor .var-defined { color: var(--var); }
+.var-setlater, .monaco-editor .var-setlater { color: var(--warn); }
+.var-undefined, .monaco-editor .var-undefined { color: var(--err); }
 .var-setlater { text-decoration: underline dotted var(--warn); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .var-undefined { text-decoration: underline wavy var(--err); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
 .var-hover { position: fixed; z-index: 20; max-width: min(420px, 90vw); background: var(--bg); color: var(--fg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 16px var(--scrim); display: flex; flex-direction: column; gap: 2px; }
