@@ -197,7 +197,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
           }}
         />
         <SidebarResizer width={sidebarWidth} />
-        <main className="main">
+        <main className="app-main">
           <RequestTabs />
           {historyTab && active === historyTab.key ? (
             <HistoryTab />

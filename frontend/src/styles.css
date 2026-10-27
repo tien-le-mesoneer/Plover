@@ -112,7 +112,7 @@ code { font-size: 12px; }
 .brand { position: relative; display: flex; align-items: center; gap: 6px; width: calc(var(--sidebar-w) - 12px - 4px); flex: none; }
 .layout { display: flex; flex: 1; min-height: 0; }
 .sidebar { width: var(--sidebar-w); flex: none; overflow: auto; border-right: 1px solid var(--border); background: var(--bg-2); padding-bottom: 12px; }
-.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.app-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .sidebar-resizer { flex: none; width: 5px; margin-left: -3px; cursor: col-resize; touch-action: none; position: relative; z-index: 2; }
 .sidebar-resizer:hover, .sidebar-resizer:focus-visible { background: var(--border-strong); }
 .sidebar-resizer:focus-visible { outline-offset: -1px; }

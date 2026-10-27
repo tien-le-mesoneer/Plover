@@ -102,3 +102,12 @@ describe("hover-revealed controls", () => {
   });
 });
 
+describe("no clash with Monaco's class names", () => {
+  it("app rules do not use bare class names Monaco widgets use", () => {
+    // Monaco's suggest rows contain .main, .left, .right, .contents and .details.
+    for (const name of ["main", "left", "right", "contents", "details"]) {
+      expect(css).not.toMatch(new RegExp(`(^|[\\s,}])\\.${name}\\s*[{,]`, "m"));
+    }
+  });
+});
+
