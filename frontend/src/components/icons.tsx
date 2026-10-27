@@ -139,3 +139,17 @@ export const TrashIcon = () => (
     <path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
   </Icon>
 );
+/** Two panes side by side. */
+export const SplitSideIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <line x1="12" y1="4" x2="12" y2="20" />
+  </Icon>
+);
+/** Two panes stacked. */
+export const SplitStackedIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <line x1="3" y1="12" x2="21" y2="12" />
+  </Icon>
+);

@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "../../api/instance";
 import type { CurlNoticeDto, HttpRequestDto } from "../../api/types";
 import { switchBodyMode } from "../../lib/body";
 import { urlWithQuery } from "../../lib/url";
+import { SPLIT_DEFAULT, useEffectiveOrientation, useLayout } from "../../store/layout";
 import { useTabs, type Tab } from "../../store/tabs";
 import { useWorkspace } from "../../store/workspace";
 import { RequestMenu } from "./RequestMenu";
 import { CurlBanner, secretMoves } from "./CurlBanner";
 import { Banner } from "../Banner";
+import { PaneResizer } from "../PaneResizer";
 import { ResponseViewer } from "../ResponseViewer";
 import { AuthTab } from "./AuthTab";
 import { BodyTab } from "./BodyTab";
@@ -15,6 +17,7 @@ import { CodeEditor } from "../../editor/CodeEditor";
 import { ScriptTab } from "./ScriptTab";
 import { KeyValueTable } from "./KeyValueTable";
 import { SubTabs } from "../SubTabs";
+import { SplitToggle } from "./SplitToggle";
 import { UrlBar } from "./UrlBar";
 
 const SECTIONS = ["Params", "Headers", "Auth", "Body", "Script", "Assert", "Tests"] as const;
@@ -51,6 +54,10 @@ export function RequestEditor({ tab }: { tab: Tab }) {
   const [pasteError, setPasteError] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const moves = pasted ? secretMoves(draft, env) : [];
+  const splitRef = useRef<HTMLDivElement>(null);
+  const { orientation, forced } = useEffectiveOrientation(splitRef);
+  const permille =
+    useLayout((s) => (orientation === "side" ? s.splitPermille : s.stackedSplitPermille)) ?? SPLIT_DEFAULT;
 
   const onCurl = async (text: string) => {
     setPasteError(null);
@@ -137,12 +144,13 @@ export function RequestEditor({ tab }: { tab: Tab }) {
           {tab.error}
         </Banner>
       )}
-      <div className="split">
-        <section className="pane">
+      <div ref={splitRef} className={`split split-${orientation}`}>
+        <section className="pane" style={{ flexGrow: 0, flexShrink: 0, flexBasis: `${permille / 10}%` }}>
           <SubTabs
             label="Request sections"
             value={section}
             onChange={setSection}
+            end={<SplitToggle orientation={orientation} forced={forced} />}
             tabs={SECTIONS.map((s) => {
               const n = count(draft, s);
               const code = hasCode(draft, s);
@@ -227,7 +235,8 @@ export function RequestEditor({ tab }: { tab: Tab }) {
             )}
           </div>
         </section>
-        <section className="pane">
+        <PaneResizer permille={permille} orientation={orientation} />
+        <section className="pane pane-response">
           <ResponseViewer
             result={tab.result}
             sending={tab.sending}

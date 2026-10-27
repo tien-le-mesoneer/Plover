@@ -77,24 +77,59 @@ pub struct RecentEntry {
 /// Smallest and largest sidebar width that is stored, in CSS pixels.
 pub const SIDEBAR_WIDTH_RANGE: std::ops::RangeInclusive<u32> = 120..=4000;
 
+/// Stored request/response split ratios, in thousandths of the split area.
+pub const SPLIT_PERMILLE_RANGE: std::ops::RangeInclusive<u16> = 200..=800;
+
+/// How the request and response panes are placed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SplitOrientation {
+    /// Request left, response right.
+    Side,
+    /// Request above, response below.
+    Stacked,
+}
+
 /// Window layout that is the same for every collection.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct LayoutState {
     /// The dragged sidebar width; `None` is the default width.
     pub sidebar_width: Option<u32>,
+    /// The chosen pane placement; `None` is side by side.
+    pub split_orientation: Option<SplitOrientation>,
+    /// The request pane's share side by side; `None` is half.
+    pub split_permille: Option<u16>,
+    /// The request pane's share when stacked; `None` is half.
+    pub stacked_split_permille: Option<u16>,
 }
 
 impl LayoutState {
     pub fn validate(&self) -> Result<(), String> {
-        match self.sidebar_width {
-            Some(w) if !SIDEBAR_WIDTH_RANGE.contains(&w) => Err(format!(
+        if let Some(w) = self.sidebar_width
+            && !SIDEBAR_WIDTH_RANGE.contains(&w)
+        {
+            return Err(format!(
                 "sidebarWidth must be {}..={} px",
                 SIDEBAR_WIDTH_RANGE.start(),
                 SIDEBAR_WIDTH_RANGE.end()
-            )),
-            _ => Ok(()),
+            ));
         }
+        for (name, value) in [
+            ("splitPermille", self.split_permille),
+            ("stackedSplitPermille", self.stacked_split_permille),
+        ] {
+            if let Some(v) = value
+                && !SPLIT_PERMILLE_RANGE.contains(&v)
+            {
+                return Err(format!(
+                    "{name} must be {}..={}",
+                    SPLIT_PERMILLE_RANGE.start(),
+                    SPLIT_PERMILLE_RANGE.end()
+                ));
+            }
+        }
+        Ok(())
     }
 }
 

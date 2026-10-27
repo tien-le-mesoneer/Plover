@@ -85,7 +85,21 @@ export type LayoutDto = {
 /**
  * The dragged sidebar width in CSS pixels; `null` is the default width.
  */
-sidebarWidth: number | null, };
+sidebarWidth: number | null, 
+/**
+ * `side` or `stacked`; `null` is side by side.
+ */
+splitOrientation: SplitOrientationDto | null, 
+/**
+ * The request pane's share side by side, 200..=800 thousandths; `null` is half.
+ */
+splitPermille: number | null, 
+/**
+ * The request pane's share when stacked, 200..=800 thousandths; `null` is half.
+ */
+stackedSplitPermille: number | null, };
+
+export type SplitOrientationDto = "side" | "stacked";
 
 export type TreeNodeKind = "folder" | "request" | "invalid";
 

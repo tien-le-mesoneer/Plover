@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient } from "../api/client";
 import { setApi } from "../api/instance";
 import { effectiveSidebarWidth, useLayout, useSidebarWidth } from "../store/layout";
+import { PaneResizer } from "./PaneResizer";
 import { SidebarResizer } from "./SidebarResizer";
 
 let saveLayout: ReturnType<typeof vi.fn>;
@@ -30,7 +31,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   saveLayout = vi.fn(async () => undefined);
   setApi({ saveLayout, layout: vi.fn(async () => ({ sidebarWidth: 320 })) } as unknown as ApiClient);
-  useLayout.setState({ sidebarWidth: null });
+  useLayout.setState({ sidebarWidth: null, splitOrientation: null, splitPermille: null, stackedSplitPermille: null });
   setWindowWidth(1000);
 });
 
@@ -50,7 +51,12 @@ describe("resizable sidebar", () => {
     expect(width()).toBe(500);
     fireEvent.pointerUp(separator(), { pointerId: 1 });
     act(() => vi.advanceTimersByTime(400));
-    expect(saveLayout).toHaveBeenLastCalledWith({ sidebarWidth: 500 });
+    expect(saveLayout).toHaveBeenLastCalledWith({
+      sidebarWidth: 500,
+      splitOrientation: null,
+      splitPermille: null,
+      stackedSplitPermille: null,
+    });
   });
 
   it("keys_resize_by_16", () => {
@@ -95,5 +101,49 @@ describe("resizable sidebar", () => {
 
   it("effective width keeps the minimum in a tiny window", () => {
     expect(effectiveSidebarWidth(null, 300)).toBe(180);
+  });
+});
+
+describe("request/response split", () => {
+  const pane = () => screen.getByRole("separator", { name: "Resize request and response" });
+
+  it("layout_keeps_sidebar_width_when_split_changes", () => {
+    useLayout.setState({ sidebarWidth: 300 });
+    act(() => useLayout.getState().setSplitPermille("side", 420));
+    act(() => vi.advanceTimersByTime(400));
+    expect(saveLayout).toHaveBeenCalledTimes(1);
+    expect(saveLayout).toHaveBeenLastCalledWith({
+      sidebarWidth: 300,
+      splitOrientation: null,
+      splitPermille: 420,
+      stackedSplitPermille: null,
+    });
+  });
+
+  it("pane_resizer_keyboard", () => {
+    function Split() {
+      const p = useLayout((s) => s.splitPermille) ?? 500;
+      return <PaneResizer permille={p} orientation="side" />;
+    }
+    render(<Split />);
+    expect(pane().getAttribute("aria-orientation")).toBe("vertical");
+    fireEvent.keyDown(pane(), { key: "ArrowRight" });
+    expect(useLayout.getState().splitPermille).toBe(520);
+    fireEvent.keyDown(pane(), { key: "End" });
+    expect(useLayout.getState().splitPermille).toBe(800);
+    fireEvent.keyDown(pane(), { key: "Home" });
+    expect(useLayout.getState().splitPermille).toBe(200);
+    fireEvent.keyDown(pane(), { key: "Enter" });
+    expect(useLayout.getState().splitPermille).toBeNull();
+    // Only the current orientation's ratio changes.
+    expect(useLayout.getState().stackedSplitPermille).toBeNull();
+  });
+
+  it("pane_resizer_double_click_resets", () => {
+    useLayout.setState({ stackedSplitPermille: 300 });
+    render(<PaneResizer permille={300} orientation="stacked" />);
+    expect(pane().getAttribute("aria-orientation")).toBe("horizontal");
+    fireEvent.doubleClick(pane());
+    expect(useLayout.getState().stackedSplitPermille).toBeNull();
   });
 });

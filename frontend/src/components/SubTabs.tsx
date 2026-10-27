@@ -13,11 +13,14 @@ export function SubTabs<T extends string>({
   value,
   onChange,
   label,
+  end,
 }: {
   tabs: SubTab<T>[];
   value: T;
   onChange: (id: T) => void;
   label: string;
+  /** Controls after the tabs, outside the tablist (the split toggle). */
+  end?: ReactNode;
 }) {
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const last = tabs.length - 1;
@@ -33,7 +36,7 @@ export function SubTabs<T extends string>({
     const buttons = e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
     buttons?.[next]?.focus();
   };
-  return (
+  const list = (
     <div className="subtabs" role="tablist" aria-label={label}>
       {tabs.map((t, i) => (
         <button
@@ -50,6 +53,13 @@ export function SubTabs<T extends string>({
           {t.label}
         </button>
       ))}
+    </div>
+  );
+  if (!end) return list;
+  return (
+    <div className="subtabs-bar">
+      {list}
+      <div className="subtabs-end">{end}</div>
     </div>
   );
 }

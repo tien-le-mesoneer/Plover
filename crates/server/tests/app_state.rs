@@ -207,7 +207,10 @@ async fn layout_get_put() {
     let app = router(state_with(state_dir.path()));
     let (status, body) = call(&app, "GET", "/api/layout", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({ "sidebarWidth": null }));
+    assert_eq!(
+        body,
+        json!({ "sidebarWidth": null, "splitOrientation": null, "splitPermille": null, "stackedSplitPermille": null })
+    );
     let (status, body) = call(
         &app,
         "PUT",
@@ -219,7 +222,7 @@ async fn layout_get_put() {
     // It survives a restart.
     let again = router(state_with(state_dir.path()));
     let (_, body) = call(&again, "GET", "/api/layout", None).await;
-    assert_eq!(body, json!({ "sidebarWidth": 320 }));
+    assert_eq!(body["sidebarWidth"], 320);
     let (status, _) = call(
         &app,
         "PUT",
@@ -280,4 +283,24 @@ async fn put_ui_state_round_trips_collapsed() {
     state.workspace.restore();
     let (_, all) = call(&router(state), "GET", "/api/ui-state", None).await;
     assert_eq!(all[&id]["collapsed"], true);
+}
+
+#[tokio::test]
+async fn put_layout_400_on_bad_split() {
+    let state_dir = tempfile::tempdir().unwrap();
+    let app = router(state_with(state_dir.path()));
+    for body in [
+        json!({ "splitPermille": 199 }),
+        json!({ "stackedSplitPermille": 801 }),
+    ] {
+        let (status, res) = call(&app, "PUT", "/api/layout", Some(body.clone())).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(res["error"], "bad_layout");
+    }
+    let good = json!({ "sidebarWidth": 300, "splitOrientation": "stacked", "splitPermille": 300, "stackedSplitPermille": 650 });
+    let (status, res) = call(&app, "PUT", "/api/layout", Some(good.clone())).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{res}");
+    let again = router(state_with(state_dir.path()));
+    let (_, body) = call(&again, "GET", "/api/layout", None).await;
+    assert_eq!(body, good);
 }

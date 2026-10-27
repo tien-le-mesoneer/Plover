@@ -201,9 +201,21 @@ td .var-input { display: flex; }
 .var-hover { position: fixed; z-index: 20; max-width: min(420px, 90vw); background: var(--bg); color: var(--fg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 16px var(--scrim); display: flex; flex-direction: column; gap: 2px; }
 .var-hover-name { font-family: var(--font-mono); font-weight: 600; }
 .var-hover code { font-family: var(--font-mono); overflow-wrap: anywhere; }
-.split { display: flex; flex: 1; min-height: 0; }
-.pane { flex: 1; display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--border); }
-.pane:last-child { border-right: none; }
+.split { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.split-stacked { flex-direction: column; }
+.pane { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.split-side > .pane { min-width: 240px; }
+.split-stacked > .pane { min-height: 120px; }
+.split-stacked .script-tab .editor-box, .split-stacked .pane-body > .editor-box, .split-stacked .editor-box { min-height: 120px; }
+.pane-resizer { flex: none; background: var(--border); position: relative; touch-action: none; }
+.split-side > .pane-resizer { width: 6px; cursor: col-resize; border-inline: 2px solid var(--bg); }
+.split-stacked > .pane-resizer { height: 6px; cursor: row-resize; border-block: 2px solid var(--bg); }
+.pane-resizer:hover, .pane-resizer:focus-visible { background: var(--border-strong); }
+.pane-resizer:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; }
+.subtabs-bar { display: flex; align-items: center; border-bottom: 1px solid var(--border); flex: none; min-width: 0; }
+.subtabs-bar > .subtabs { flex: 1; min-width: 0; border-bottom: none; }
+.subtabs-end { flex: none; display: flex; align-items: center; padding: 0 6px; }
+button.icon[aria-disabled="true"] { opacity: 0.5; cursor: default; }
 .pane-body { flex: 1; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 .subtabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--border); flex: none; overflow-x: auto; scrollbar-width: thin; }
 .subtabs button { flex: none; white-space: nowrap; border: none; background: none; border-radius: 0; padding: 6px 8px; }
@@ -383,12 +395,6 @@ kbd { font-family: var(--font-mono); font-size: 11px; padding: 0 4px; border: 1p
 .empty-state h2 { margin: 0; font-size: 18px; }
 .empty-state p { margin: 0; line-height: 1.6; }
 .empty-state button { margin-top: 8px; }
-@media (max-width: 1100px) {
-  .split { flex-direction: column; }
-  .pane { flex: 1 1 0; min-height: 0; border-right: none; border-bottom: 1px solid var(--border); }
-  .pane:last-child { border-bottom: none; }
-  .script-tab .editor-box, .pane-body > .editor-box, .editor-box { min-height: 120px; }
-}
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }

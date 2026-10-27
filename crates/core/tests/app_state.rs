@@ -198,15 +198,11 @@ fn layout_defaults_and_round_trips() {
     )
     .unwrap();
     let store = AppStateStore::load(dir.path());
-    assert_eq!(
-        store.layout(),
-        LayoutState {
-            sidebar_width: None
-        }
-    );
+    assert_eq!(store.layout(), LayoutState::default());
     store
         .set_layout(LayoutState {
             sidebar_width: Some(320),
+            ..LayoutState::default()
         })
         .unwrap();
     let again = AppStateStore::load(dir.path());
@@ -214,7 +210,8 @@ fn layout_defaults_and_round_trips() {
     assert!(
         again
             .set_layout(LayoutState {
-                sidebar_width: Some(50)
+                sidebar_width: Some(50),
+                ..LayoutState::default()
             })
             .is_err()
     );
@@ -228,4 +225,46 @@ fn ui_state_without_collapsed_reads_as_expanded() {
     assert!(!ui.collapsed);
     let folded: UiState = serde_json::from_str(r#"{"collapsed":true}"#).unwrap();
     assert!(folded.collapsed);
+}
+
+#[test]
+fn layout_rejects_split_outside_200_800() {
+    use plover_core::app_state::LayoutState;
+    for bad in [199, 801] {
+        let side = LayoutState {
+            split_permille: Some(bad),
+            ..LayoutState::default()
+        };
+        assert!(side.validate().is_err(), "{bad}");
+        let stacked = LayoutState {
+            stacked_split_permille: Some(bad),
+            ..LayoutState::default()
+        };
+        assert!(stacked.validate().is_err(), "{bad}");
+    }
+    for good in [Some(200), Some(800), None] {
+        let l = LayoutState {
+            split_permille: good,
+            stacked_split_permille: good,
+            ..LayoutState::default()
+        };
+        assert!(l.validate().is_ok(), "{good:?}");
+    }
+}
+
+#[test]
+fn layout_without_split_fields_reads_as_side_500() {
+    use plover_core::app_state::{LayoutState, SplitOrientation};
+    let old: LayoutState = serde_json::from_str(r#"{"sidebarWidth":300}"#).unwrap();
+    assert_eq!(old.split_orientation, None);
+    assert_eq!(old.split_permille, None);
+    assert_eq!(old.stacked_split_permille, None);
+    let new: LayoutState =
+        serde_json::from_str(r#"{"splitOrientation":"stacked","stackedSplitPermille":300}"#)
+            .unwrap();
+    assert_eq!(new.split_orientation, Some(SplitOrientation::Stacked));
+    assert_eq!(
+        serde_json::to_value(SplitOrientation::Side).unwrap(),
+        serde_json::json!("side")
+    );
 }

@@ -153,12 +153,46 @@ pub struct RecentDto {
 pub struct LayoutDto {
     /// The dragged sidebar width in CSS pixels; `null` is the default width.
     pub sidebar_width: Option<u32>,
+    /// `side` or `stacked`; `null` is side by side.
+    pub split_orientation: Option<SplitOrientationDto>,
+    /// The request pane's share side by side, 200..=800 thousandths; `null` is half.
+    pub split_permille: Option<u16>,
+    /// The request pane's share when stacked, 200..=800 thousandths; `null` is half.
+    pub stacked_split_permille: Option<u16>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum SplitOrientationDto {
+    Side,
+    Stacked,
+}
+
+impl From<plover_core::app_state::SplitOrientation> for SplitOrientationDto {
+    fn from(o: plover_core::app_state::SplitOrientation) -> Self {
+        match o {
+            plover_core::app_state::SplitOrientation::Side => SplitOrientationDto::Side,
+            plover_core::app_state::SplitOrientation::Stacked => SplitOrientationDto::Stacked,
+        }
+    }
+}
+
+impl From<SplitOrientationDto> for plover_core::app_state::SplitOrientation {
+    fn from(o: SplitOrientationDto) -> Self {
+        match o {
+            SplitOrientationDto::Side => plover_core::app_state::SplitOrientation::Side,
+            SplitOrientationDto::Stacked => plover_core::app_state::SplitOrientation::Stacked,
+        }
+    }
 }
 
 impl From<plover_core::app_state::LayoutState> for LayoutDto {
     fn from(l: plover_core::app_state::LayoutState) -> Self {
         LayoutDto {
             sidebar_width: l.sidebar_width,
+            split_orientation: l.split_orientation.map(Into::into),
+            split_permille: l.split_permille,
+            stacked_split_permille: l.stacked_split_permille,
         }
     }
 }
@@ -167,6 +201,9 @@ impl From<LayoutDto> for plover_core::app_state::LayoutState {
     fn from(l: LayoutDto) -> Self {
         plover_core::app_state::LayoutState {
             sidebar_width: l.sidebar_width,
+            split_orientation: l.split_orientation.map(Into::into),
+            split_permille: l.split_permille,
+            stacked_split_permille: l.stacked_split_permille,
         }
     }
 }
@@ -1133,6 +1170,7 @@ pub fn typescript_bindings() -> String {
         RecentDto::decl(&cfg),
         UiStateDto::decl(&cfg),
         LayoutDto::decl(&cfg),
+        SplitOrientationDto::decl(&cfg),
         TreeNodeKind::decl(&cfg),
         TreeNodeDto::decl(&cfg),
         EnvironmentDto::decl(&cfg),
