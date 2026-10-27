@@ -5,6 +5,7 @@ use plover_core::executor::ExecOptions;
 use plover_core::run_history::RunHistory;
 use plover_core::run_record::{RunRecord, RunRecorder};
 use plover_core::secrets::SecretVault;
+use plover_core::send_history::SendHistory;
 use plover_core::workspace::Workspace;
 use tokio::sync::{Notify, watch};
 
@@ -34,6 +35,8 @@ pub struct AppState {
     pub live: Arc<LiveRuns>,
     /// Sends from the UI that can be cancelled, by (collection ID, send ID).
     pub sends: Arc<SendRegistry>,
+    /// The last finished UI sends; in memory when the server has no state directory.
+    pub send_history: Arc<SendHistory>,
 }
 
 /// A cancel wakes the send's `Notify`; `notify_one` keeps a permit if the send is not
@@ -96,11 +99,17 @@ impl AppState {
             history: Arc::new(RunHistory::in_memory()),
             live: Arc::default(),
             sends: Arc::default(),
+            send_history: Arc::new(SendHistory::in_memory()),
         }
     }
 
     pub fn with_history(mut self, history: RunHistory) -> AppState {
         self.history = Arc::new(history);
+        self
+    }
+
+    pub fn with_send_history(mut self, history: SendHistory) -> AppState {
+        self.send_history = Arc::new(history);
         self
     }
 

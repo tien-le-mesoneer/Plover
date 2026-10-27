@@ -320,7 +320,7 @@ fn run_dto(record: &RunRecord) -> RunDto {
     }
 }
 
-fn detail_dto(r: &ResultRecord) -> RunResultDetailDto {
+pub(crate) fn detail_dto(r: &ResultRecord) -> RunResultDetailDto {
     let o = &r.outcome;
     let (tests, asserts, console, script_error) = outcome_lists(o);
     let response = o.response.as_ref().map(|d| {
@@ -362,6 +362,7 @@ fn detail_dto(r: &ResultRecord) -> RunResultDetailDto {
             script_error,
             scripted_requests: o.scripted_requests.iter().map(Into::into).collect(),
             skipped: r.skip_reason.clone(),
+            history_error: None,
         },
     }
 }

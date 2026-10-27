@@ -26,6 +26,9 @@ import type {
   PickedFolderDto,
   RecentDto,
   RunDto,
+  RemovedDto,
+  SendMetaDto,
+  SendRecordDto,
   RunEventDto,
   RunMetaDto,
   RuntimeVarsDto,
@@ -173,6 +176,10 @@ export interface ApiClient {
   /** One result's request and response, masked; live runs answer from memory. */
   runResult(id: string, recordId: string, index: number): Promise<RunResultDetailDto>;
   clearRuns(id: string): Promise<void>;
+  /** Past UI sends, newest first, of one collection or all. */
+  sends(collection?: string | null): Promise<SendMetaDto[]>;
+  sendRecord(id: string): Promise<SendRecordDto>;
+  clearSends(collection?: string | null): Promise<RemovedDto>;
 }
 
 export interface SendOptions {
@@ -322,6 +329,9 @@ export function createApiClient(baseUrl: string, token: string, deps: Deps = {})
     runResult: (id, recordId, index) =>
       call("GET", `${collections(id)}/runs/${enc(recordId)}/results/${index}`),
     clearRuns: (id) => call("DELETE", `${collections(id)}/runs`),
+    sends: (collection) => call("GET", `/sends${collection ? `?collection=${enc(collection)}` : ""}`),
+    sendRecord: (id) => call("GET", `/sends/${enc(id)}`),
+    clearSends: (collection) => call("DELETE", `/sends${collection ? `?collection=${enc(collection)}` : ""}`),
     previewDataFile: (id, file) => call("POST", `${collections(id)}/data-file/preview`, file),
     async downloadReport(id, recordId, format) {
       const res = await doFetch(

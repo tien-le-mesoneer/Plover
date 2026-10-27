@@ -12,6 +12,7 @@ mod import;
 mod native;
 mod requests;
 mod resolve_text;
+mod sends;
 mod session;
 mod vars;
 pub use requests::MAX_INLINE_BODY;
@@ -58,6 +59,8 @@ pub fn routes() -> Router<AppState> {
             "/ui-state/{id}",
             put(app_state::put_ui_state).layer(DefaultBodyLimit::max(app_state::MAX_UI_STATE_BODY)),
         )
+        .route("/sends", get(sends::list).delete(sends::clear))
+        .route("/sends/{id}", get(sends::get))
         .route("/collections/{id}/tree", get(collections::tree))
         .route("/collections/{id}/reload", post(collections::reload))
         .route(

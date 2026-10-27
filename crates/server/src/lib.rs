@@ -115,7 +115,9 @@ pub async fn start(
         state = state.with_native(host);
     }
     if let Some(dir) = &cfg.state_dir {
-        state = state.with_history(plover_core::run_history::RunHistory::at(dir));
+        state = state
+            .with_history(plover_core::run_history::RunHistory::at(dir))
+            .with_send_history(plover_core::send_history::SendHistory::at(dir));
     }
     let workspace = state.workspace.clone();
     if let Some(dir) = cfg.state_dir {

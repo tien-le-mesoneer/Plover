@@ -188,7 +188,11 @@ scriptedRequests: Array<ScriptedRequestDto>,
 /**
  * Why the request was not sent (`bru.runner.skipRequest()`).
  */
-skipped: string | null, };
+skipped: string | null, 
+/**
+ * The send finished but could not be saved to history.
+ */
+historyError?: string, };
 
 export type OpenCollectionBody = { path: string, };
 
@@ -438,6 +442,24 @@ export type ResolveTextDto = {
  * `null` when the text contains a secret and `reveal` was false.
  */
 text: string | null, containsSecret: boolean, };
+
+export type SendMetaDto = { id: string, sentAtMs: number, 
+/**
+ * The collection's ID (it may not be open any more).
+ */
+collectionId: string, collectionName: string, 
+/**
+ * The request file; `null` for a scratch request.
+ */
+item: string | null, env: string | null, method: string, name: string, url: string, 
+/**
+ * `pass`, `fail`, `error` or `skipped`.
+ */
+status: string, httpStatus: number | null, durationMs: number, };
+
+export type SendRecordDto = { meta: SendMetaDto, detail: RunResultDetailDto, };
+
+export type RemovedDto = { removed: number, };
 
 export type ResolvedUrlDto = { url: string, 
 /**

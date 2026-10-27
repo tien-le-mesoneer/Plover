@@ -341,6 +341,10 @@ pub struct SendResultDto {
     pub scripted_requests: Vec<ScriptedRequestDto>,
     /// Why the request was not sent (`bru.runner.skipRequest()`).
     pub skipped: Option<String>,
+    /// The send finished but could not be saved to history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub history_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1221,6 +1225,9 @@ pub fn typescript_bindings() -> String {
         super::vars::RuntimeVarsDto::decl(&cfg),
         super::resolve_text::ResolveTextBody::decl(&cfg),
         super::resolve_text::ResolveTextDto::decl(&cfg),
+        super::sends::SendMetaDto::decl(&cfg),
+        super::sends::SendRecordDto::decl(&cfg),
+        super::sends::RemovedDto::decl(&cfg),
         ResolvedUrlDto::decl(&cfg),
         RevealBody::decl(&cfg),
         CurlTextDto::decl(&cfg),

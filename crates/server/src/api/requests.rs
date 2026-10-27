@@ -6,8 +6,11 @@ use base64::Engine;
 use plover_core::executor::ResponseSummary;
 use plover_core::masking::credential_values;
 use plover_core::request::HttpRequest;
-use plover_core::runner::{SendInput, send_one};
+use plover_core::run_record::{ResultStatus, RunId};
+use plover_core::runner::{RequestOutcome, SendError, SendInput, send_one};
+use plover_core::send_history::{SendHeader, SendRecord, send_result};
 use plover_core::store::{self, ContentHash};
+use plover_core::workspace::OpenCollection;
 use serde::Deserialize;
 use tokio::sync::Notify;
 
@@ -109,15 +112,37 @@ pub async fn send(
         Some(r) => tokio::select! {
             biased;
             () = r.cancelled.notified() => {
+                // A cancelled send is not recorded.
                 return Err(ApiError::new(StatusCode::CONFLICT, "cancelled", "Request cancelled"));
             }
-            sent = sending => sent?,
+            sent = sending => sent,
         },
-        None => sending.await?,
+        None => sending.await,
+    };
+    let recorded = Recorded {
+        state: &state,
+        open: &open,
+        item: body.item.as_deref(),
+        draft: draft.as_ref(),
+        env: body.env.as_deref(),
+    };
+    let sent = match sent {
+        Ok(sent) => sent,
+        Err(e @ SendError::Exec(_)) => {
+            // The transport failed: there is no outcome, but the attempt is history.
+            recorded
+                .save(&RequestOutcome::default(), Some(e.to_string()), None)
+                .await;
+            return Err(e.into());
+        }
+        Err(e) => return Err(e.into()),
     };
     if let Some(detail) = &sent.outcome.request {
         open.note_sent_credentials(credential_values(&detail.headers));
     }
+    let history_error = recorded
+        .save(&sent.outcome, None, sent.skipped.clone())
+        .await;
     let (tests, asserts, console, script_error) = outcome_lists(&sent.outcome);
     Ok(Json(SendResultDto {
         response: sent.response.map(response_dto),
@@ -132,7 +157,72 @@ pub async fn send(
             .map(Into::into)
             .collect(),
         skipped: sent.skipped,
+        history_error,
     }))
+}
+
+/// What a send needs to be saved to history.
+struct Recorded<'a> {
+    state: &'a AppState,
+    open: &'a OpenCollection,
+    item: Option<&'a str>,
+    draft: Option<&'a HttpRequest>,
+    env: Option<&'a str>,
+}
+
+impl Recorded<'_> {
+    /// Saves the send, masked with the environment's secrets and the credential header
+    /// values it sent; returns why it could not be saved. Never fails the send.
+    async fn save(
+        &self,
+        outcome: &RequestOutcome,
+        error: Option<String>,
+        skipped: Option<String>,
+    ) -> Option<String> {
+        let root = self.open.root();
+        let canonical = root.canonicalize().unwrap_or(root);
+        let name = self.draft.map(|d| d.name.clone()).unwrap_or_else(|| {
+            let item = self.item.unwrap_or_default();
+            std::path::Path::new(item)
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        });
+        let (method, url) = self
+            .draft
+            .map(|d| (d.method.as_str().to_owned(), d.url.clone()))
+            .unwrap_or_default();
+        let mut result = send_result(self.item, &name, &method, &url, outcome, error);
+        if let Some(reason) = skipped {
+            result.status = ResultStatus::Skipped;
+            result.error = None;
+            result.skip_reason = Some(reason);
+        }
+        let mut secrets: Vec<String> = self
+            .env
+            .map(|env| self.open.secrets(env).into_values().collect())
+            .unwrap_or_default();
+        secrets.extend(self.open.sent_credentials());
+        let now = std::time::SystemTime::now();
+        let header = SendHeader {
+            id: RunId::new(now),
+            sent_at_ms: plover_core::time::unix_ms(now),
+            collection_root: canonical.to_string_lossy().into_owned(),
+            collection_name: self.open.collection().config.name.clone(),
+            item: self.item.map(str::to_owned),
+            env: self.env.map(str::to_owned),
+        };
+        let record = SendRecord::masked(header, result, &secrets);
+        let history = self.state.send_history.clone();
+        match tokio::task::spawn_blocking(move || history.save(&record)).await {
+            Ok(Ok(())) => None,
+            Ok(Err(e)) => {
+                tracing::warn!("cannot save send history: {e}");
+                Some(e.to_string())
+            }
+            Err(e) => Some(e.to_string()),
+        }
+    }
 }
 
 /// `POST /collections/{id}/send/{send_id}/cancel`: 204 whether or not the send is still
