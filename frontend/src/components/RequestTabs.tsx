@@ -39,7 +39,7 @@ export function RequestTabs() {
       return {
         key: t.key,
         name: `${t.draft.method} ${t.draft.name}${dirty ? ", unsaved changes" : ""}`,
-        title: t.item ?? "Unsaved request",
+        title: `${`${t.draft.method} ${t.draft.url}`.trim()}\n${t.item ?? "Unsaved request"}`,
         content: (
           <>
             <span className={`badge method-${t.draft.method.toLowerCase()}`}>{t.draft.method}</span>

@@ -450,6 +450,7 @@ function CollectionTree({
             {...common}
             className={`node request ${selected ? "selected" : ""}`}
             aria-label={`${node.method ?? ""} ${node.name}`.trim()}
+            title={`${node.method ?? ""} ${node.url ?? ""}`.trim()}
             aria-selected={selected}
             onClick={() => {
               focus(node.id);

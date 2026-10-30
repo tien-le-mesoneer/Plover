@@ -113,7 +113,11 @@ export type TreeNodeDto = { kind: TreeNodeKind,
 /**
  * `/`-separated path relative to the collection root; `""` for the root.
  */
-id: string, name: string, method: string | null, seq: number | null, 
+id: string, name: string, method: string | null, 
+/**
+ * The request's URL as written (`{{variables}}` unresolved); requests only.
+ */
+url?: string, seq: number | null, 
 /**
  * Parse error of an invalid file.
  */

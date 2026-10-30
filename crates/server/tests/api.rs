@@ -47,6 +47,8 @@ async fn open_and_tree() {
     let ping = children.iter().find(|c| c["id"] == "ping.bru").unwrap();
     assert_eq!(ping["kind"], "request");
     assert_eq!(ping["method"], "GET");
+    // The raw URL, for the sidebar's hover text.
+    assert_eq!(ping["url"], "{{host}}/ping");
     let echo = children.iter().find(|c| c["id"] == "echo").unwrap();
     assert!(
         echo["children"]

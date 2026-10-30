@@ -8,6 +8,8 @@ export interface RunRow {
   item: string;
   name: string;
   method: string;
+  /** The URL that was sent (variables filled in), when the run reported it. */
+  url?: string;
   /** The folder path of the request (`""` at the collection root). */
   folder: string;
   state: RunRowState;
@@ -61,6 +63,7 @@ export function buildEntries(events: RunEventDto[]): RunListEntry[] {
         item: e.item,
         name: e.name,
         method: e.method,
+        url: e.url,
         folder: folderOf(e.item),
         state: "running",
         iteration: e.iteration,

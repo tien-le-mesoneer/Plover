@@ -144,6 +144,7 @@ fn folder_node(root: &Path, folder: &Folder, root_name: &str) -> TreeNodeDto {
                 id: item_id(root, path),
                 name: file.request.name.clone(),
                 method: Some(file.request.method.as_str().to_owned()),
+                url: Some(file.request.url.clone()),
                 seq: Some(file.request.seq),
                 error: None,
                 children: None,
@@ -156,6 +157,7 @@ fn folder_node(root: &Path, folder: &Folder, root_name: &str) -> TreeNodeDto {
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default(),
                 method: None,
+                url: None,
                 seq: None,
                 error: Some(error.clone()),
                 children: None,
@@ -172,6 +174,7 @@ fn folder_node(root: &Path, folder: &Folder, root_name: &str) -> TreeNodeDto {
             folder.name.clone()
         },
         method: None,
+        url: None,
         seq: folder.seq,
         error: None,
         children: Some(children),

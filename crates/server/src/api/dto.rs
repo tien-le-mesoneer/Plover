@@ -295,6 +295,10 @@ pub struct TreeNodeDto {
     pub id: String,
     pub name: String,
     pub method: Option<String>,
+    /// The request's URL as written (`{{variables}}` unresolved); requests only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub url: Option<String>,
     pub seq: Option<f64>,
     /// Parse error of an invalid file.
     pub error: Option<String>,
