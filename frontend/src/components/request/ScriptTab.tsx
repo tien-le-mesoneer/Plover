@@ -22,7 +22,7 @@ export function ScriptTab({
     <div className="script-tab">
       <nav className="subtabs">
         {PHASES.map((p) => (
-          <button key={p.key} className={phase === p.key ? "active" : ""} onClick={() => setPhase(p.key)}>
+          <button type="button" key={p.key} className={phase === p.key ? "active" : ""} onClick={() => setPhase(p.key)}>
             {p.label}
             {(p.key === "pre" ? pre : post) ? <sup>•</sup> : null}
           </button>

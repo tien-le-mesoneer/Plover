@@ -130,7 +130,7 @@ export function KeyValueTable({ rows, onChange, fixedNames, nameLabel = "Name", 
               )}
               <td className="kv-del">
                 {!isNew && !fixedNames && (
-                  <button className="icon" title="Remove" aria-label="Remove" onClick={() => remove(i)}>
+                  <button type="button" className="icon" title="Remove" aria-label="Remove" onClick={() => remove(i)}>
                     <CloseIcon />
                   </button>
                 )}

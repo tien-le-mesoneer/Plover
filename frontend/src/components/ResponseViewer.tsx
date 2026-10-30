@@ -183,7 +183,7 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
         <Banner
           kind="error"
           role="alert"
-          actions={onOpenScript && <button onClick={onOpenScript}>Open script</button>}
+          actions={onOpenScript && <button type="button" onClick={onOpenScript}>Open script</button>}
         >
           {scriptErrorText(result.scriptError)}
         </Banner>
@@ -326,7 +326,7 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
               />
             )}
             {slice.capped && shownMode !== "preview" && (
-              <Banner kind="warn" role="status" actions={<button onClick={() => setShowAll(true)}>Show all</button>}>
+              <Banner kind="warn" role="status" actions={<button type="button" onClick={() => setShowAll(true)}>Show all</button>}>
                 Showing the first {formatSize(slice.shown.length)} of {formatSize(slice.total)}. Copy and Save use the whole body.
               </Banner>
             )}

@@ -136,8 +136,8 @@ export function RequestEditor({ tab }: { tab: Tab }) {
           role="alert"
           actions={
             <>
-              <button onClick={() => void resolveConflict(tab.key, "reload")}>Reload from disk</button>
-              <button onClick={() => void resolveConflict(tab.key, "overwrite")}>Overwrite with my changes</button>
+              <button type="button" onClick={() => void resolveConflict(tab.key, "reload")}>Reload from disk</button>
+              <button type="button" onClick={() => void resolveConflict(tab.key, "overwrite")}>Overwrite with my changes</button>
             </>
           }
         >

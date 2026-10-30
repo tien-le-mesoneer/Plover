@@ -123,8 +123,9 @@ export function RunHistoryMenu({
           <h3>Delete the saved runs of this collection?</h3>
           <p>Runs saved by the app and by plv are deleted. This cannot be undone.</p>
           <div className="actions">
-            <button onClick={() => setConfirm(false)}>Cancel</button>
+            <button type="button" onClick={() => setConfirm(false)}>Cancel</button>
             <button
+              type="button"
               className="primary"
               onClick={() => {
                 setConfirm(false);

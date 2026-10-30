@@ -110,8 +110,8 @@ export function EnvEditor({ collectionId, name, onClose }: Props) {
           </Banner>
         )}
         <div className="actions">
-          <button onClick={dismiss}>Cancel</button>
-          <button className="primary" onClick={() => void save()}>
+          <button type="button" onClick={dismiss}>Cancel</button>
+          <button type="button" className="primary" onClick={() => void save()}>
             Save
           </button>
         </div>

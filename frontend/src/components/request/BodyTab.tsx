@@ -164,7 +164,7 @@ function MultipartTable({
               )}
             </td>
             <td className="kv-del">
-              <button className="icon" title="Remove" aria-label="Remove" onClick={() => onChange(fields.filter((_, j) => j !== i))}>
+              <button type="button" className="icon" title="Remove" aria-label="Remove" onClick={() => onChange(fields.filter((_, j) => j !== i))}>
                 ×
               </button>
             </td>
@@ -173,6 +173,7 @@ function MultipartTable({
         <tr>
           <td colSpan={5}>
             <button
+              type="button"
               onClick={() =>
                 onChange([...fields, { name: "", value: { type: "text", value: "" }, enabled: true, contentType: null }])
               }

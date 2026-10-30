@@ -48,7 +48,7 @@ export function RunResultDetail({ runId }: { runId: string }) {
             <ExternalIcon />
           </button>
         )}
-        <button className="icon" title="Close result detail" aria-label="Close result detail" onClick={close}>
+        <button type="button" className="icon" title="Close result detail" aria-label="Close result detail" onClick={close}>
           <CloseIcon />
         </button>
       </header>

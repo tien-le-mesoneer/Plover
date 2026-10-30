@@ -161,6 +161,7 @@ export function Sidebar({ onRun }: Props) {
               <span className="spacer" />
               {onRun && (
                 <button
+                  type="button"
                   className="icon"
                   title="Run collection"
                   aria-label="Run collection"
@@ -169,6 +170,7 @@ export function Sidebar({ onRun }: Props) {
                 </button>
               )}
               <button
+                type="button"
                 className="icon"
                 title="Reload from disk"
                 aria-label="Reload from disk"
@@ -176,6 +178,7 @@ export function Sidebar({ onRun }: Props) {
                 <RefreshIcon />
               </button>
               <button
+                type="button"
                 className="icon"
                 title="Close collection (Plover reopens it next time unless closed)"
                 aria-label={`Close collection ${c.name}`}
@@ -210,8 +213,8 @@ export function Sidebar({ onRun }: Props) {
           <h3>Close {confirmClose.name}?</h3>
           <p>Some of its requests have unsaved edits. Closing discards them.</p>
           <div className="actions">
-            <button onClick={() => setConfirmClose(null)}>Cancel</button>
-            <button className="primary" onClick={() => void doClose(confirmClose.id)}>
+            <button type="button" onClick={() => setConfirmClose(null)}>Cancel</button>
+            <button type="button" className="primary" onClick={() => void doClose(confirmClose.id)}>
               Discard and close
             </button>
           </div>

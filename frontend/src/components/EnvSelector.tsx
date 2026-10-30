@@ -33,7 +33,7 @@ export function EnvSelector({ collectionId }: { collectionId: string | null }) {
           </option>
         ))}
       </select>
-      <button disabled={!current} onClick={() => setEditing(true)}>
+      <button type="button" disabled={!current} onClick={() => setEditing(true)}>
         Edit
       </button>
       {editing && current && (

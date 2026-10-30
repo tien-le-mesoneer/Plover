@@ -132,6 +132,7 @@ export function RequestTabs() {
           >
             {t.content}
             <button
+              type="button"
               className="icon"
               tabIndex={-1}
               title="Close (Delete when the tab is focused)"

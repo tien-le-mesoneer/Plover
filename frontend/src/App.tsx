@@ -171,8 +171,8 @@ export default function App({ hasToken }: { hasToken: boolean }) {
           <h3>Discard unsaved changes?</h3>
           <p>Some requests have unsaved edits. Reloading the window discards them.</p>
           <div className="actions">
-            <button onClick={() => setConfirmReload(false)}>Cancel</button>
-            <button className="primary" onClick={() => window.location.reload()}>
+            <button type="button" onClick={() => setConfirmReload(false)}>Cancel</button>
+            <button type="button" className="primary" onClick={() => window.location.reload()}>
               Discard and reload
             </button>
           </div>
@@ -183,7 +183,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
           kind="error"
           role="alert"
           actions={
-            <button className="icon" title="Dismiss" aria-label="Dismiss" onClick={clearError}>
+            <button type="button" className="icon" title="Dismiss" aria-label="Dismiss" onClick={clearError}>
               <CloseIcon />
             </button>
           }
