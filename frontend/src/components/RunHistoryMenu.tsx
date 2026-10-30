@@ -126,7 +126,7 @@ export function RunHistoryMenu({
             <button type="button" onClick={() => setConfirm(false)}>Cancel</button>
             <button
               type="button"
-              className="primary"
+              className="danger"
               onClick={() => {
                 setConfirm(false);
                 setOpen(false);

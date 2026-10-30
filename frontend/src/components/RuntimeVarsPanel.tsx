@@ -189,7 +189,7 @@ export function RuntimeVarsPanel({ collectionId }: { collectionId: string | null
             </button>
             <button
               type="button"
-              className="primary"
+              className="danger"
               onClick={() => {
                 setConfirm(false);
                 void changed(api().clearRuntimeVars(collectionId));

@@ -53,6 +53,14 @@ describe.each(Object.entries(themes))("%s theme", (_name, t) => {
     }
   });
 
+  it("primary_and_danger_buttons_meet_4_5", () => {
+    // .primary: --bg on --fg, --bg on --muted when hovered; .danger: --err on --bg-2, --bg on --err when hovered.
+    expect(contrast(t["bg"]!, t["fg"]!)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(t["bg"]!, t["muted"]!)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(t["err"]!, t["bg-2"]!)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(t["bg"]!, t["err"]!)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it("send differs from GET and 2xx", () => {
     expect(t["color-send"]).not.toBe(t["get"]);
     expect(t["color-send"]).not.toBe(t["ok"]);
@@ -62,6 +70,27 @@ describe.each(Object.entries(themes))("%s theme", (_name, t) => {
 it("send_is_emerald_700", () => {
   expect(themes.light["color-send"]).toBe("#047857");
   expect(themes.light["color-on-send"]).toBe("#ffffff");
+});
+
+/** The declarations of the first rule whose selector list is exactly `selector`. */
+const rule = (selector: string) => {
+  const at = rest.indexOf(`\n${selector} {`);
+  if (at < 0) throw new Error(`${selector} not found`);
+  return rest.slice(at, rest.indexOf("}", at));
+};
+
+it("primary_and_danger_use_the_checked_pairs", () => {
+  expect(rule("button.primary")).toMatch(/background: var\(--fg\);.*color: var\(--bg\);/s);
+  expect(rule("button.primary:hover:not(:disabled)")).toMatch(/background: var\(--muted\);/);
+  expect(rule("button.danger")).toMatch(/border-color: var\(--err\);.*color: var\(--err\);/s);
+  expect(rule("button.danger:hover:not(:disabled)")).toMatch(/background: var\(--err\);.*color: var\(--bg\);/s);
+});
+
+it("toolbar_controls_are_30px", () => {
+  // Text and icon buttons in a toolbar row are as tall as its inputs and selects.
+  expect(themes.light["control-h"]).toBe("30px");
+  expect(rule(".topbar button, .urlbar button, .run-header button")).toMatch(/min-height: var\(--control-h\);/);
+  expect(rule(".topbar button.icon, .urlbar button.icon, .run-header button.icon")).toMatch(/min-width: var\(--control-h\);/);
 });
 
 it("no_raw_colours_outside_tokens", () => {

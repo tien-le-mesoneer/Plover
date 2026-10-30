@@ -172,7 +172,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
           <p>Some requests have unsaved edits. Reloading the window discards them.</p>
           <div className="actions">
             <button type="button" onClick={() => setConfirmReload(false)}>Cancel</button>
-            <button type="button" className="primary" onClick={() => window.location.reload()}>
+            <button type="button" className="danger" onClick={() => window.location.reload()}>
               Discard and reload
             </button>
           </div>

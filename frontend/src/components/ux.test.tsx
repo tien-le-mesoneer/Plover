@@ -533,6 +533,8 @@ describe("run result detail and history", () => {
     });
     fireEvent.click(within(screen.getByRole("dialog", { name: "Run history" })).getByRole("button", { name: "Clear history" }));
     const confirm = screen.getByRole("dialog", { name: "Clear run history" });
+    // Deleting is styled as a danger action, not as the dialog's main one.
+    expect(within(confirm).getByRole("button", { name: "Clear history" }).className).toBe("danger");
     await act(async () => {
       fireEvent.click(within(confirm).getByRole("button", { name: "Clear history" }));
     });

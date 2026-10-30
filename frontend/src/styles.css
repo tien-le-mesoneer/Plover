@@ -27,6 +27,7 @@
   --delete: #b91c1c; /* 6.47 / 6.03 */
   --method-other: #5b626c; /* 6.16 / 5.74 */
   --radius: 3px;
+  --control-h: 30px; /* buttons, inputs and selects in a toolbar row */
   --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --fs-dense: 13px;
@@ -84,7 +85,12 @@ button {
   cursor: pointer;
 }
 button:disabled { opacity: 0.5; cursor: default; }
-button.primary { border-color: var(--fg); font-weight: 600; }
+/* The dialog's main action: filled like a checked segmented button (Send stays the only colour). */
+button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); font-weight: 600; }
+button.primary:hover:not(:disabled) { background: var(--muted); border-color: var(--muted); }
+/* Clears or throws away work. */
+button.danger { border-color: var(--err); color: var(--err); font-weight: 600; }
+button.danger:hover:not(:disabled) { background: var(--err); color: var(--bg); }
 button.send { background: var(--color-send); color: var(--color-on-send); border-color: var(--color-send); font-weight: 600; padding-inline: 14px; }
 /* Replaces Send while a request runs: neutral outline, never the send colour. */
 .send-slot { display: inline-flex; flex: none; inline-size: 9.5em; }
@@ -98,6 +104,10 @@ button.icon {
 }
 button.icon:hover { background: var(--bg-3); }
 button.icon:hover { color: var(--fg); }
+/* Toolbar rows: every button is as tall as the inputs and selects beside it; icon buttons are
+   30px squares there and 24px in content (corners, tables, cards). */
+.topbar button, .urlbar button, .run-header button { min-height: var(--control-h); }
+.topbar button.icon, .urlbar button.icon, .run-header button.icon { min-width: var(--control-h); }
 code, pre, .mono { font-family: var(--font-mono); }
 code { font-size: 12px; }
 .muted { color: var(--muted); }
@@ -442,7 +452,6 @@ kbd { font-family: var(--font-mono); font-size: 11px; padding: 0 4px; border: 1p
 
 /* Menus (URL bar ⋯ and others) */
 .menu-button { position: relative; display: inline-flex; align-items: center; }
-.menu-button > button.icon { min-width: 30px; min-height: 30px; border: 1px solid var(--border-strong); }
 .context-menu { position: fixed; z-index: 50; display: flex; flex-direction: column; min-width: 180px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 4px; }
 .menu-button .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; min-width: 240px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 4px; }
 .menu-button .menu button, .context-menu button { display: flex; justify-content: space-between; gap: 16px; text-align: left; border: 0; background: none; padding: 6px 8px; }

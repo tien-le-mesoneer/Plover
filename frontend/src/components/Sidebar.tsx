@@ -214,7 +214,7 @@ export function Sidebar({ onRun }: Props) {
           <p>Some of its requests have unsaved edits. Closing discards them.</p>
           <div className="actions">
             <button type="button" onClick={() => setConfirmClose(null)}>Cancel</button>
-            <button type="button" className="primary" onClick={() => void doClose(confirmClose.id)}>
+            <button type="button" className="danger" onClick={() => void doClose(confirmClose.id)}>
               Discard and close
             </button>
           </div>
