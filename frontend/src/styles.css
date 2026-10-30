@@ -80,9 +80,9 @@ input, select {
   padding: 4px 6px;
   min-width: 0;
 }
-::placeholder { color: var(--placeholder); font-style: italic; opacity: 1; }
+::placeholder { color: var(--placeholder); opacity: 1; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-button {
+button, .file-field .file-button {
   background: var(--bg-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
@@ -90,6 +90,14 @@ button {
   cursor: pointer;
 }
 button:disabled { opacity: 0.5; cursor: default; }
+/* A form field: its label (12px, 500, muted) above the control. */
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field > :first-child { font-size: 12px; font-weight: 500; color: var(--muted); }
+/* A file field: the native input is .sr-only; its second label is drawn as a button. */
+.file-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.file-field .file-button { display: inline-flex; align-items: center; flex: none; color: var(--fg); }
+.file-field input:focus-visible + .file-button { outline: 2px solid var(--focus); outline-offset: 1px; }
+.file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 /* The dialog's main action: filled like a checked segmented button (Send stays the only colour). */
 button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); font-weight: 600; }
 button.primary:hover:not(:disabled) { background: var(--muted); border-color: var(--muted); }
@@ -140,7 +148,6 @@ code { font-size: 12px; }
 .filter { display: flex; align-items: center; gap: 6px; margin: 8px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg); color: var(--muted); }
 .filter:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
 .filter input { flex: 1; border: none; background: none; padding: 5px 0; outline: none; }
-.filter input::placeholder { font-style: normal; }
 .no-matches { margin: 2px 12px 8px; font-size: 12px; }
 
 /* Everything that floats over the page (menus, popovers) opens 4px from its trigger. A surface
@@ -159,7 +166,6 @@ code { font-size: 12px; }
   position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 40;
   min-width: 300px; padding: 8px; display: flex; flex-direction: column; gap: 6px;
 }
-.popover-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-top: 4px; }
 button.wide { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; }
 .path-form { display: flex; gap: 4px; }
 .path-form input { flex: 1; min-height: 30px; }
@@ -265,7 +271,8 @@ button.icon[aria-disabled="true"] { opacity: 0.5; cursor: default; }
 .subtabs button:focus-visible { outline-offset: -2px; }
 .subtabs button.active { box-shadow: inset 0 -2px 0 var(--fg); font-weight: 600; }
 .subtabs sup { color: var(--muted); margin-left: 2px; }
-h4 { margin: 6px 0 2px; font-size: 12px; color: var(--muted); text-transform: uppercase; }
+/* A group heading: a section of a tab (Query, Path) or of a popover (Recent). */
+h4, .group-label { margin: 6px 0 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 
 /* Column headers of every table (key-value, response headers, HAR import). */
 thead th { text-align: left; font-family: var(--font-ui); font-size: 12px; font-weight: 500; color: var(--muted); }
@@ -282,9 +289,9 @@ thead th { text-align: left; font-family: var(--font-ui); font-size: 12px; font-
 .kv .kv-check input { margin: 0; }
 
 .form { display: flex; flex-direction: column; gap: 8px; max-width: 420px; }
-.form label, .secret { display: flex; flex-direction: column; gap: 2px; color: var(--muted); }
 .body-tab { display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; }
-.body-tab > select { align-self: flex-start; }
+/* A mode select is as wide as its options. */
+.body-tab > select, .form select { align-self: flex-start; }
 .editor-box { flex: 1; min-height: 240px; border: 1px solid var(--border); }
 /* Hover/focus-revealed controls: hidden with opacity, never removed from the Tab order. */
 .has-corner { position: relative; }
@@ -351,7 +358,6 @@ button.copy { display: inline-flex; align-items: center; gap: 4px; padding: 2px 
 .value-menu { position: fixed; z-index: 30; min-width: 220px; max-width: 360px; }
 .value-menu-path { font-size: 12px; color: var(--muted); padding: 2px 8px 4px; overflow-wrap: anywhere; }
 .value-menu-form { display: flex; flex-direction: column; gap: 6px; padding: 4px 8px; }
-.value-menu-form label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
 .body-preview { flex: 1; min-height: 240px; width: 100%; border: 0; background: var(--bg); }
 .body-preview-image { max-width: 100%; max-height: 60vh; object-fit: contain; margin: 8px; align-self: flex-start; }
 .pinned-headers { list-style: none; margin: 0; padding: 4px 8px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; flex: none; }
@@ -377,7 +383,7 @@ table.headers td { word-break: break-all; }
 .run-header { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .run-title { display: flex; flex-direction: column; min-width: 0; }
 .run-filters { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); }
-.run-name-filter { min-width: 160px; max-width: 280px; }
+.run-name-filter { margin: 0; flex: 1; min-width: 160px; max-width: 280px; }
 .run-body { display: flex; flex: 1; min-height: 0; }
 .run-list-pane { width: 42%; min-width: 280px; max-width: 640px; overflow: auto; border-right: 1px solid var(--border); }
 .run-detail-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: auto; }
@@ -415,7 +421,6 @@ table.headers td { word-break: break-all; }
 .export-menu { display: inline-flex; align-items: center; gap: 8px; }
 .export-menu .menu { position: fixed; min-width: 140px; }
 .run-with-data { display: flex; flex-direction: column; gap: 8px; }
-.run-with-data label { display: flex; flex-direction: column; gap: 4px; }
 .run-with-data p { margin: 0; }
 .data-chip { display: inline-block; margin-left: 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 999px; font-family: var(--font-mono); font-size: 12px; }
 .history-popover { position: fixed; left: auto; top: auto; min-width: 360px; max-width: calc(100vw - 16px); max-height: min(360px, 60vh); overflow: auto; }
@@ -462,8 +467,6 @@ kbd { font-family: var(--font-mono); font-size: 11px; padding: 0 4px; border: 1p
 
 /* Save request dialog (scratch tabs) */
 .save-request { display: flex; flex-direction: column; gap: 10px; }
-.save-request label { display: flex; flex-direction: column; gap: 4px; }
-.save-request label > span { font-size: 12px; color: var(--muted); }
 .field-error { margin: 0; color: var(--err); font-size: 12px; }
 .curl-notices { margin: 4px 0 0; padding-left: 18px; }
 
@@ -477,9 +480,7 @@ kbd { font-family: var(--font-mono); font-size: 11px; padding: 0 4px; border: 1p
 /* Import HAR dialog */
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .import-har { display: flex; flex-direction: column; gap: 10px; }
-.import-har label { display: flex; flex-direction: column; gap: 4px; }
-.import-har label > span { font-size: 12px; color: var(--muted); }
-.import-har label.inline { flex-direction: row; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.import-har label.inline { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .har-hosts { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { border-radius: 999px; padding: 2px 10px; font-size: 12px; }
 .chip[aria-pressed="true"] { border-color: var(--focus); }

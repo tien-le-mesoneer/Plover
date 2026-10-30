@@ -76,7 +76,7 @@ export function EnvEditor({ collectionId, name, onClose }: Props) {
               const state =
                 edit === null ? "will be cleared" : edit !== undefined ? "changed" : isSet ? "set" : "not set";
               return (
-                <label key={secret} className="secret">
+                <label key={secret} className="field secret">
                   <span>
                     {secret} <span className="muted">({state})</span>
                     {stored && (

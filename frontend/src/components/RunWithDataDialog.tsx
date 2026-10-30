@@ -1,7 +1,8 @@
-import { useState, type ChangeEvent } from "react";
+import { useState } from "react";
 import type { DataFileDto, DataPreviewDto } from "../api/types";
 import { api } from "../api/instance";
 import { useRuns } from "../store/runs";
+import { FileField } from "./FileField";
 import { Modal } from "./Modal";
 
 /** Same limit as the server (`data_file::MAX_DATA_FILE`). */
@@ -37,8 +38,7 @@ export function RunWithDataDialog({ collectionId, item, label, env, onClose, onS
   const [error, setError] = useState<string>();
   const [count, setCount] = useState("1");
 
-  const pick = async (e: ChangeEvent<HTMLInputElement>) => {
-    const picked = e.target.files?.[0];
+  const pick = async (picked: File | undefined) => {
     setFile(undefined);
     setPreview(undefined);
     setError(undefined);
@@ -75,10 +75,7 @@ export function RunWithDataDialog({ collectionId, item, label, env, onClose, onS
     <Modal title="Run with data" onDismiss={onClose}>
       <div className="run-with-data">
       <h3>Run with data: {label}</h3>
-      <label>
-        <span>Data file (CSV or JSON)</span>
-        <input type="file" accept=".csv,.json" aria-describedby="data-file-help" onChange={(e) => void pick(e)} />
-      </label>
+      <FileField label="Data file (CSV or JSON)" accept=".csv,.json" describedBy="data-file-help" onFile={(f) => void pick(f)} />
       <p id="data-file-help" className="muted">
         One iteration per row; <code>{"{{column}}"}</code> reads the row. The file is not saved.
       </p>
@@ -92,7 +89,7 @@ export function RunWithDataDialog({ collectionId, item, label, env, onClose, onS
           {error}
         </p>
       )}
-      <label>
+      <label className="field">
         <span>Iterations</span>
         <input
           type="number"

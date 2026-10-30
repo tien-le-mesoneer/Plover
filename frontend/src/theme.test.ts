@@ -143,6 +143,25 @@ it("key_value_table_starts_at_the_pane_edge", () => {
   expect(rule(".kv .kv-check input")).toMatch(/margin: 0;/);
 });
 
+it("one_label_style_and_one_heading_style", () => {
+  // A field's label sits above its control; a group heading names a section or popover list.
+  expect(rule(".field > :first-child")).toMatch(/font-size: 12px;.*font-weight: 500;.*color: var\(--muted\);/s);
+  expect(rule(".field > :first-child")).not.toMatch(/text-transform/);
+  expect(rule("h4, .group-label")).toMatch(/font-size: 11px;.*font-weight: 600;.*text-transform: uppercase;/s);
+  expect(rest).not.toMatch(/popover-label|\.(save-request|import-har|run-with-data|value-menu-form) label[ >{]/);
+  expect(rest).not.toMatch(/\.form label/);
+  // Placeholders are upright everywhere.
+  expect(rule("::placeholder")).not.toMatch(/italic/);
+  expect(rest).not.toMatch(/placeholder \{[^}]*font-style/);
+  // A mode select is as wide as its options.
+  expect(rule(".body-tab > select, .form select")).toMatch(/align-self: flex-start;/);
+});
+
+it("file_button_looks_like_a_button", () => {
+  expect(rule("button, .file-field .file-button")).toMatch(/border: 1px solid var\(--border-strong\);/);
+  expect(css).toMatch(/\.file-field input:focus-visible \+ \.file-button \{[^}]*outline: 2px solid var\(--focus\)/);
+});
+
 it("no_raw_colours_outside_tokens", () => {
   const withoutComments = rest.replace(/\/\*[\s\S]*?\*\//g, "");
   expect(withoutComments).not.toMatch(/#[0-9a-f]{3,8}\b/i);

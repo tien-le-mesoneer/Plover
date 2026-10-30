@@ -66,10 +66,10 @@ export function OpenCollectionPopover({ anchor, onClose }: Props) {
           <button type="button" className="primary wide" onClick={() => void browse()}>
             <FolderIcon /> Browse for folder…
           </button>
-          <div className="popover-label">or paste a path</div>
+          <div className="group-label">or paste a path</div>
         </>
       )}
-      {!nativePicker && <div className="popover-label">Path to a folder with a bruno.json</div>}
+      {!nativePicker && <div className="group-label">Path to a folder with a bruno.json</div>}
       <form
         className="path-form"
         onSubmit={(e) => {
@@ -90,7 +90,7 @@ export function OpenCollectionPopover({ anchor, onClose }: Props) {
       </form>
       {recent.length > 0 && (
         <>
-          <div className="popover-label">Recent</div>
+          <div className="group-label">Recent</div>
           <ul className="recent-list">
             {recent.map((r) => (
               <li key={r.root}>

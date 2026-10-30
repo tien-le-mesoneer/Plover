@@ -55,7 +55,7 @@ export function SaveRequestDialog({ tabKey, onClose }: { tabKey: string; onClose
     <Modal title="Save request" onDismiss={onClose}>
       <form className="save-request" onSubmit={(e) => void submit(e)}>
         <h3>Save request</h3>
-        <label>
+        <label className="field">
           <span>Folder</span>
           <select value={folder} onChange={(e) => setFolder(e.target.value)}>
             <option value="">{collection?.name ?? "Collection"} (root)</option>
@@ -66,7 +66,7 @@ export function SaveRequestDialog({ tabKey, onClose }: { tabKey: string; onClose
             ))}
           </select>
         </label>
-        <label>
+        <label className="field">
           <span>Name</span>
           <input
             value={name}

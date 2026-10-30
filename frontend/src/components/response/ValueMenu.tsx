@@ -84,7 +84,7 @@ export function ValueMenu({
       <div className="value-menu-path mono">{path}</div>
       {naming ? (
         <form onSubmit={(e) => void save(e)} className="value-menu-form">
-          <label>
+          <label className="field">
             <span>Runtime variable name</span>
             <input
               value={name}

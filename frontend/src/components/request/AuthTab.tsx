@@ -35,8 +35,8 @@ export function AuthTab({ auth, onChange, tabKey }: Props) {
   };
   return (
     <div className="form">
-      <label>
-        Mode
+      <label className="field">
+        <span>Mode</span>
         <select value={auth.mode} onChange={(e) => select(e.target.value as (typeof MODES)[number])}>
           {MODES.map((m) => (
             <option key={m}>{m}</option>
@@ -46,12 +46,12 @@ export function AuthTab({ auth, onChange, tabKey }: Props) {
       {auth.mode === "inherit" && <p className="muted">Uses the folder or collection auth.</p>}
       {auth.mode === "basic" && (
         <>
-          <label>
-            Username
+          <label className="field">
+            <span>Username</span>
             {Field({ value: auth.username, onChange: (e) => onChange({ ...auth, username: e.target.value }) })}
           </label>
-          <label>
-            Password
+          <label className="field">
+            <span>Password</span>
             <input
               type="password"
               value={auth.password}
@@ -61,8 +61,8 @@ export function AuthTab({ auth, onChange, tabKey }: Props) {
         </>
       )}
       {auth.mode === "bearer" && (
-        <label>
-          Token
+        <label className="field">
+          <span>Token</span>
           {Field({ value: auth.token, onChange: (e) => onChange({ ...auth, token: e.target.value }) })}
         </label>
       )}

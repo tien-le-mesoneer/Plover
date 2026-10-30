@@ -106,7 +106,10 @@ describe("run tab", () => {
 
   it("name_filter_narrows", () => {
     render(runTabFor());
-    fireEvent.change(screen.getByRole("searchbox", { name: "Filter results by name" }), { target: { value: "logi" } });
+    const search = screen.getByRole("searchbox", { name: "Filter results by name" });
+    // The same filter field as the sidebar's, magnifier included.
+    expect(search.closest(".filter")?.querySelector("svg")).toBeTruthy();
+    fireEvent.change(search, { target: { value: "logi" } });
     expect(bodyRows()).toHaveLength(2);
   });
 

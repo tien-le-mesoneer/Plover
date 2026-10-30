@@ -120,7 +120,7 @@ export function RuntimeVarsPanel({ collectionId }: { collectionId: string | null
           style={{ right: place.right, top: place.top }}
           onKeyDown={onKeyDown}
         >
-          <div className="popover-label">Runtime variables</div>
+          <div className="group-label">Runtime variables</div>
           {error && (
             <p role="alert" className="field-error">
               {error}

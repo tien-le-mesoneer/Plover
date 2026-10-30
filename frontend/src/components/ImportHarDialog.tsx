@@ -4,6 +4,7 @@ import type { HarImportBody, HarImportResultDto, HarPlanDto, HarRowDto } from ".
 import { folderIds } from "../lib/tree";
 import { useWorkspace } from "../store/workspace";
 import { AlertIcon } from "./icons";
+import { FileField } from "./FileField";
 import { Modal } from "./Modal";
 
 /** The server's request body limit; larger files are refused before upload. */
@@ -151,10 +152,7 @@ export function ImportHarDialog({
     <Modal title="Import HAR" onDismiss={onClose}>
       <div className="import-har">
         <h3>Import HAR</h3>
-        <label>
-          <span>HAR file</span>
-          <input type="file" accept=".har,application/json" onChange={(e) => void onFile(e.target.files?.[0])} />
-        </label>
+        <FileField label="HAR file" accept=".har,application/json" onFile={(f) => void onFile(f)} />
         {error && (
           <p className="field-error" role="alert">
             {error}
@@ -223,7 +221,7 @@ export function ImportHarDialog({
               </table>
             </div>
             <div className="har-target">
-              <label>
+              <label className="field">
                 <span>Import into</span>
                 <select value={folder} onChange={(e) => setFolder(e.target.value)}>
                   <option value="">{collectionName ?? "Collection"} (root)</option>
@@ -234,11 +232,11 @@ export function ImportHarDialog({
                   ))}
                 </select>
               </label>
-              <label>
+              <label className="field">
                 <span>New subfolder</span>
                 <input value={newFolder} spellCheck={false} onChange={(e) => setNewFolder(e.target.value)} />
               </label>
-              <label>
+              <label className="field">
                 <span>Environment</span>
                 <select value={env} onChange={(e) => setEnv(e.target.value)}>
                   {envs.map((e) => (

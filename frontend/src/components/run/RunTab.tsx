@@ -5,6 +5,7 @@ import { useRuns } from "../../store/runs";
 import { useTabs, type RunTab as RunTabState } from "../../store/tabs";
 import { useWorkspace } from "../../store/workspace";
 import { ExportMenu } from "../ExportMenu";
+import { SearchIcon } from "../icons";
 import { RunHistoryMenu } from "../RunHistoryMenu";
 import { RunResultDetail } from "../RunResultDetail";
 import { RunWithDataDialog } from "../RunWithDataDialog";
@@ -76,14 +77,16 @@ export function RunTab({ tab }: { tab: RunTabState }) {
         <>
           <div className="run-filters">
             <RunFilter counts={counts} value={filter} onChange={setFilter} />
-            <input
-              type="search"
-              className="run-name-filter"
-              aria-label="Filter results by name"
-              placeholder="Filter by name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+            <div className="filter run-name-filter">
+              <SearchIcon />
+              <input
+                type="search"
+                aria-label="Filter results by name"
+                placeholder="Filter by name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
           </div>
           <div className="run-body">
             <div className="run-list-pane">
