@@ -89,7 +89,7 @@ export function HistoryTab() {
               role="option"
               aria-selected={m.id === selected}
               tabIndex={m.id === selected || (!selected && i === 0) ? 0 : -1}
-              className={`history-row ${m.id === selected ? "selected" : ""}`}
+              className={`history-row ${m.id === selected ? "is-selected" : ""}`}
               onClick={() => void select(m.id)}
               onKeyDown={(e) => onKeyDown(e, i)}
             >

@@ -99,7 +99,7 @@ export function QuickOpen({ open, onClose }: Props) {
             id={optionId(i)}
             role="option"
             aria-selected={i === selected}
-            className={i === selected ? "selected" : ""}
+            className={i === selected ? "is-selected" : ""}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => choose(item)}
           >

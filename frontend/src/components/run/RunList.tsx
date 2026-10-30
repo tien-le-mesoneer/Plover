@@ -83,7 +83,7 @@ export function RunList({
           return (
             <tr
               key={`row-${i}`}
-              className={`run-row ${selectable ? "selectable" : ""} state-${e.state}`}
+              className={`run-row ${selectable ? "selectable" : ""} ${selectable && selected === e.index ? "is-selected" : ""} state-${e.state}`}
               title={e.url ? `${e.method} ${e.url}`.trim() : undefined}
               tabIndex={selectable ? 0 : -1}
               aria-selected={selectable ? selected === e.index : undefined}

@@ -171,6 +171,7 @@ describe("quick open", () => {
     fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(input.getAttribute("aria-activedescendant")).toBe(options[1]!.id);
     expect(options[1]!.getAttribute("aria-selected")).toBe("true");
+    expect(options[1]!.classList.contains("is-selected")).toBe(true);
     fireEvent.keyDown(input, { key: "ArrowUp" });
     expect(input.getAttribute("aria-activedescendant")).toBe(options[0]!.id);
   });

@@ -131,6 +131,7 @@ describe("history tab", () => {
       fireEvent.click(first);
     });
     expect(first.getAttribute("aria-selected")).toBe("true");
+    expect(first.classList.contains("is-selected")).toBe(true);
     const panel = screen.getByRole("region", { name: "Send detail" });
     expect(within(panel).getByText("200 OK")).toBeTruthy();
     expect(within(panel).queryByLabelText("URL")).toBeNull();

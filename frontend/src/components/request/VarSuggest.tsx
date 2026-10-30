@@ -33,7 +33,7 @@ export function VarSuggest({ id, optionId, items, active, onPick, anchor }: Prop
           id={optionId(i)}
           role="option"
           aria-selected={i === active}
-          className={i === active ? "active" : ""}
+          className={i === active ? "is-selected" : ""}
           // mousedown, not click: the field must keep focus (blur would close the list).
           onMouseDown={(e) => {
             e.preventDefault();

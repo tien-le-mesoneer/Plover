@@ -54,6 +54,13 @@ describe("sidebar indentation", () => {
     expect(start("GET me")).toBe(start("admin"));
   });
 
+  it("the open request is marked like every selected row", () => {
+    useTabs.setState({ tabs: [], active: "c1:ping.bru" });
+    render(<Sidebar onRun={() => undefined} />);
+    expect(screen.getByRole("treeitem", { name: "GET ping" }).classList.contains("is-selected")).toBe(true);
+    expect(screen.getByRole("treeitem", { name: "GET me" }).classList.contains("is-selected")).toBe(false);
+  });
+
   it("each level steps in by one caret and its gap, under the parent's name", () => {
     render(<Sidebar onRun={() => undefined} />);
     expect(start("admin") - start("users")).toBe(TREE_INDENT);

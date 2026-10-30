@@ -93,6 +93,21 @@ it("toolbar_controls_are_30px", () => {
   expect(rule(".topbar button.icon, .urlbar button.icon, .run-header button.icon")).toMatch(/min-width: var\(--control-h\);/);
 });
 
+it("one_selected_row_style", () => {
+  // Sidebar, run list, history, quick open and the variable list mark their row the same way.
+  expect(rule(".is-selected")).toMatch(/background: var\(--selected\);.*box-shadow: inset 2px 0 0 var\(--focus\);/s);
+  expect(rest).not.toMatch(/\.selected\b|li\.active\b|\[aria-selected="true"\] \{/);
+  expect(rest).not.toMatch(/font-weight[^;]*;[^}]*inset \d+px 0/);
+});
+
+it("hover_uses_one_token", () => {
+  // --hover is --bg-2 on --bg surfaces and --bg-3 on --bg-2 surfaces (top bar, sidebar).
+  expect(themes.light["hover"]).toBe("var(--bg-2)");
+  expect(rule(".topbar, .sidebar, .tabbar")).toMatch(/--hover: var\(--bg-3\);/);
+  const hovers = [...rest.matchAll(/([^{}]*:hover[^{}]*)\{([^}]*)\}/g)].filter((m) => /(^|[\s;])background: var\(--bg-[23]\)/.test(m[2]!));
+  expect(hovers.map((m) => m[1]!.trim())).toEqual([]);
+});
+
 it("no_raw_colours_outside_tokens", () => {
   const withoutComments = rest.replace(/\/\*[\s\S]*?\*\//g, "");
   expect(withoutComments).not.toMatch(/#[0-9a-f]{3,8}\b/i);
@@ -140,14 +155,14 @@ describe("no clash with Monaco's class names", () => {
   });
 });
 
-describe("history row status colours", () => {
-  it("the selected row keeps --ok and --err readable (AA on --bg-2, not --bg-3)", () => {
-    const rule = css.match(/\.history-row\.selected \{([^}]*)\}/)?.[1] ?? "";
-    expect(rule).toContain("var(--bg-2)");
-    expect(rule).not.toContain("var(--bg-3)");
-    for (const t of Object.values(themes)) {
-      expect(contrast(t.ok!, t["bg-2"]!)).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(t.err!, t["bg-2"]!)).toBeGreaterThanOrEqual(4.5);
+describe("selected row colours", () => {
+  it("every text token and the focus bar stay readable on a selected row", () => {
+    // Status, method and variable colours sit on it (history, run results, sidebar); --bg-3 is too dark for --ok.
+    for (const [name, t] of Object.entries(themes)) {
+      for (const fg of [...TEXT, "var"]) {
+        expect(contrast(t[fg]!, t.selected!), `${name}: --${fg} on --selected`).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(contrast(t.focus!, t.selected!), `${name}: --focus on --selected`).toBeGreaterThanOrEqual(3);
     }
   });
 });

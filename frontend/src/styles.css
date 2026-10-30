@@ -5,6 +5,7 @@
   --bg: #ffffff;
   --bg-2: #f6f7f8;
   --bg-3: #eceef1;
+  --selected: #f0f5ff; /* the selected row; every text token stays 4.5 on it (--get 4.59) */
   --fg: #111418; /* 18.47 / 17.22 */
   --muted: #5b626c; /* 6.16 / 5.74 */
   --placeholder: #646b75; /* 5.38 / 5.02 */
@@ -28,6 +29,7 @@
   --method-other: #5b626c; /* 6.16 / 5.74 */
   --radius: 3px;
   --control-h: 30px; /* buttons, inputs and selects in a toolbar row */
+  --hover: var(--bg-2); /* a hovered row or button on --bg; --bg-3 on --bg-2 surfaces (below) */
   --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --fs-dense: 13px;
@@ -41,6 +43,7 @@
   --bg: #16181c;
   --bg-2: #1d2025;
   --bg-3: #272b31;
+  --selected: #1e2a3d; /* --placeholder 4.85 */
   --fg: #e6e8eb; /* 14.48 / 13.31 */
   --muted: #9ca3af; /* 7.00 / 6.43 */
   --placeholder: #8f96a2; /* 5.97 / 5.49 */
@@ -96,13 +99,13 @@ button.send { background: var(--color-send); color: var(--color-on-send); border
 .send-slot { display: inline-flex; flex: none; inline-size: 9.5em; }
 .send-slot > button { inline-size: 100%; }
 button.cancel-send { background: var(--bg); color: var(--fg); border-color: var(--border-strong); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-button.cancel-send:hover { background: var(--bg-2); }
+button.cancel-send:hover { background: var(--hover); }
 button.send:hover:not(:disabled) { background: var(--color-send-hover); border-color: var(--color-send-hover); }
 button.icon {
   border: none; background: none; padding: 0; color: var(--muted);
   min-width: 24px; min-height: 24px; display: inline-grid; place-items: center; border-radius: var(--radius);
 }
-button.icon:hover { background: var(--bg-3); }
+button.icon:hover { background: var(--hover); }
 button.icon:hover { color: var(--fg); }
 /* Toolbar rows: every button is as tall as the inputs and selects beside it; icon buttons are
    30px squares there and 24px in content (corners, tables, cards). */
@@ -120,6 +123,10 @@ code { font-size: 12px; }
 .logo svg { color: var(--fg); }
 /* The brand column lines up with the sidebar below it; "+" sits on its right edge. */
 .brand { position: relative; display: flex; align-items: center; gap: 6px; width: calc(var(--sidebar-w) - 12px - 4px); flex: none; }
+/* Surfaces drawn in --bg-2: a hovered item there needs the next step. */
+.topbar, .sidebar, .tabbar { --hover: var(--bg-3); }
+/* The selected row of a list (sidebar, run results, history, quick open, variable names). */
+.is-selected { background: var(--selected); box-shadow: inset 2px 0 0 var(--focus); }
 .layout { display: flex; flex: 1; min-height: 0; }
 .sidebar { width: var(--sidebar-w); flex: none; overflow: auto; border-right: 1px solid var(--border); background: var(--bg-2); padding-bottom: 12px; }
 .app-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -145,7 +152,7 @@ button.wide { display: inline-flex; align-items: center; justify-content: center
 .path-form input { flex: 1; min-height: 30px; }
 .recent-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .recent-list li { display: flex; align-items: center; gap: 2px; border-radius: var(--radius); }
-.recent-list li:hover { background: var(--bg-2); }
+.recent-list li:hover { background: var(--hover); }
 .recent-item {
   flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; text-align: left;
   border: none; background: none; padding: 6px 8px; min-height: 32px;
@@ -155,7 +162,7 @@ button.wide { display: inline-flex; align-items: center; justify-content: center
 .recent-tag { font-size: 11px; color: var(--ok); border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; flex: none; }
 
 button.text { border: none; background: none; padding: 2px 6px; min-height: 24px; color: var(--fg); text-decoration: underline; text-underline-offset: 2px; }
-button.text:hover { background: var(--bg-3); }
+button.text:hover { background: var(--hover); }
 .collection.unavailable .collection-header { color: var(--muted); }
 .collection.unavailable .collection-header svg { color: var(--warn); flex: none; }
 .unavailable-reason { margin: 0 12px 8px 28px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; cursor: help; }
@@ -167,13 +174,12 @@ button.text:hover { background: var(--bg-3); }
   display: flex; align-items: center; gap: 4px; min-width: 0; min-height: 24px; flex: 0 1 auto;
   margin-left: -4px; padding: 2px 4px; border: none; background: none; color: var(--fg); text-align: left;
 }
-.collection-toggle:hover { background: var(--bg-3); }
+.collection-toggle:hover { background: var(--hover); }
 .collection-toggle svg { color: var(--muted); flex: none; }
 .tree { list-style: none; margin: 0; padding: 0; }
 .node { display: flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 6px; cursor: pointer; white-space: nowrap; }
-.node:hover { background: var(--bg-3); }
+.node:not(.is-selected):hover { background: var(--hover); }
 .node:focus-visible { outline-offset: -2px; }
-.node.selected { background: var(--bg-3); font-weight: 600; }
 .node.invalid { color: var(--muted); cursor: help; }
 .node-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .node-action { visibility: hidden; }
@@ -219,8 +225,7 @@ td .var-input { display: flex; }
   border-radius: var(--radius); box-shadow: 0 4px 16px var(--scrim); font-size: 12px;
 }
 .var-suggest li { display: flex; align-items: baseline; gap: 12px; justify-content: space-between; min-height: 24px; padding: 3px 10px; cursor: pointer; }
-.var-suggest li:hover { background: var(--bg-2); }
-.var-suggest li.active { background: var(--bg-3); box-shadow: inset 2px 0 0 var(--focus); }
+.var-suggest li:not(.is-selected):hover { background: var(--hover); }
 .var-suggest-name { font-family: var(--font-mono); overflow-wrap: anywhere; }
 .var-suggest-scope { color: var(--muted); white-space: nowrap; flex: none; }
 .var-hover-head { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
@@ -297,8 +302,7 @@ h4 { margin: 6px 0 2px; font-size: 12px; color: var(--muted); text-transform: up
 .quick-input { width: 100%; font-size: var(--fs-body); padding: 6px 8px; }
 .quick-list { list-style: none; margin: 0; padding: 0; overflow: auto; max-height: 55vh; }
 .quick-list li { display: flex; align-items: baseline; gap: 8px; padding: 4px 8px; cursor: pointer; border-radius: var(--radius); }
-.quick-list li:hover { background: var(--bg-2); }
-.quick-list li.selected { background: var(--bg-3); box-shadow: inset 2px 0 var(--focus); }
+.quick-list li:not(.is-selected):hover { background: var(--hover); }
 .quick-list .badge { min-width: 4.5em; font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
 .quick-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .quick-where { margin-left: auto; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -327,7 +331,7 @@ button.copy { display: inline-flex; align-items: center; gap: 4px; padding: 2px 
 .jsonpath { flex: 1; min-width: 160px; max-width: 360px; font-family: var(--font-mono); font-size: var(--fs-dense); }
 .value-menu { position: fixed; z-index: 30; min-width: 220px; max-width: 360px; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 4px; }
 .value-menu > button { text-align: left; border: 0; background: none; padding: 6px 8px; }
-.value-menu > button:hover:not(:disabled), .value-menu > button:focus-visible { background: var(--bg-2); }
+.value-menu > button:hover:not(:disabled), .value-menu > button:focus-visible { background: var(--hover); }
 .value-menu-path { font-size: 12px; color: var(--muted); padding: 2px 8px 4px; overflow-wrap: anywhere; }
 .value-menu-form { display: flex; flex-direction: column; gap: 6px; padding: 4px 8px; }
 .value-menu-form label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
@@ -364,8 +368,7 @@ table.headers td { word-break: break-all; }
 .run-list { width: 100%; border-collapse: collapse; }
 .run-list td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .run-row.selectable { cursor: pointer; }
-.run-row.selectable:hover { background: var(--bg-2); }
-.run-row[aria-selected="true"] { background: var(--bg-3); box-shadow: inset 3px 0 var(--fg); }
+.run-row.selectable:not(.is-selected):hover { background: var(--hover); }
 .run-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .run-list .mark { width: 24px; text-align: center; font-weight: 700; }
 .mark.state-pass { color: var(--ok); }
@@ -396,7 +399,7 @@ table.headers td { word-break: break-all; }
 .export-menu { display: inline-flex; align-items: center; gap: 8px; }
 .export-menu .menu { position: fixed; z-index: 20; display: flex; flex-direction: column; min-width: 140px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 4px; }
 .export-menu .menu button { text-align: left; border: 0; background: none; padding: 6px 8px; }
-.export-menu .menu button:hover, .export-menu .menu button:focus-visible { background: var(--bg-2); }
+.export-menu .menu button:hover, .export-menu .menu button:focus-visible { background: var(--hover); }
 .run-with-data { display: flex; flex-direction: column; gap: 8px; }
 .run-with-data label { display: flex; flex-direction: column; gap: 4px; }
 .run-with-data p { margin: 0; }
@@ -456,7 +459,7 @@ kbd { font-family: var(--font-mono); font-size: 11px; padding: 0 4px; border: 1p
 .menu-button .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; min-width: 240px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 4px; }
 .menu-button .menu button, .context-menu button { display: flex; justify-content: space-between; gap: 16px; text-align: left; border: 0; background: none; padding: 6px 8px; }
 .menu-button .menu button:hover:not(:disabled), .menu-button .menu button:focus-visible,
-.context-menu button:hover:not(:disabled), .context-menu button:focus-visible { background: var(--bg-2); }
+.context-menu button:hover:not(:disabled), .context-menu button:focus-visible { background: var(--hover); }
 .menu-button .menu kbd { color: var(--muted); }
 .request-menu { position: relative; display: inline-flex; align-items: center; }
 .copy-note { position: absolute; right: 0; top: calc(100% + 4px); white-space: nowrap; font-size: 12px; color: var(--muted); pointer-events: none; }
@@ -485,8 +488,7 @@ kbd { font-family: var(--font-mono); font-size: 11px; padding: 0 4px; border: 1p
 .history-body { display: flex; flex: 1; min-height: 0; }
 .history-list { list-style: none; margin: 0; padding: 0; width: min(420px, 40%); min-width: 240px; overflow-y: auto; border-right: 1px solid var(--border); }
 .history-row { display: grid; grid-template-columns: auto 1fr auto; column-gap: 8px; row-gap: 2px; align-items: baseline; padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--border); }
-.history-row:hover { background: var(--bg-2); }
-.history-row.selected { background: var(--bg-2); box-shadow: inset 3px 0 0 var(--focus); font-weight: 600; }
+.history-row:not(.is-selected):hover { background: var(--hover); }
 .history-row:focus-visible { outline-offset: -2px; }
 .history-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-meta { grid-column: 1 / -1; font-size: 12px; }

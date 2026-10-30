@@ -446,6 +446,7 @@ describe("run result detail and history", () => {
     expect(screen.getByText("x-sent")).toBeTruthy();
     expect(screen.getByText('{"q":1}')).toBeTruthy();
     expect(row.getAttribute("aria-selected")).toBe("true");
+    expect(row.classList.contains("is-selected")).toBe(true);
   });
 
   it("Enter on a row opens it; a running row is not selectable", async () => {

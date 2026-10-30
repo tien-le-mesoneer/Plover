@@ -451,7 +451,7 @@ function CollectionTree({
           <li
             key={node.id}
             {...common}
-            className={`node request ${selected ? "selected" : ""}`}
+            className={`node request ${selected ? "is-selected" : ""}`}
             aria-label={`${node.method ?? ""} ${node.name}`.trim()}
             title={`${node.method ?? ""} ${node.url ?? ""}`.trim()}
             aria-selected={selected}
