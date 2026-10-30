@@ -25,6 +25,11 @@ type Props = InputHTMLAttributes<HTMLInputElement> & {
   tabKey: string;
   /** Class of the wrapper (layout: `flex: 1` in the URL bar). */
   wrapperClassName?: string;
+  /**
+   * A value wider than the field shows its end while the field is not being edited, and
+   * the whole value on hover (the URL bar: path and query matter more than the host).
+   */
+  tail?: boolean;
 };
 
 /** How long the caret stays in a token before its card shows. */
@@ -50,7 +55,7 @@ function typeValue(el: HTMLInputElement, value: string) {
  * pointer or the caret, and a list of variable names while a `{{` is being typed (an
  * ARIA combobox while the list is open). The input keeps its value, selection and events.
  */
-export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
+export function VarInput({ tabKey, wrapperClassName, tail, ...props }: Props) {
   const vars = useVars((s) => s.byTab[tabKey]);
   const collectionId = useTabs((s) => s.tabs.find((t) => t.key === tabKey)?.collectionId);
   const env = useWorkspace((s) => (collectionId ? (s.activeEnv[collectionId] ?? null) : null));
@@ -62,10 +67,23 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
   const { note, say } = useCopy();
   const [shown, setShown] = useState<{ token: VarToken; anchor: Anchor } | null>(null);
   const [suggest, setSuggest] = useState<{ start: number; items: VarSuggestion[]; active: number } | null>(null);
+  const [fullTitle, setFullTitle] = useState<string | undefined>(undefined);
   const tooltipId = useId();
   const listId = useId();
   const text = String(props.value ?? "");
   const tokens = tokenize(text);
+
+  const showEnd = () => {
+    const el = input.current;
+    if (!tail || !el) return;
+    el.scrollLeft = el.scrollWidth;
+    if (mirror.current) mirror.current.scrollLeft = el.scrollLeft;
+  };
+  // A new value from outside (another tab, a pasted curl, undo) shows its end; typing keeps the caret in view.
+  useLayoutEffect(() => {
+    if (input.current && document.activeElement !== input.current) showEnd();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, tabKey, tail]);
 
   // The mirror copies the input's box so the underlines sit under the characters.
   useLayoutEffect(() => {
@@ -235,6 +253,8 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
         {...combobox}
         ref={input}
         aria-describedby={info ? tooltipId : props["aria-describedby"]}
+        // Not while a variable card is open: the card and a native tooltip would overlap.
+        title={(!suggest && !shown && fullTitle) || props.title}
         onChange={(e) => {
           props.onChange?.(e);
           updateSuggest(e.currentTarget, true);
@@ -261,6 +281,12 @@ export function VarInput({ tabKey, wrapperClassName, ...props }: Props) {
           clearTimeout(caretTimer.current);
           setShown(null);
           setSuggest(null);
+          showEnd();
+        }}
+        onMouseEnter={(e) => {
+          props.onMouseEnter?.(e);
+          const el = e.currentTarget;
+          if (tail) setFullTitle(el.scrollWidth > el.clientWidth ? el.value : undefined);
         }}
         onMouseMove={onMouseMove}
         onMouseLeave={(e) => {

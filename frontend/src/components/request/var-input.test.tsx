@@ -233,3 +233,63 @@ describe("VarInput", () => {
   });
 });
 
+
+/** jsdom has no layout: give an element a width, a content width and a settable scroll offset. */
+function box(el: HTMLElement, client: number, scroll: number) {
+  let left = 0;
+  Object.defineProperty(el, "clientWidth", { configurable: true, value: client });
+  Object.defineProperty(el, "scrollWidth", { configurable: true, value: scroll });
+  Object.defineProperty(el, "scrollLeft", { configurable: true, get: () => left, set: (v: number) => (left = Math.min(v, scroll - client)) });
+}
+
+function TailField({ value }: { value: string }) {
+  return <VarInput tabKey="c1:a.bru" aria-label="URL" tail value={value} onChange={() => {}} />;
+}
+
+const LONG = "{{host}}/users/1/orders?include=items&page=2";
+
+describe("VarInput tail (URL bar)", () => {
+  it("shows the end of a long value while not focused, mirror included", () => {
+    const { container, rerender } = render(<TailField value="{{host}}" />);
+    const input = screen.getByLabelText("URL");
+    const mirror = container.querySelector<HTMLElement>(".var-mirror")!;
+    box(input, 100, 400);
+    box(mirror, 100, 400);
+    rerender(<TailField value={LONG} />);
+    expect(input.scrollLeft).toBe(300);
+    expect(mirror.scrollLeft).toBe(300);
+  });
+
+  it("leaves the scroll alone while the field is being edited, and shows the end again on blur", () => {
+    const { rerender } = render(<TailField value="{{host}}" />);
+    const input = screen.getByLabelText("URL");
+    box(input, 100, 400);
+    input.focus();
+    input.scrollLeft = 20;
+    rerender(<TailField value={LONG} />);
+    expect(input.scrollLeft).toBe(20);
+    fireEvent.blur(input);
+    expect(input.scrollLeft).toBe(300);
+  });
+
+  it("titles the field with the whole value only when it does not fit", () => {
+    render(<TailField value={LONG} />);
+    const input = screen.getByLabelText("URL");
+    box(input, 100, 100);
+    fireEvent.mouseEnter(input);
+    expect(input.getAttribute("title")).toBeNull();
+    box(input, 100, 400);
+    fireEvent.mouseEnter(input);
+    expect(input.getAttribute("title")).toBe(LONG);
+  });
+
+  it("drops the title while a variable card is open", () => {
+    const { container } = render(<TailField value={LONG} />);
+    const input = screen.getByLabelText("URL");
+    box(input, 100, 400);
+    fireEvent.mouseEnter(input);
+    hover(container, "var-defined");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(input.getAttribute("title")).toBeNull();
+  });
+});

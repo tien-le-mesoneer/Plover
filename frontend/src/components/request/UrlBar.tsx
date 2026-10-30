@@ -50,7 +50,8 @@ export function UrlBar({ draft, sending, sendStartedAt, onEdit, onSend, onCancel
         <VarInput
           tabKey={tabKey}
           wrapperClassName="url-wrap"
-        aria-label="URL"
+          tail
+          aria-label="URL"
           className="url"
           value={draft.url}
           spellCheck={false}
