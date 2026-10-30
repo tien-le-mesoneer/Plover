@@ -129,8 +129,12 @@ describe("headers tab", () => {
 
   it("copy_all_headers", async () => {
     open();
+    // The corner icon, like Copy body; no separate text button above the table.
+    const copyAll = screen.getByRole("button", { name: "Copy all headers" });
+    expect(copyAll.closest(".corner-actions")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Copy all" })).toBeNull();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Copy all" }));
+      fireEvent.click(copyAll);
     });
     expect(writeText).toHaveBeenCalledWith("content-type: application/json\netag: W/1");
   });

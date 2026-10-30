@@ -267,13 +267,19 @@ button.icon[aria-disabled="true"] { opacity: 0.5; cursor: default; }
 .subtabs sup { color: var(--muted); margin-left: 2px; }
 h4 { margin: 6px 0 2px; font-size: 12px; color: var(--muted); text-transform: uppercase; }
 
+/* Column headers of every table (key-value, response headers, HAR import). */
+thead th { text-align: left; font-family: var(--font-ui); font-size: 12px; font-weight: 500; color: var(--muted); }
+
 .kv { width: 100%; border-collapse: collapse; }
 .kv td { padding: 2px; }
-.kv th { text-align: left; font-weight: 500; font-size: 12px; color: var(--muted); padding: 2px 4px; }
+.kv th { padding: 2px 4px; }
 .kv-hint { margin: 0; font-size: 12px; }
 .kv input:not([type="checkbox"]) { width: 100%; font-family: var(--font-mono); font-size: var(--fs-dense); }
 .kv tr.disabled input:not([type="checkbox"]) { opacity: 0.5; text-decoration: line-through; }
-.kv-check, .kv-del { width: 24px; text-align: center; }
+.kv-del { width: 24px; text-align: center; }
+/* As wide as the checkbox, so the table starts where the heading and selects above it do. */
+.kv .kv-check { width: 20px; padding-left: 0; text-align: left; }
+.kv .kv-check input { margin: 0; }
 
 .form { display: flex; flex-direction: column; gap: 8px; max-width: 420px; }
 .form label, .secret { display: flex; flex-direction: column; gap: 2px; color: var(--muted); }
@@ -352,7 +358,6 @@ button.copy { display: inline-flex; align-items: center; gap: 4px; padding: 2px 
 .pinned-headers li { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .pinned-headers code { max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .headers-view { overflow: auto; }
-.headers-actions { display: flex; justify-content: flex-end; padding: 6px 8px 0; }
 /* Opacity, not visibility: the button stays in the tab order and shows when focused. */
 .header-row .row-copy button { opacity: 0; }
 .header-row:hover .row-copy button, .header-row:focus-within .row-copy button { opacity: 1; }
@@ -363,8 +368,8 @@ button.copy { display: inline-flex; align-items: center; gap: 4px; padding: 2px 
   .kv .row-copy button { opacity: 1; }
 }
 table.headers { border-collapse: collapse; margin: 8px; font-family: var(--font-mono); font-size: 12px; }
-table.headers thead th { font-family: var(--font-ui); color: var(--muted); }
-table.headers th { text-align: left; padding: 2px 12px 2px 0; color: var(--muted); font-weight: 500; vertical-align: top; }
+table.headers th { text-align: left; padding: 4px 12px 4px 0; color: var(--muted); font-weight: 500; vertical-align: top; }
+table.headers tbody th, table.headers tbody td { border-bottom: 1px solid var(--border); }
 table.headers td { word-break: break-all; }
 
 /* Run tab (docs/superpowers/specs/2026-10-23-dev-ux-design.md §6) */
@@ -482,7 +487,7 @@ kbd { font-family: var(--font-mono); font-size: 11px; padding: 0 4px; border: 1p
 .har-table { max-height: 40vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
 .har-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .har-table th, .har-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
-.har-table thead th { position: sticky; top: 0; background: var(--bg-2); font-weight: 600; }
+.har-table thead th { position: sticky; top: 0; background: var(--bg-2); }
 .har-url { overflow-wrap: anywhere; }
 .har-secret { color: var(--warn); margin-left: 4px; vertical-align: middle; }
 .har-target { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }

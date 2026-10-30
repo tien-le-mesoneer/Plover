@@ -125,6 +125,24 @@ it("one_floating_surface", () => {
   }
 });
 
+it("one_table_style", () => {
+  // Column headers of every table (key-value, response headers, HAR) look the same.
+  expect(rule("thead th")).toMatch(/text-align: left;.*font-size: 12px;.*font-weight: 500;.*color: var\(--muted\);/s);
+  const others = [...rest.matchAll(/\n([^{}\n]*thead th[^{}]*)\{([^}]*)\}/g)].filter((m) => m[1]!.trim() !== "thead th");
+  for (const m of others) expect(m[2], m[1]).not.toMatch(/font-(size|weight|family)|(^|[\s;])color:/);
+  expect(rule(".kv th")).not.toMatch(/font-|color:/);
+  // Read-only tables separate their rows.
+  expect(rule("table.headers tbody th, table.headers tbody td")).toMatch(/border-bottom: 1px solid var\(--border\);/);
+  expect(rule(".har-table th, .har-table td")).toMatch(/border-bottom: 1px solid var\(--border\);/);
+});
+
+it("key_value_table_starts_at_the_pane_edge", () => {
+  // The checkbox column is as wide as the checkbox, flush with the h4 and select above.
+  // `.kv` in front: it has to win over `.kv td { padding: 2px }`.
+  expect(rule(".kv .kv-check")).toMatch(/padding-left: 0;.*text-align: left;/s);
+  expect(rule(".kv .kv-check input")).toMatch(/margin: 0;/);
+});
+
 it("no_raw_colours_outside_tokens", () => {
   const withoutComments = rest.replace(/\/\*[\s\S]*?\*\//g, "");
   expect(withoutComments).not.toMatch(/#[0-9a-f]{3,8}\b/i);

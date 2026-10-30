@@ -1,14 +1,21 @@
+import { CornerActions } from "../CornerActions";
 import { CopyIcon } from "../icons";
 
-/** Response headers; each row's copy button shows on hover and keyboard focus. */
+/** Response headers; the copy-all icon (corner) and each row's copy button show on hover and keyboard focus. */
 export function HeadersTable({ headers, onCopy }: { headers: [string, string][]; onCopy: (text: string) => void }) {
   return (
-    <div className="headers-view">
-      <div className="headers-actions">
-        <button type="button" onClick={() => onCopy(headers.map(([k, v]) => `${k}: ${v}`).join("\n"))}>
-          Copy all
+    <div className="headers-view has-corner">
+      <CornerActions>
+        <button
+          type="button"
+          className="icon"
+          aria-label="Copy all headers"
+          title="Copy all headers"
+          onClick={() => onCopy(headers.map(([k, v]) => `${k}: ${v}`).join("\n"))}
+        >
+          <CopyIcon />
         </button>
-      </div>
+      </CornerActions>
       <table className="headers" aria-label="Response headers">
         <thead>
           <tr>
