@@ -86,7 +86,7 @@ export function RunHistoryMenu({
       {open && (
         <div
           ref={panel}
-          className="popover history-popover"
+          className="popover history-popover surface"
           role="dialog"
           aria-label="Run history"
           tabIndex={-1}

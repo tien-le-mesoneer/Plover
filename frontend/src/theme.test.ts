@@ -108,6 +108,23 @@ it("hover_uses_one_token", () => {
   expect(hovers.map((m) => m[1]!.trim())).toEqual([]);
 });
 
+it("one_floating_surface", () => {
+  // Menus, popovers, the variable card and the name list share one look and one shadow.
+  expect(rule(".surface")).toMatch(
+    /background: var\(--bg\);.*border: 1px solid var\(--border-strong\);.*border-radius: var\(--radius\);.*padding: 4px;.*box-shadow: var\(--shadow\);/s,
+  );
+  expect(rule(".menu-item:hover:not(:disabled), .menu-item:focus-visible")).toMatch(/background: var\(--hover\);/);
+  // A surface is drawn in --bg, even inside the --bg-2 top bar.
+  expect(rule(".surface")).toMatch(/--hover: var\(--bg-2\);/);
+  const shadows = [...rest.matchAll(/box-shadow: ([^;]+);/g)].map((m) => m[1]!).filter((v) => !v.startsWith("inset"));
+  expect(new Set(shadows)).toEqual(new Set(["var(--shadow)"]));
+  // The superseded per-menu looks are gone.
+  for (const sel of [".context-menu", ".value-menu", ".menu-button .menu", ".export-menu .menu", ".popover"]) {
+    const own = rest.match(new RegExp(`\\n${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`))?.[1] ?? "";
+    expect(own, sel).not.toMatch(/background:|border:|box-shadow:/);
+  }
+});
+
 it("no_raw_colours_outside_tokens", () => {
   const withoutComments = rest.replace(/\/\*[\s\S]*?\*\//g, "");
   expect(withoutComments).not.toMatch(/#[0-9a-f]{3,8}\b/i);

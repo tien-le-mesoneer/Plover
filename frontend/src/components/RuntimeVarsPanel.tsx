@@ -113,7 +113,7 @@ export function RuntimeVarsPanel({ collectionId }: { collectionId: string | null
       {open && (
         <div
           ref={panel}
-          className="popover runtime-vars-panel"
+          className="popover runtime-vars-panel surface"
           role="dialog"
           aria-label="Runtime variables"
           tabIndex={-1}

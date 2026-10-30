@@ -1,5 +1,5 @@
 /* Swiss Minimal (docs/superpowers/specs/2026-10-23-dev-ux-design.md §1): white surfaces, black
-   text, 1px borders, no shadows, one coloured button (Send). Contrast ratios are WCAG 2, measured
+   text, 1px borders, one shadow (floating surfaces only), one coloured button (Send). Contrast ratios are WCAG 2, measured
    against --bg / --bg-2 (frontend/src/theme.test.ts checks them). Only tokens carry raw colours. */
 :root {
   --bg: #ffffff;
@@ -13,6 +13,7 @@
   --border-strong: #828a96; /* form controls: 3.49 / 3.25 */
   --focus: #1d4ed8; /* 6.70 / 6.25 */
   --scrim: #0b0d1066;
+  --shadow: 0 4px 12px #0b0d1029; /* menus, popovers and cards over the page */
   --color-send: #047857; /* emerald-700; white on it 5.48 */
   --color-on-send: #ffffff;
   --color-send-hover: #065f46; /* emerald-800; white on it 7.68 */
@@ -51,6 +52,7 @@
   --border-strong: #737b87; /* 4.16 / 3.82 */
   --focus: #60a5fa; /* 6.99 / 6.43 */
   --scrim: #000000a0;
+  --shadow: 0 4px 16px #00000080;
   --color-send: #10b981; /* emerald-500; --color-on-send on it 7.01 */
   --color-on-send: #16181c;
   --color-send-hover: #34d399; /* emerald-400; 9.25 */
@@ -141,10 +143,21 @@ code { font-size: 12px; }
 .filter input::placeholder { font-style: normal; }
 .no-matches { margin: 2px 12px 8px; font-size: 12px; }
 
+/* Everything that floats over the page (menus, popovers) opens 4px from its trigger. A surface
+   is drawn in --bg, so a hovered item takes --bg-2 even when it opens from the top bar. */
+.surface {
+  --hover: var(--bg-2);
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  padding: 4px; box-shadow: var(--shadow);
+}
+.menu { display: flex; flex-direction: column; z-index: 20; }
+.menu-item { display: flex; justify-content: space-between; gap: 16px; text-align: left; border: 0; background: none; padding: 6px 8px; }
+.menu-item:hover:not(:disabled), .menu-item:focus-visible { background: var(--hover); }
+.menu-item kbd { color: var(--muted); }
+/* A popover holds a form or a list, so it gets more room than a menu. */
 .popover {
-  position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 40;
-  min-width: 300px; padding: 10px; display: flex; flex-direction: column; gap: 6px;
-  background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 40;
+  min-width: 300px; padding: 8px; display: flex; flex-direction: column; gap: 6px;
 }
 .popover-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-top: 4px; }
 button.wide { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; }
@@ -218,11 +231,11 @@ td .var-input { display: flex; }
 .var-undefined, .monaco-editor .var-undefined { color: var(--err); }
 .var-setlater { text-decoration: underline dotted var(--warn); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .var-undefined { text-decoration: underline wavy var(--err); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
-.var-hover { position: fixed; z-index: 20; max-width: min(420px, 90vw); background: var(--bg); color: var(--fg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 16px var(--scrim); display: flex; flex-direction: column; gap: 2px; }
+.var-hover { position: fixed; z-index: 20; max-width: min(420px, 90vw); background: var(--bg); color: var(--fg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 6px 10px; font-size: 12px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 2px; }
 .var-suggest {
   position: fixed; z-index: 21; margin: 0; padding: 2px 0; list-style: none; min-width: 200px; max-width: min(420px, 90vw);
   max-height: 240px; overflow-y: auto; background: var(--bg); color: var(--fg); border: 1px solid var(--border-strong);
-  border-radius: var(--radius); box-shadow: 0 4px 16px var(--scrim); font-size: 12px;
+  border-radius: var(--radius); box-shadow: var(--shadow); font-size: 12px;
 }
 .var-suggest li { display: flex; align-items: baseline; gap: 12px; justify-content: space-between; min-height: 24px; padding: 3px 10px; cursor: pointer; }
 .var-suggest li:not(.is-selected):hover { background: var(--hover); }
@@ -329,9 +342,7 @@ button.copy { display: inline-flex; align-items: center; gap: 4px; padding: 2px 
 .segmented button[aria-checked="true"] { background: var(--fg); color: var(--bg); }
 .segmented button:focus-visible { outline-offset: -3px; }
 .jsonpath { flex: 1; min-width: 160px; max-width: 360px; font-family: var(--font-mono); font-size: var(--fs-dense); }
-.value-menu { position: fixed; z-index: 30; min-width: 220px; max-width: 360px; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 4px; }
-.value-menu > button { text-align: left; border: 0; background: none; padding: 6px 8px; }
-.value-menu > button:hover:not(:disabled), .value-menu > button:focus-visible { background: var(--hover); }
+.value-menu { position: fixed; z-index: 30; min-width: 220px; max-width: 360px; }
 .value-menu-path { font-size: 12px; color: var(--muted); padding: 2px 8px 4px; overflow-wrap: anywhere; }
 .value-menu-form { display: flex; flex-direction: column; gap: 6px; padding: 4px 8px; }
 .value-menu-form label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
@@ -397,9 +408,7 @@ table.headers td { word-break: break-all; }
 .body-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; background: var(--bg-2); padding: 8px; border-radius: var(--radius); }
 .history-menu { position: relative; display: inline-flex; align-items: center; gap: 8px; }
 .export-menu { display: inline-flex; align-items: center; gap: 8px; }
-.export-menu .menu { position: fixed; z-index: 20; display: flex; flex-direction: column; min-width: 140px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 4px; }
-.export-menu .menu button { text-align: left; border: 0; background: none; padding: 6px 8px; }
-.export-menu .menu button:hover, .export-menu .menu button:focus-visible { background: var(--hover); }
+.export-menu .menu { position: fixed; min-width: 140px; }
 .run-with-data { display: flex; flex-direction: column; gap: 8px; }
 .run-with-data label { display: flex; flex-direction: column; gap: 4px; }
 .run-with-data p { margin: 0; }
@@ -455,12 +464,8 @@ kbd { font-family: var(--font-mono); font-size: 11px; padding: 0 4px; border: 1p
 
 /* Menus (URL bar ⋯ and others) */
 .menu-button { position: relative; display: inline-flex; align-items: center; }
-.context-menu { position: fixed; z-index: 50; display: flex; flex-direction: column; min-width: 180px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 4px; }
-.menu-button .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; min-width: 240px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 4px; }
-.menu-button .menu button, .context-menu button { display: flex; justify-content: space-between; gap: 16px; text-align: left; border: 0; background: none; padding: 6px 8px; }
-.menu-button .menu button:hover:not(:disabled), .menu-button .menu button:focus-visible,
-.context-menu button:hover:not(:disabled), .context-menu button:focus-visible { background: var(--hover); }
-.menu-button .menu kbd { color: var(--muted); }
+.context-menu { position: fixed; z-index: 50; min-width: 180px; }
+.menu-button .menu { position: absolute; right: 0; top: calc(100% + 4px); min-width: 240px; }
 .request-menu { position: relative; display: inline-flex; align-items: center; }
 .copy-note { position: absolute; right: 0; top: calc(100% + 4px); white-space: nowrap; font-size: 12px; color: var(--muted); pointer-events: none; }
 

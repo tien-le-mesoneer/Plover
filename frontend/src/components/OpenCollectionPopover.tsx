@@ -60,7 +60,7 @@ export function OpenCollectionPopover({ anchor, onClose }: Props) {
   };
 
   return (
-    <div ref={panel} className="popover open-popover" role="dialog" aria-label="Open collection" onKeyDown={onKeyDown}>
+    <div ref={panel} className="popover open-popover surface" role="dialog" aria-label="Open collection" onKeyDown={onKeyDown}>
       {nativePicker && (
         <>
           <button type="button" className="primary wide" onClick={() => void browse()}>

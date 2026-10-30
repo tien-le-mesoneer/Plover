@@ -46,7 +46,7 @@ export function ContextMenu({
   return (
     <div
       ref={menu}
-      className="menu context-menu"
+      className="menu context-menu surface"
       role="menu"
       aria-label={label}
       style={{ left: place.x, top: place.y }}
@@ -58,6 +58,7 @@ export function ContextMenu({
           key={item.label}
           type="button"
           role="menuitem"
+          className="menu-item"
           tabIndex={-1}
           disabled={item.disabled}
           title={item.title}

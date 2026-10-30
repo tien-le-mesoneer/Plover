@@ -75,7 +75,7 @@ export function ValueMenu({
   return (
     <div
       ref={menu}
-      className="value-menu"
+      className="menu value-menu surface"
       role="menu"
       aria-label={`Value at ${path}`}
       style={{ left: at.x, top: at.y + 4 }}
@@ -113,6 +113,7 @@ export function ValueMenu({
           <button
             type="button"
             role="menuitem"
+            className="menu-item"
             onClick={() => {
               onCopy(typeof value === "string" ? value : JSON.stringify(value, null, 2));
               onClose();
@@ -123,6 +124,7 @@ export function ValueMenu({
           <button
             type="button"
             role="menuitem"
+            className="menu-item"
             disabled={!!pathDisabled}
             title={pathDisabled}
             onClick={() => {
@@ -132,7 +134,7 @@ export function ValueMenu({
           >
             Copy path
           </button>
-          <button type="button" role="menuitem" disabled={!collectionId} onClick={() => setNaming(true)}>
+          <button type="button" role="menuitem" className="menu-item" disabled={!collectionId} onClick={() => setNaming(true)}>
             Save as runtime variable…
           </button>
         </>

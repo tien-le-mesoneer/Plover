@@ -99,14 +99,14 @@ export function ExportMenu({
       {open && (
         <div
           ref={menu}
-          className="menu"
+          className="menu surface"
           role="menu"
           aria-label="Export report as"
           style={{ right: place.right, top: place.top }}
           onKeyDown={onKeyDown}
         >
           {FORMATS.map((f) => (
-            <button key={f.format} type="button" role="menuitem" onClick={() => void exportAs(f.format)}>
+            <button key={f.format} type="button" role="menuitem" className="menu-item" onClick={() => void exportAs(f.format)}>
               {f.label}
             </button>
           ))}

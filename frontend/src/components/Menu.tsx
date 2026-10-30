@@ -96,12 +96,13 @@ export function Menu({
         {children}
       </button>
       {open && (
-        <div ref={menu} className="menu" role="menu" aria-label={label} onKeyDown={onKeyDown}>
+        <div ref={menu} className="menu surface" role="menu" aria-label={label} onKeyDown={onKeyDown}>
           {items.map((item) => (
             <button
               key={item.label}
               type="button"
               role="menuitem"
+              className="menu-item"
               tabIndex={-1}
               disabled={item.disabled}
               title={item.title}
