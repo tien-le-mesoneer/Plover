@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { BodyDto, MultipartFieldDto } from "../../api/types";
-import { CodeEditor } from "../../editor/CodeEditor";
+import { CodeEditor, type CodeEditorProps } from "../../editor/CodeEditor";
 import { copyResolved } from "../../lib/copyResolved";
+import { prettifyJson } from "../../lib/prettyJson";
 import { CornerActions } from "../CornerActions";
-import { CopyIcon } from "../icons";
+import { BracesIcon, CopyIcon } from "../icons";
 import { useCopy } from "../response/useCopy";
 import { KeyValueTable } from "./KeyValueTable";
 
@@ -25,9 +26,12 @@ interface Props {
   tabKey?: string;
 }
 
+type Editor = Parameters<NonNullable<CodeEditorProps["onReady"]>>[0];
+
 export function BodyTab({ body, onChange, onModeChange, tabKey }: Props) {
   const { note, say } = useCopy();
   const [copying, setCopying] = useState(false);
+  const editor = useRef<Editor | null>(null);
   if (body.mode === "unsupported") {
     return (
       <p className="muted">
@@ -35,6 +39,21 @@ export function BodyTab({ body, onChange, onModeChange, tabKey }: Props) {
       </p>
     );
   }
+  const json = body.mode === "json";
+  // Through the editor when there is one, so ⌘/Ctrl+Z undoes it like any other edit.
+  const prettify = () => {
+    if (!json) return;
+    const ed = editor.current;
+    const text = ed?.getValue() ?? body.text;
+    const pretty = prettifyJson(text);
+    if (pretty === null) return say("Not valid JSON");
+    if (pretty === text) return;
+    const range = ed?.getModel()?.getFullModelRange();
+    if (!ed || !range) return onChange({ ...body, text: pretty });
+    ed.pushUndoStop();
+    ed.executeEdits("plover.prettify", [{ range, text: pretty }]);
+    ed.pushUndoStop();
+  };
   return (
     <div className="body-tab">
       <select aria-label="Body mode" value={body.mode} onChange={(e) => onModeChange(e.target.value as (typeof MODES)[number]["mode"])}>
@@ -66,6 +85,11 @@ export function BodyTab({ body, onChange, onModeChange, tabKey }: Props) {
               >
                 <CopyIcon />
               </button>
+              {json && (
+                <button type="button" className="icon" aria-label="Prettify JSON" title="Prettify JSON (Shift+Alt+F)" onClick={prettify}>
+                  <BracesIcon />
+                </button>
+              )}
             </CornerActions>
           )}
           <CodeEditor
@@ -74,6 +98,8 @@ export function BodyTab({ body, onChange, onModeChange, tabKey }: Props) {
             onChange={(text) => onChange({ ...body, text })}
             varTabKey={tabKey}
             onNote={say}
+            onReady={(ed) => (editor.current = ed)}
+            onFormat={prettify}
           />
         </div>
       )}

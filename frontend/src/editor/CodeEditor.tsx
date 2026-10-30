@@ -32,6 +32,8 @@ export interface CodeEditorProps {
   varTabKey?: string;
   /** The note of the last ⌘/Ctrl+Shift+C value copy (for a live region). */
   onNote?: (note: string) => void;
+  /** Shift+Alt+F (Monaco's Format Document keys) runs this instead of Monaco's formatter. */
+  onFormat?: () => void;
 }
 
 /** Body editor models whose `{{variables}}` are explained, by model URI → request tab key. */
@@ -119,20 +121,22 @@ function decorateVars(
 }
 
 /** A thin wrapper around a Monaco editor instance. */
-export function CodeEditor({ value, language, readOnly, onChange, height, onReady, onPick, foldLines, varTabKey, onNote }: CodeEditorProps) {
+export function CodeEditor({ value, language, readOnly, onChange, height, onReady, onPick, foldLines, varTabKey, onNote, onFormat }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const changeHandler = useRef(onChange);
   const readyHandler = useRef(onReady);
   const pickHandler = useRef(onPick);
   const noteHandler = useRef(onNote);
+  const formatHandler = useRef(onFormat);
 
   useEffect(() => {
     changeHandler.current = onChange;
     readyHandler.current = onReady;
     pickHandler.current = onPick;
     noteHandler.current = onNote;
-  }, [onChange, onReady, onPick, onNote]);
+    formatHandler.current = onFormat;
+  }, [onChange, onReady, onPick, onNote, onFormat]);
 
   useEffect(() => {
     if (!host.current) return;
@@ -186,6 +190,15 @@ export function CodeEditor({ value, language, readOnly, onChange, height, onRead
           run: () => pick(instance.getPosition()),
         })
       : undefined;
+    // Monaco's own JSON formatter does not know `{{variables}}` (an unquoted one is not JSON).
+    const format = formatHandler.current
+      ? instance.addAction({
+          id: "plover.format",
+          label: "Format document",
+          keybindings: [monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF],
+          run: () => formatHandler.current?.(),
+        })
+      : undefined;
     editor.current = instance;
     readyHandler.current?.(instance);
     const stopVars = varTabKey ? decorateVars(instance, varTabKey, noteHandler) : undefined;
@@ -194,6 +207,7 @@ export function CodeEditor({ value, language, readOnly, onChange, height, onRead
       sub.dispose();
       clicks.dispose();
       enter?.dispose();
+      format?.dispose();
       instance.getModel()?.dispose();
       instance.dispose();
       editor.current = null;

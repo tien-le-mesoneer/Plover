@@ -30,8 +30,8 @@ vi.mock("./monaco", () => {
   };
   return {
     monaco: {
-      KeyMod: { CtrlCmd: 2048, Shift: 1024 },
-      KeyCode: { Enter: 3, KeyK: 41, KeyC: 33 },
+      KeyMod: { CtrlCmd: 2048, Shift: 1024, Alt: 512 },
+      KeyCode: { Enter: 3, KeyK: 41, KeyC: 33, KeyF: 36 },
       editor: { create: vi.fn(() => instance), setModelLanguage: vi.fn(), MouseTargetType: { CONTENT_TEXT: 6 } },
       languages: { registerHoverProvider: vi.fn(), registerCompletionItemProvider: vi.fn() },
     },
@@ -47,6 +47,20 @@ describe("editor overlays", () => {
     const { monaco } = await import("./monaco");
     render(<CodeEditor value="" language="json" />);
     expect(monaco.editor.create).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ fixedOverflowWidgets: true }));
+  });
+});
+
+describe("body editor format", () => {
+  it("shift_alt_f_runs_on_format", async () => {
+    const { CodeEditor } = await import("./CodeEditor");
+    const onFormat = vi.fn();
+    addAction.mockClear();
+    render(<CodeEditor value="" language="json" onFormat={onFormat} />);
+    const calls = addAction.mock.calls as unknown as [{ id: string; keybindings: number[]; run: () => void }][];
+    const format = calls.map((c) => c[0]).find((a) => a.id === "plover.format")!;
+    expect(format.keybindings).toEqual([1024 | 512 | 36]);
+    format.run();
+    expect(onFormat).toHaveBeenCalled();
   });
 });
 
