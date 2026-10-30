@@ -6,11 +6,16 @@ import { varHoverAt, type TextModel } from "./varDecorations";
 
 const addAction = vi.fn(() => ({ dispose: vi.fn() }));
 const disposable = () => ({ dispose: vi.fn() });
+const setModelMarkers = vi.fn();
+/** The text of the mocked model (a hoisted mock cannot close over a plain `let`). */
+const modelText = { value: "" };
 
 vi.mock("./monaco", () => {
   const model = {
     uri: { toString: () => "inmemory://1" },
-    getValue: () => "",
+    getValue: () => modelText.value,
+    getLanguageId: () => "json",
+    onDidChangeLanguage: vi.fn(disposable),
     getOffsetAt: () => 0,
     getPositionAt: () => ({ lineNumber: 1, column: 1 }),
     dispose: vi.fn(),
@@ -32,7 +37,13 @@ vi.mock("./monaco", () => {
     monaco: {
       KeyMod: { CtrlCmd: 2048, Shift: 1024, Alt: 512 },
       KeyCode: { Enter: 3, KeyK: 41, KeyC: 33, KeyF: 36 },
-      editor: { create: vi.fn(() => instance), setModelLanguage: vi.fn(), MouseTargetType: { CONTENT_TEXT: 6 } },
+      editor: {
+        create: vi.fn(() => instance),
+        setModelLanguage: vi.fn(),
+        setModelMarkers,
+        MouseTargetType: { CONTENT_TEXT: 6 },
+      },
+      MarkerSeverity: { Error: 8 },
       languages: { registerHoverProvider: vi.fn(), registerCompletionItemProvider: vi.fn() },
     },
     currentTheme: () => "vs",
@@ -61,6 +72,31 @@ describe("body editor format", () => {
     expect(format.keybindings).toEqual([1024 | 512 | 36]);
     format.run();
     expect(onFormat).toHaveBeenCalled();
+  });
+});
+
+describe("json body check", () => {
+  it("marks a real error but not an unquoted {{variable}}", async () => {
+    const { CodeEditor } = await import("./CodeEditor");
+    modelText.value = '{"id": {{id}}}';
+    setModelMarkers.mockClear();
+    const view = render(<CodeEditor value={modelText.value} language="json" />);
+    expect(setModelMarkers).toHaveBeenLastCalledWith(expect.anything(), "plover-json", []);
+    view.unmount();
+
+    modelText.value = '{"id": {{id}},}';
+    render(<CodeEditor value={modelText.value} language="json" />);
+    expect(setModelMarkers).toHaveBeenLastCalledWith(expect.anything(), "plover-json", [
+      expect.objectContaining({ message: "Trailing comma", severity: 8 }),
+    ]);
+    modelText.value = "";
+  });
+
+  it("does not check a read-only editor (the response)", async () => {
+    const { CodeEditor } = await import("./CodeEditor");
+    setModelMarkers.mockClear();
+    render(<CodeEditor value="{" language="json" readOnly />);
+    expect(setModelMarkers).not.toHaveBeenCalled();
   });
 });
 

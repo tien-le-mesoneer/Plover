@@ -9,7 +9,7 @@ import * as monaco from "monaco-editor/editor/editor.api.js";
 import "monaco-editor/features/register.all.js";
 import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
 import JsonWorker from "monaco-editor/languages/features/json/json.worker.js?worker";
-import "monaco-editor/languages/features/json/register.js";
+import { jsonDefaults } from "monaco-editor/languages/features/json/register.js";
 import "monaco-editor/languages/definitions/xml/register.js";
 import "monaco-editor/languages/definitions/html/register.js";
 import "monaco-editor/languages/definitions/javascript/register.js";
@@ -25,6 +25,10 @@ self.MonacoEnvironment = {
     return label === "json" ? new JsonWorker() : new EditorWorker();
   },
 };
+
+// Monaco's JSON check marks every unquoted `{{variable}}` (`"id": {{id}}`), which Bruno
+// bodies may have; CodeEditor marks body syntax errors itself (see jsonMarkers).
+jsonDefaults.setDiagnosticsOptions({ ...jsonDefaults.diagnosticsOptions, validate: false });
 
 // Themes matching the app's colour tokens (styles.css), so editors don't stand
 // out as a lighter or darker block.

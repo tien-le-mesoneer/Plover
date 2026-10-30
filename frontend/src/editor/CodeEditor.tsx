@@ -7,6 +7,7 @@ import { copyResolved } from "../lib/copyResolved";
 import { registerVarCompletion } from "../lib/varSuggest";
 import { copiedValueNote } from "../lib/varText";
 import { explain } from "../lib/varTokens";
+import { jsonMarkers } from "./jsonMarkers";
 import { varDecorations, varHoverAt, varTokenAt } from "./varDecorations";
 
 /** The `--font-mono` stack from styles.css. */
@@ -120,6 +121,32 @@ function decorateVars(
   };
 }
 
+/** Marks the syntax error of an editable JSON body (debounced while typing), see `jsonMarkers`. */
+function checkJson(instance: monaco.editor.IStandaloneCodeEditor): () => void {
+  const model = instance.getModel();
+  if (!model) return () => {};
+  const check = () =>
+    monaco.editor.setModelMarkers(
+      model,
+      "plover-json",
+      model.getLanguageId() === "json"
+        ? jsonMarkers(model).map((m) => ({ ...m, severity: monaco.MarkerSeverity.Error }))
+        : [],
+    );
+  check();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const edits = instance.onDidChangeModelContent(() => {
+    clearTimeout(timer);
+    timer = setTimeout(check, 300);
+  });
+  const language = model.onDidChangeLanguage(check);
+  return () => {
+    clearTimeout(timer);
+    edits.dispose();
+    language.dispose();
+  };
+}
+
 /** A thin wrapper around a Monaco editor instance. */
 export function CodeEditor({ value, language, readOnly, onChange, height, onReady, onPick, foldLines, varTabKey, onNote, onFormat }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -202,8 +229,10 @@ export function CodeEditor({ value, language, readOnly, onChange, height, onRead
     editor.current = instance;
     readyHandler.current?.(instance);
     const stopVars = varTabKey ? decorateVars(instance, varTabKey, noteHandler) : undefined;
+    const stopCheck = readOnly ? undefined : checkJson(instance);
     return () => {
       stopVars?.();
+      stopCheck?.();
       sub.dispose();
       clicks.dispose();
       enter?.dispose();

@@ -13,7 +13,7 @@ export interface VarDecoration {
   options: { inlineClassName: string };
 }
 
-const rangeOf = (model: TextModel, start: number, end: number) => {
+export const rangeOf = (model: TextModel, start: number, end: number) => {
   const a = model.getPositionAt(start);
   const b = model.getPositionAt(end);
   return { startLineNumber: a.lineNumber, startColumn: a.column, endLineNumber: b.lineNumber, endColumn: b.column };
