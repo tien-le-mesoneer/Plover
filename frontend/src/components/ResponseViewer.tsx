@@ -6,7 +6,7 @@ import { formatElapsed } from "../lib/elapsed";
 import { Banner } from "./Banner";
 import { CornerActions } from "./CornerActions";
 import { CopyIcon, DownloadIcon } from "./icons";
-import { foldTargets, renderSlice } from "../lib/body";
+import { foldTargets, jsonContainers, renderSlice } from "../lib/body";
 import { downloadBody } from "../lib/download";
 import { formatSize, header, prettyBody } from "../lib/format";
 import { evaluateJsonPath, filterText, type JsonPathResult } from "../lib/jsonpath";
@@ -273,7 +273,9 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
   const slice = showAll ? { shown: fullText, capped: false, total: fullText.length } : renderSlice(fullText);
   const shownText = slice.shown;
   const jsonShown = body.parsed.ok && (filtered !== null || shownMode === "pretty");
-  const folds = jsonShown ? foldTargets(shownText).map((f) => f.startLine) : undefined;
+  // One scan: big arrays start folded, and folded ones note their size.
+  const containers = jsonShown ? jsonContainers(shownText) : undefined;
+  const folds = containers ? foldTargets(containers).map((f) => f.startLine) : undefined;
   // The value menu works on the pretty (or filtered) JSON text that is shown.
   const pickable = jsonShown;
   const onPick = (offset: number, at: { x: number; y: number }) => {
@@ -363,6 +365,7 @@ export function ResponseViewer({ result, sending, onOpenScript, request, bodyNot
                   onReady={(e) => (editor.current = e)}
                   onPick={onPick}
                   foldLines={folds}
+                  containers={containers}
                 />
               ) : (
                 <p className="muted center">{body.text}</p>

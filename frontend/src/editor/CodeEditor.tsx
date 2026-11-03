@@ -3,6 +3,7 @@ import { useTabs } from "../store/tabs";
 import { useVars } from "../store/vars";
 import { useWorkspace } from "../store/workspace";
 import { currentTheme, monaco } from "./monaco";
+import { countLabel, type JsonContainer } from "../lib/body";
 import { copyResolved } from "../lib/copyResolved";
 import { registerVarCompletion } from "../lib/varSuggest";
 import { copiedValueNote } from "../lib/varText";
@@ -35,6 +36,8 @@ export interface CodeEditorProps {
   onNote?: (note: string) => void;
   /** Shift+Alt+F (Monaco's Format Document keys) runs this instead of Monaco's formatter. */
   onFormat?: () => void;
+  /** The arrays and objects of the JSON value shown; a folded one notes its size ("12 items"). */
+  containers?: JsonContainer[];
 }
 
 /** Body editor models whose `{{variables}}` are explained, by model URI → request tab key. */
@@ -147,8 +150,51 @@ function checkJson(instance: monaco.editor.IStandaloneCodeEditor): () => void {
   };
 }
 
+/**
+ * "12 items" / "3 keys" after the bracket of each folded array or object. A region is
+ * folded when the line under its bracket is hidden, which Monaco maps to the bracket's own
+ * line (`getTopForLineNumber` is equal); regions inside a folded one are not checked.
+ */
+function noteFoldCounts(
+  instance: monaco.editor.IStandaloneCodeEditor,
+  containers: { current: JsonContainer[] | undefined },
+): () => void {
+  const marks = instance.createDecorationsCollection();
+  const paint = () => {
+    const model = instance.getModel();
+    const list = containers.current;
+    if (!model || !list?.length) {
+      marks.clear();
+      return;
+    }
+    const lines = model.getLineCount();
+    const decorations: monaco.editor.IModelDeltaDecoration[] = [];
+    let hiddenUntil = 0;
+    for (const c of [...list].sort((a, b) => a.startLine - b.startLine)) {
+      if (c.endLine <= c.startLine || c.endLine > lines || c.startLine <= hiddenUntil) continue;
+      if (instance.getTopForLineNumber(c.startLine + 1) !== instance.getTopForLineNumber(c.startLine)) continue;
+      hiddenUntil = c.endLine;
+      const end = model.getLineMaxColumn(c.startLine);
+      decorations.push({
+        range: { startLineNumber: c.startLine, startColumn: end, endLineNumber: c.startLine, endColumn: end },
+        // An empty range shows its injected text only with showIfCollapsed.
+        options: { showIfCollapsed: true, after: { content: ` ${countLabel(c)}`, inlineClassName: "fold-count" } },
+      });
+    }
+    marks.set(decorations);
+  };
+  paint();
+  const hidden = instance.onDidChangeHiddenAreas(paint);
+  const content = instance.onDidChangeModelContent(paint);
+  return () => {
+    hidden.dispose();
+    content.dispose();
+    marks.clear();
+  };
+}
+
 /** A thin wrapper around a Monaco editor instance. */
-export function CodeEditor({ value, language, readOnly, onChange, height, onReady, onPick, foldLines, varTabKey, onNote, onFormat }: CodeEditorProps) {
+export function CodeEditor({ value, language, readOnly, onChange, height, onReady, onPick, foldLines, varTabKey, onNote, onFormat, containers }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const changeHandler = useRef(onChange);
@@ -156,6 +202,7 @@ export function CodeEditor({ value, language, readOnly, onChange, height, onRead
   const pickHandler = useRef(onPick);
   const noteHandler = useRef(onNote);
   const formatHandler = useRef(onFormat);
+  const containerList = useRef(containers);
 
   useEffect(() => {
     changeHandler.current = onChange;
@@ -163,7 +210,9 @@ export function CodeEditor({ value, language, readOnly, onChange, height, onRead
     pickHandler.current = onPick;
     noteHandler.current = onNote;
     formatHandler.current = onFormat;
-  }, [onChange, onReady, onPick, onNote, onFormat]);
+    // Before the value effect below: its setValue repaints the counts from this list.
+    containerList.current = containers;
+  }, [onChange, onReady, onPick, onNote, onFormat, containers]);
 
   useEffect(() => {
     if (!host.current) return;
@@ -232,7 +281,9 @@ export function CodeEditor({ value, language, readOnly, onChange, height, onRead
     readyHandler.current?.(instance);
     const stopVars = varTabKey ? decorateVars(instance, varTabKey, noteHandler) : undefined;
     const stopCheck = readOnly ? undefined : checkJson(instance);
+    const stopCounts = noteFoldCounts(instance, containerList);
     return () => {
+      stopCounts();
       stopVars?.();
       stopCheck?.();
       sub.dispose();

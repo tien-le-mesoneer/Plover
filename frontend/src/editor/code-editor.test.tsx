@@ -9,6 +9,12 @@ const disposable = () => ({ dispose: vi.fn() });
 const setModelMarkers = vi.fn();
 /** The text of the mocked model (a hoisted mock cannot close over a plain `let`). */
 const modelText = { value: "" };
+/** Model lines the mocked editor hides (folded), and the decorations it was last given. */
+const folding = {
+  hidden: new Set<number>(),
+  lastSet: [] as { range: { startLineNumber: number }; options: { after?: { content: string } } }[],
+  hiddenAreas: [] as (() => void)[],
+};
 
 vi.mock("./monaco", () => {
   const model = {
@@ -18,7 +24,15 @@ vi.mock("./monaco", () => {
     onDidChangeLanguage: vi.fn(disposable),
     getOffsetAt: () => 0,
     getPositionAt: () => ({ lineNumber: 1, column: 1 }),
+    getLineCount: () => modelText.value.split("\n").length,
+    getLineMaxColumn: (line: number) => (modelText.value.split("\n")[line - 1] ?? "").length + 1,
     dispose: vi.fn(),
+  };
+  /** A hidden line sits where the nearest visible line above it ends. */
+  const top = (line: number) => {
+    let l = line;
+    while (l > 1 && folding.hidden.has(l)) l--;
+    return l * 18;
   };
   const instance = {
     addCommand: vi.fn(),
@@ -26,7 +40,15 @@ vi.mock("./monaco", () => {
     onDidChangeModelContent: vi.fn(disposable),
     onMouseUp: vi.fn(disposable),
     getModel: () => model,
-    createDecorationsCollection: () => ({ set: vi.fn(), clear: vi.fn() }),
+    createDecorationsCollection: () => ({
+      set: vi.fn((d: typeof folding.lastSet) => (folding.lastSet = d)),
+      clear: vi.fn(),
+    }),
+    onDidChangeHiddenAreas: vi.fn((cb: () => void) => {
+      folding.hiddenAreas.push(cb);
+      return disposable();
+    }),
+    getTopForLineNumber: vi.fn(top),
     getValue: () => "",
     setValue: vi.fn(),
     updateOptions: vi.fn(),
@@ -85,6 +107,27 @@ describe("response value menu", () => {
     expect(pick.keybindings).toEqual([3]);
     // Enter in the find widget must go to the next match, not open Copy value / Copy path.
     expect(pick.keybindingContext).toBe("editorTextFocus");
+  });
+});
+
+describe("folded json counts", () => {
+  it("a folded array or object notes its size; open and nested ones do not", async () => {
+    const { CodeEditor } = await import("./CodeEditor");
+    const { jsonContainers } = await import("../lib/body");
+    modelText.value = JSON.stringify({ list: [{ a: 1 }, { b: 2 }, 3], meta: { x: 1, y: 2 } }, null, 2);
+    folding.hidden = new Set();
+    folding.hiddenAreas = [];
+    render(<CodeEditor value={modelText.value} language="json" readOnly containers={jsonContainers(modelText.value)} />);
+    expect(folding.lastSet).toEqual([]);
+
+    // Fold "list" (line 2, its entries on lines 3-9) and "meta" (line 11, lines 12-13).
+    folding.hidden = new Set([3, 4, 5, 6, 7, 8, 9, 12, 13]);
+    folding.hiddenAreas.forEach((cb) => cb());
+    expect(folding.lastSet.map((d) => [d.range.startLineNumber, d.options.after?.content])).toEqual([
+      [2, " 3 items"],
+      [11, " 2 keys"],
+    ]);
+    modelText.value = "";
   });
 });
 

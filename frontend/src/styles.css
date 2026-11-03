@@ -137,6 +137,9 @@ button.icon:hover { color: var(--fg); }
 code, pre, .mono { font-family: var(--font-mono); }
 code { font-size: 12px; }
 .muted { color: var(--muted); }
+/* "12 items" after a folded JSON array or object in the response viewer. */
+/* Monaco gives injected text a token colour (.mtk1); this wins over it. */
+.monaco-editor .fold-count { color: var(--muted); font-style: italic; }
 .center { text-align: center; margin-top: 20vh; }
 .spacer { flex: 1; }
 
