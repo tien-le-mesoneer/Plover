@@ -1,6 +1,6 @@
 import type { KeyboardEvent, ReactNode } from "react";
 import { useRuns } from "../store/runs";
-import { useTabs } from "../store/tabs";
+import { stripKeys, useTabs } from "../store/tabs";
 import { ClockIcon, CloseIcon, PlayIcon } from "./icons";
 
 /** Asks before discarding unsaved edits; returns whether the tab was closed. */
@@ -31,9 +31,9 @@ interface Entry {
  * Delete closes the focused one.
  */
 export function RequestTabs() {
-  const { tabs, runTabs, historyTab, active, activate, isDirty } = useTabs();
+  const { tabs, runTabs, historyTab, order, active, activate, isDirty } = useTabs();
   const runs = useRuns((s) => s.runs);
-  const entries: Entry[] = [
+  const byKey = new Map<string, Entry>([
     ...tabs.map((t) => {
       const dirty = isDirty(t.key);
       return {
@@ -90,7 +90,9 @@ export function RequestTabs() {
           },
         ]
       : []),
-  ];
+  ].map((e) => [e.key, e]));
+  // In the order opened: a new tab is always last.
+  const entries = stripKeys({ tabs, runTabs, historyTab, order }).map((k) => byKey.get(k)!);
   if (entries.length === 0) return null;
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>, index: number) => {

@@ -50,10 +50,15 @@ export interface RunTab {
 
 export interface TabsState {
   tabs: Tab[];
-  /** Run tabs, after the request tabs in the tab strip; they share `active`. */
+  /** Run tabs; they share `active` with request tabs. */
   runTabs: RunTab[];
-  /** The History tab, last in the strip; never remembered across restarts. */
+  /** The History tab; never remembered across restarts. */
   historyTab: { key: typeof HISTORY_KEY } | null;
+  /**
+   * Tab keys in the order they were opened: the strip shows them so, a new tab last.
+   * Read it through `stripKeys`, which also places tabs set without an order.
+   */
+  order: string[];
   active: string | null;
   /** Request tab keys opened during this page life, newest first (quick open). */
   recent: string[];
@@ -107,6 +112,21 @@ function bodyOf(request: RequestDetailDto): BodyDto {
 }
 
 export const tabKey = (collectionId: string, item: string) => `${collectionId}:${item}`;
+
+/**
+ * Every open tab's key in strip order: `order` first, then any open tab it does not name
+ * (request, run, then History tabs, as set directly), so no tab is ever hidden.
+ */
+export function stripKeys(s: Pick<TabsState, "tabs" | "runTabs" | "historyTab" | "order">): string[] {
+  const open = [...s.tabs.map((t) => t.key), ...s.runTabs.map((t) => t.key), ...(s.historyTab ? [s.historyTab.key] : [])];
+  const isOpen = new Set(open);
+  const ordered = s.order.filter((k) => isOpen.has(k));
+  const placed = new Set(ordered);
+  return [...ordered, ...open.filter((k) => !placed.has(k))];
+}
+
+/** `order` with `key` last, unless it is there already. */
+const appended = (order: string[], key: string) => (order.includes(key) ? order : [...order, key]);
 
 let scratchCount = 0;
 let runTabCount = 0;
@@ -163,6 +183,7 @@ export const useTabs = create<TabsState>()((set, get) => {
     tabs: [],
     runTabs: [],
     historyTab: null,
+    order: [],
     active: null,
     recent: [],
     saveDialog: null,
@@ -203,17 +224,14 @@ export const useTabs = create<TabsState>()((set, get) => {
             sending: false,
           },
         ],
+        order: appended(s.order, key),
         active: key,
       }));
     },
 
     close(key) {
       set((s) => {
-        const all = [
-          ...s.tabs.map((t) => t.key),
-          ...s.runTabs.map((t) => t.key),
-          ...(s.historyTab ? [s.historyTab.key] : []),
-        ];
+        const all = stripKeys(s);
         const index = all.indexOf(key);
         if (index < 0) return s;
         const rest = all.filter((k) => k !== key);
@@ -222,6 +240,7 @@ export const useTabs = create<TabsState>()((set, get) => {
           tabs: s.tabs.filter((t) => t.key !== key),
           runTabs: s.runTabs.filter((t) => t.key !== key),
           historyTab: s.historyTab?.key === key ? null : s.historyTab,
+          order: s.order.filter((k) => k !== key),
           active,
         };
       });
@@ -322,6 +341,7 @@ export const useTabs = create<TabsState>()((set, get) => {
           ...s.tabs,
           { key, collectionId, item: null, saved: request, draft: request, hash: "", sending: false },
         ],
+        order: appended(s.order, key),
         active: key,
       }));
       return key;
@@ -354,6 +374,8 @@ export const useTabs = create<TabsState>()((set, get) => {
                 }
               : t,
           ),
+        // The saved tab keeps its place; a tab already open on that file gives way to it.
+        order: s.order.filter((k) => k !== fileKey).map((k) => (k === key ? fileKey : k)),
         active: s.active === key ? fileKey : s.active,
       }));
       void useWorkspace.getState().refreshTree(tab.collectionId).catch(() => {});
@@ -390,12 +412,16 @@ export const useTabs = create<TabsState>()((set, get) => {
       }
       runTabCount += 1;
       const key = `${collectionId}:run:${runTabCount}`;
-      set((s) => ({ runTabs: [...s.runTabs, { kind: "run", key, collectionId, runId, label }], active: key }));
+      set((s) => ({
+        runTabs: [...s.runTabs, { kind: "run", key, collectionId, runId, label }],
+        order: appended(s.order, key),
+        active: key,
+      }));
       return key;
     },
 
     openHistory() {
-      set({ historyTab: { key: HISTORY_KEY }, active: HISTORY_KEY });
+      set((s) => ({ historyTab: { key: HISTORY_KEY }, order: appended(s.order, HISTORY_KEY), active: HISTORY_KEY }));
     },
 
     openScratchFrom(collectionId, request, banner) {

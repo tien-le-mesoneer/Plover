@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, type ApiClient } from "../api/client";
 import { setApi } from "../api/instance";
 import type { HttpRequestDto } from "../api/types";
-import { useTabs } from "./tabs";
+import { stripKeys, useTabs } from "./tabs";
 import { useWorkspace } from "./workspace";
 
 function request(url: string): HttpRequestDto {
@@ -53,7 +53,7 @@ function mockApi(overrides: Partial<ApiClient> = {}): ApiClient {
 }
 
 beforeEach(() => {
-  useTabs.setState({ tabs: [], active: null });
+  useTabs.setState({ tabs: [], runTabs: [], historyTab: null, order: [], active: null });
   useWorkspace.setState({ collections: [], trees: {}, environments: {}, activeEnv: {} });
 });
 
@@ -139,6 +139,36 @@ describe("tabs store", () => {
     expect(useTabs.getState().active).toBe("c1:a.bru");
     useTabs.getState().close("c1:a.bru");
     expect(useTabs.getState().active).toBeNull();
+  });
+
+  it("a new tab opens at the end, after run and History tabs", async () => {
+    setApi(mockApi());
+    const t = () => useTabs.getState();
+    await t().open("c1", "a.bru");
+    const run = t().openRun("c1", null, "c");
+    t().openHistory();
+    await t().open("c1", "b.bru");
+    const scratch = t().newScratch("c1");
+    expect(stripKeys(t())).toEqual(["c1:a.bru", run, "history", "c1:b.bru", scratch]);
+    // Re-opening an open tab does not move it.
+    await t().open("c1", "a.bru");
+    t().openHistory();
+    expect(stripKeys(t())[0]).toBe("c1:a.bru");
+    expect(stripKeys(t())[2]).toBe("history");
+    // Closing the active tab activates its right-hand neighbour in the strip.
+    t().activate("history");
+    t().close("history");
+    expect(t().active).toBe("c1:b.bru");
+    expect(stripKeys(t())).toEqual(["c1:a.bru", run, "c1:b.bru", scratch]);
+  });
+
+  it("tabs set without an order keep their natural place", () => {
+    useTabs.setState({
+      tabs: [{ key: "c1:a.bru", collectionId: "c1", item: "a.bru", saved: request("a"), draft: request("a"), hash: "h", sending: false }],
+      runTabs: [{ kind: "run", key: "c1:run:9", collectionId: "c1", runId: null, label: "c" }],
+      order: ["gone", "c1:run:9"],
+    });
+    expect(stripKeys(useTabs.getState())).toEqual(["c1:run:9", "c1:a.bru"]);
   });
 
   it("send uses the collection's active environment and the draft", async () => {
