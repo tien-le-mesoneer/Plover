@@ -75,6 +75,19 @@ describe("body editor format", () => {
   });
 });
 
+describe("response value menu", () => {
+  it("enter_opens_the_menu_only_from_the_text", async () => {
+    const { CodeEditor } = await import("./CodeEditor");
+    addAction.mockClear();
+    render(<CodeEditor value="" language="json" readOnly onPick={vi.fn()} />);
+    const calls = addAction.mock.calls as unknown as [{ id: string; keybindings: number[]; keybindingContext?: string }][];
+    const pick = calls.map((c) => c[0]).find((a) => a.id === "plover.pickValue")!;
+    expect(pick.keybindings).toEqual([3]);
+    // Enter in the find widget must go to the next match, not open Copy value / Copy path.
+    expect(pick.keybindingContext).toBe("editorTextFocus");
+  });
+});
+
 describe("json body check", () => {
   it("marks a real error but not an unquoted {{variable}}", async () => {
     const { CodeEditor } = await import("./CodeEditor");

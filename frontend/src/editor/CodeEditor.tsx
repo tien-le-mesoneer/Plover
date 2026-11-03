@@ -209,11 +209,13 @@ export function CodeEditor({ value, language, readOnly, onChange, height, onRead
     });
     // Enter on a value opens the same menu from the keyboard (read-only editors only).
     // addAction, not addCommand: commands are shared by all editors on the page.
+    // Only while the text has focus: Enter in the find widget goes to the next match.
     const enter = readOnly
       ? instance.addAction({
           id: "plover.pickValue",
           label: "Value actions",
           keybindings: [monaco.KeyCode.Enter],
+          keybindingContext: "editorTextFocus",
           run: () => pick(instance.getPosition()),
         })
       : undefined;
