@@ -93,6 +93,14 @@ it("toolbar_controls_are_30px", () => {
   expect(rule(".topbar button.icon, .urlbar button.icon, .run-header button.icon")).toMatch(/min-width: var\(--control-h\);/);
 });
 
+it("selects_draw_a_muted_chevron", () => {
+  // No native arrow (it took the method colour); each theme's chevron is its --muted.
+  expect(rule("select")).toMatch(/appearance: none;.*padding-right: 24px;.*var\(--chevron\)/s);
+  for (const t of Object.values(themes)) {
+    expect(decodeURIComponent(t["chevron"]!)).toContain(`stroke='${t["muted"]}'`);
+  }
+});
+
 it("one_selected_row_style", () => {
   // Sidebar, run list, history, quick open and the variable list mark their row the same way.
   expect(rule(".is-selected")).toMatch(/background: var\(--selected\);.*box-shadow: inset 2px 0 0 var\(--focus\);/s);

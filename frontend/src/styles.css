@@ -30,6 +30,7 @@
   --method-other: #5b626c; /* 6.16 / 5.74 */
   --radius: 3px;
   --control-h: 30px; /* buttons, inputs and selects in a toolbar row */
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235b626c' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); /* a select's arrow, drawn in --muted */
   --hover: var(--bg-2); /* a hovered row or button on --bg; --bg-3 on --bg-2 surfaces (below) */
   --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -67,6 +68,7 @@
   --patch: #c084fc; /* 6.73 / 6.18 */
   --delete: #f87171; /* 6.43 / 5.91 */
   --method-other: #9ca3af; /* 7.00 / 6.43 */
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239ca3af' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -80,6 +82,17 @@ input, select {
   padding: 4px 6px;
   min-width: 0;
 }
+/* One select look in every browser: no native arrow (Chrome drew it in the text colour,
+   e.g. green for GET), a muted chevron instead, and the inputs' height. */
+select {
+  appearance: none;
+  padding-right: 24px;
+  background: var(--bg) var(--chevron) no-repeat right 8px center / 10px 6px;
+  cursor: pointer;
+}
+select:disabled { cursor: default; opacity: 0.5; }
+/* The open list is plain text, not the method colour of the closed select. */
+select option { color: var(--fg); background: var(--bg); font-weight: 400; }
 ::placeholder { color: var(--placeholder); opacity: 1; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 button, .file-field .file-button {
