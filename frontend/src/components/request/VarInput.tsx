@@ -158,20 +158,34 @@ export function VarInput({ tabKey, wrapperClassName, tail, ...props }: Props) {
     caretTimer.current = setTimeout(() => setShown({ token, anchor: spanBox(token.start) }), CARET_DELAY);
   };
 
+  const hideSoon = () => {
+    clearTimeout(leaveTimer.current);
+    leaveTimer.current = setTimeout(() => {
+      leaveTimer.current = undefined;
+      setShown(null);
+    }, LEAVE_DELAY);
+  };
+  const keepShown = () => {
+    clearTimeout(leaveTimer.current);
+    leaveTimer.current = undefined;
+  };
+
   const onMouseMove = (e: MouseEvent<HTMLInputElement>) => {
     props.onMouseMove?.(e);
-    clearTimeout(leaveTimer.current);
     if (suggest) return;
     const spans = mirror.current?.querySelectorAll<HTMLElement>("[data-start]") ?? [];
     for (const span of spans) {
       const r = span.getBoundingClientRect();
       if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
         const token = tokens.find((t) => String(t.start) === span.dataset.start);
+        keepShown();
         if (token && shown?.token.start !== token.start) setShown({ token, anchor: { left: r.left, bottom: r.bottom } });
         return;
       }
     }
-    if (shown) setShown(null);
+    // Off every token: the pointer may be crossing the field on its way to the card, so
+    // wait a moment; further moves do not restart the wait.
+    if (shown && leaveTimer.current === undefined) hideSoon();
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -292,8 +306,7 @@ export function VarInput({ tabKey, wrapperClassName, tail, ...props }: Props) {
         onMouseLeave={(e) => {
           props.onMouseLeave?.(e);
           // Wait a moment: the pointer may be on its way to the card.
-          clearTimeout(leaveTimer.current);
-          leaveTimer.current = setTimeout(() => setShown(null), LEAVE_DELAY);
+          hideSoon();
         }}
         onScroll={(e) => {
           props.onScroll?.(e);
@@ -322,11 +335,8 @@ export function VarInput({ tabKey, wrapperClassName, tail, ...props }: Props) {
           anchor={shown.anchor}
           note={note}
           onCopy={info.kind === "defined" ? () => copyValue(shown.token.name) : undefined}
-          onMouseEnter={() => clearTimeout(leaveTimer.current)}
-          onMouseLeave={() => {
-            clearTimeout(leaveTimer.current);
-            leaveTimer.current = setTimeout(() => setShown(null), LEAVE_DELAY);
-          }}
+          onMouseEnter={keepShown}
+          onMouseLeave={hideSoon}
         />
       )}
     </span>

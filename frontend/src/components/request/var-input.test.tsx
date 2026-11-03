@@ -193,6 +193,44 @@ describe("VarInput", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("hover_card_survives_the_way_from_token_to_card", async () => {
+    vi.useFakeTimers();
+    const { container } = render(<Field initial="{{host}}" />);
+    hover(container, "var-defined");
+    // Below the token but still over the field, on the way down to the card.
+    fireEvent.mouseMove(screen.getByLabelText("URL"), { clientX: 20, clientY: 22 });
+    fireEvent.mouseMove(screen.getByLabelText("URL"), { clientX: 20, clientY: 23 });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.mouseEnter(screen.getByRole("dialog"));
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    vi.useRealTimers();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copy value" }));
+    });
+    expect(writeText).toHaveBeenCalledWith("api.test");
+  });
+
+  it("hover_card_closes_after_pointer_rests_off_token", () => {
+    vi.useFakeTimers();
+    const { container } = render(<Field initial="{{host}}" />);
+    hover(container, "var-defined");
+    fireEvent.mouseMove(screen.getByLabelText("URL"), { clientX: 200, clientY: 10 });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    // Moving on does not restart the wait.
+    fireEvent.mouseMove(screen.getByLabelText("URL"), { clientX: 210, clientY: 10 });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("secret_copy_asks_first", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const { container } = render(<Field initial="{{apiKey}}" />);

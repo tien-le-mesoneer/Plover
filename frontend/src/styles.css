@@ -238,6 +238,8 @@ td .var-input { display: flex; }
 .var-setlater { text-decoration: underline dotted var(--warn); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .var-undefined { text-decoration: underline wavy var(--err); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
 .var-hover { position: fixed; z-index: 20; max-width: min(420px, 90vw); background: var(--bg); color: var(--fg); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 6px 10px; font-size: 12px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 2px; }
+/* A transparent strip over the 4px gap above the card, so the pointer never drops off on the way down. */
+.var-hover::before { content: ""; position: absolute; left: 0; right: 0; top: -6px; height: 6px; }
 .var-suggest {
   position: fixed; z-index: 21; margin: 0; padding: 2px 0; list-style: none; min-width: 200px; max-width: min(420px, 90vw);
   max-height: 240px; overflow-y: auto; background: var(--bg); color: var(--fg); border: 1px solid var(--border-strong);
