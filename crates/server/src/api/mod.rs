@@ -37,7 +37,9 @@ const MAX_REQUEST_BODY: usize = 64 * 1024 * 1024;
 
 /// Routes that need no session token (Host/Origin checks still apply).
 pub fn public_routes() -> Router<AppState> {
-    Router::new().route("/session/exchange", post(session::exchange))
+    Router::new()
+        .route("/session/exchange", post(session::exchange))
+        .route("/session/open", post(session::open))
 }
 
 pub fn routes() -> Router<AppState> {

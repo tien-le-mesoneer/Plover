@@ -140,7 +140,7 @@ export default function App({ hasToken }: { hasToken: boolean }) {
     return (
       <main className="empty">
         <h1>Plover</h1>
-        <p>Open the URL printed by <code>plv serve</code> (it contains the session token).</p>
+        <p>This server asks for a token: open the URL printed by <code>plv serve --require-token</code>.</p>
       </main>
     );
   }

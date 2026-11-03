@@ -178,12 +178,20 @@ struct Served {
 
 impl Served {
     fn start(state_dir: &Path, path: Option<&Path>) -> Served {
+        Served::start_with(state_dir, path, &[])
+    }
+
+    /// Starts `plv serve` and takes the session token: from the printed `#token=` URL
+    /// (`--require-token`), or from `POST /api/session/open` at the printed plain URL.
+    fn start_with(state_dir: &Path, path: Option<&Path>, extra: &[&str]) -> Served {
         use std::io::{BufRead, BufReader};
         use std::process::{Command as StdCommand, Stdio};
 
         let mut cmd = StdCommand::new(assert_cmd::cargo::cargo_bin("plv"));
         cmd.args(["serve", "--no-open", "--port", "0"])
+            .args(extra)
             .env("PLOVER_STATE_DIR", state_dir)
+            .env("PLOVER_KEYCHAIN_SERVICE", "dev.plover.test")
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         if let Some(path) = path {
@@ -199,13 +207,45 @@ impl Served {
             .strip_prefix("plv listening on ")
             .unwrap_or_else(|| panic!("unexpected first line: {line}"))
             .to_owned();
-        let (base, token) = url.split_once("/#token=").unwrap();
-        let addr = base.strip_prefix("http://").unwrap().to_owned();
-        Served {
+        if let Some((base, token)) = url.split_once("/#token=") {
+            let addr = base.strip_prefix("http://").unwrap().to_owned();
+            return Served {
+                child,
+                addr,
+                token: token.to_owned(),
+            };
+        }
+        let addr = url
+            .strip_prefix("http://")
+            .and_then(|u| u.strip_suffix('/'))
+            .unwrap_or_else(|| panic!("unexpected URL: {url}"))
+            .to_owned();
+        let mut served = Served {
             child,
             addr,
-            token: token.to_owned(),
-        }
+            token: String::new(),
+        };
+        let opened = served.post("/api/session/open");
+        assert!(opened.starts_with("HTTP/1.1 200"), "{opened}");
+        let body: serde_json::Value =
+            serde_json::from_str(opened.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        served.token = body["token"].as_str().unwrap().to_owned();
+        served
+    }
+
+    /// A request with no token, as a page that has none yet sends it.
+    fn post(&self, path: &str) -> String {
+        use std::io::{Read, Write};
+        let mut stream = std::net::TcpStream::connect(&self.addr).unwrap();
+        write!(
+            stream,
+            "POST {path} HTTP/1.1\r\nHost: {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            self.addr
+        )
+        .unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        response
     }
 
     fn get(&self, path: &str) -> String {
@@ -249,6 +289,21 @@ fn serve_prints_url_and_opens_collection() {
     let tree = served.get(&format!("/api/collections/{id}/tree"));
     assert!(tree.starts_with("HTTP/1.1 200"), "{tree}");
     assert!(tree.contains(r#""id":"a.bru""#), "{tree}");
+}
+
+#[test]
+fn serve_opens_without_a_token_unless_asked() {
+    let state = tempfile::tempdir().unwrap();
+    let open = Served::start(state.path(), None);
+    assert_eq!(open.token.len(), 64);
+    assert!(open.get("/api/collections").starts_with("HTTP/1.1 200"));
+    drop(open);
+
+    let state = tempfile::tempdir().unwrap();
+    let closed = Served::start_with(state.path(), None, &["--require-token"]);
+    assert_eq!(closed.token.len(), 64);
+    let refused = closed.post("/api/session/open");
+    assert!(refused.starts_with("HTTP/1.1 404"), "{refused}");
 }
 
 #[test]

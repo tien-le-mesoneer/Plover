@@ -1,5 +1,6 @@
 //! Request checks for a localhost server: Host and Origin allow-lists
-//! (DNS rebinding and cross-site requests) and the per-process session token.
+//! (DNS rebinding and cross-site requests), `Sec-Fetch-Site` on the API, and the
+//! per-process session token.
 
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -71,6 +72,20 @@ pub async fn check_host_and_origin(
             StatusCode::FORBIDDEN,
             "forbidden_host",
             "unexpected Host header",
+        )
+        .into_response();
+    }
+    // Browsers mark every request with where it came from. The API answers only the
+    // page itself (`same-origin`) or the user (`none`); pages and assets stay reachable
+    // from a link on another site.
+    if req.uri().path().starts_with("/api/")
+        && let Some(site) = headers.get("sec-fetch-site")
+        && !matches!(site.to_str(), Ok("same-origin" | "none"))
+    {
+        return ApiError::new(
+            StatusCode::FORBIDDEN,
+            "forbidden_site",
+            "cross-site API request",
         )
         .into_response();
     }

@@ -25,6 +25,9 @@ pub struct AppState {
     /// `http://127.0.0.1:<port>`, for launch URLs.
     pub base_url: Arc<str>,
     pub codes: Arc<SessionCodes>,
+    /// `POST /api/session/open` hands the token to any page this server allows
+    /// (Host, Origin, `Sec-Fetch-Site`), so `plv serve` opens without one.
+    pub open_access: bool,
     pub events: Events,
     /// How far the page got: loaded, launch code traded, ready report (the desktop smoke
     /// test reads it to say where startup stopped).
@@ -94,6 +97,7 @@ impl AppState {
             native: None,
             base_url: Arc::from(""),
             codes: Arc::new(SessionCodes::default()),
+            open_access: false,
             events: Events::default(),
             client: Arc::new(watch::channel(ClientProgress::default()).0),
             history: Arc::new(RunHistory::in_memory()),
@@ -120,6 +124,11 @@ impl AppState {
 
     pub fn with_base_url(mut self, url: &str) -> AppState {
         self.base_url = Arc::from(url);
+        self
+    }
+
+    pub fn with_open_access(mut self, open: bool) -> AppState {
+        self.open_access = open;
         self
     }
 

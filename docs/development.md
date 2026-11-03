@@ -33,8 +33,10 @@ Terminal 2 — Vite with hot reload, proxying `/api` (including the WebSocket) t
 cd frontend && PLOVER_API=http://127.0.0.1:4000 npm run dev
 ```
 
-Open `http://localhost:5173/#token=<token>`, using the token from the URL that
-`serve` printed. The token lives in this tab's sessionStorage afterwards.
+Open `http://localhost:5173/`: the page asks the server for its token (`plv serve`
+runs with open access unless `--require-token`). With `--require-token`, open
+`http://localhost:5173/#token=<token>` with the token from the printed URL. The token
+lives in this tab's sessionStorage afterwards.
 
 Debug builds read `frontend/dist` from disk at runtime; release builds embed it.
 
@@ -105,11 +107,18 @@ uncaught page error. Run it after changing `frontend/src/editor/` or upgrading
   WebSocket subprotocol `plover.token.<token>`).
 - `Host` and `Origin` must be `127.0.0.1:<port>` / `localhost:<port>` (or a
   `--dev-origin`), which blocks cross-site requests and DNS rebinding.
+- An `/api` request whose `Sec-Fetch-Site` is present and not `same-origin` or `none`
+  is refused (403 `forbidden_site`); pages and assets still open from a link.
+- `plv serve` runs with open access: `POST /api/session/open` gives the token to any
+  request that passes the checks above, so `http://127.0.0.1:<port>/` opens the app
+  with no token in the URL. Other browser sites cannot get it; another program on this
+  machine can, as it could read your files. `plv serve --require-token` turns the
+  route off (404) and prints the `#token=` URL again. The desktop app never opens it.
 - URLs the app opens itself (desktop window, Open in Browser, `plv serve`'s
   auto-open) carry a single-use launch code (`#code=`, valid 60 s), which the page
   exchanges once via `POST /api/session/exchange` (no token needed; Host/Origin still
   checked; constant-time compare; 20 failures per minute lock exchanges). The URL
-  `plv serve` prints keeps `#token=` so it can be copied into a browser.
+  `plv serve --require-token` prints keeps `#token=` so it can be copied into a browser.
 - `GET /api/events` (WebSocket, token subprotocol) tells the page about native
   actions (collection opened, reload requested).
 - Secret environment values go to the OS keychain (service `dev.plover`, account

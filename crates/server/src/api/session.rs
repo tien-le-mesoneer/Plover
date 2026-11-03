@@ -40,6 +40,17 @@ pub async fn exchange(
     }
 }
 
+/// The session token without a code, when the server was started with open access
+/// (`plv serve` without `--require-token`); otherwise the route does not exist.
+pub async fn open(State(state): State<AppState>) -> Result<Json<SessionTokenDto>, ApiError> {
+    if !state.open_access {
+        return Err(ApiError::not_found("no such API route"));
+    }
+    Ok(Json(SessionTokenDto {
+        token: state.token.to_string(),
+    }))
+}
+
 /// Longest page-reported startup error kept (characters); the rest is cut.
 const MAX_READY_ERROR_CHARS: usize = 500;
 

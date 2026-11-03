@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError, createApiClient, exchangeLaunchCode } from "./client";
+import { ApiError, createApiClient, exchangeLaunchCode, openSession } from "./client";
 import type { RunEventDto } from "./types";
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -51,6 +51,17 @@ describe("launch codes", () => {
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body as string)).toEqual({ code: "c0de" });
     expect(new Headers(init.headers).get("authorization")).toBeNull();
+  });
+
+  it("asks the server for the token with no code and no token", async () => {
+    const fetch = vi.fn(async () => jsonResponse(200, { token: "tok" }));
+    expect(await openSession("", fetch as unknown as typeof window.fetch)).toBe("tok");
+    const [url, init] = (fetch.mock.calls as unknown as [string, RequestInit][])[0]!;
+    expect(url).toBe("/api/session/open");
+    expect(init.method).toBe("POST");
+    expect(new Headers(init.headers).get("authorization")).toBeNull();
+    const refused = vi.fn(async () => jsonResponse(404, { error: "not_found", message: "no such API route" }));
+    await expect(openSession("", refused as unknown as typeof window.fetch)).rejects.toMatchObject({ status: 404 });
   });
 
   it("rejects an invalid code", async () => {

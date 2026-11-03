@@ -36,6 +36,9 @@ pub struct ServerConfig {
     pub port: u16,
     /// Extra origins allowed to call the API (e.g. the Vite dev server).
     pub dev_origins: Vec<String>,
+    /// Pages get the session token from `POST /api/session/open`, so a plain
+    /// `http://127.0.0.1:<port>/` opens the app (`plv serve`). Off for the desktop app.
+    pub open_access: bool,
     pub exec: ExecOptions,
     /// Where secret values are kept; `None` keeps them in memory.
     pub secrets: Option<Arc<SecretVault>>,
@@ -51,9 +54,11 @@ pub struct RunningServer {
     /// The server's workspace, e.g. to open a collection given on the command line.
     pub workspace: Arc<Workspace>,
     pub token: String,
-    /// `http://127.0.0.1:<port>/#token=<token>`, printed by `plv serve` for copying.
-    /// URLs the app opens itself use [`RunningServer::launch_url`] instead.
+    /// `http://127.0.0.1:<port>/#token=<token>`, printed by `plv serve --require-token`
+    /// for copying. URLs the app opens itself use [`RunningServer::launch_url`] instead.
     pub url: String,
+    /// `http://127.0.0.1:<port>/`: enough to open the app with open access.
+    pub base_url: String,
     /// Notifies connected pages (collection opened, reload requested).
     pub events: Events,
     /// The page's startup milestones (loaded, launch code traded, ready report).
@@ -110,7 +115,8 @@ pub async fn start(
         cfg.secrets
             .unwrap_or_else(|| Arc::new(SecretVault::memory())),
     )
-    .with_base_url(&base);
+    .with_base_url(&base)
+    .with_open_access(cfg.open_access);
     if let Some(host) = cfg.native {
         state = state.with_native(host);
     }
@@ -137,6 +143,7 @@ pub async fn start(
     let running = RunningServer {
         workspace,
         url,
+        base_url: format!("{base}/"),
         addr,
         token,
         events,

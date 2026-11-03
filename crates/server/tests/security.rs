@@ -170,3 +170,90 @@ async fn start_binds_loopback_random_port() {
     assert!(response.starts_with("HTTP/1.1 200"), "{response}");
     handle.abort();
 }
+
+fn open_session(open: bool) -> axum::Router {
+    router(
+        AppState::new(ExecOptions::default(), TOKEN, AllowList::new(PORT, &[]))
+            .with_open_access(open),
+    )
+}
+
+fn open_request() -> axum::http::request::Builder {
+    Request::post("/api/session/open").header("host", format!("127.0.0.1:{PORT}"))
+}
+
+#[tokio::test]
+async fn open_access_hands_the_token_to_the_page() {
+    let req = open_request()
+        .header("origin", format!("http://127.0.0.1:{PORT}"))
+        .header("sec-fetch-site", "same-origin")
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = status_and_body(open_session(true), req).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, format!(r#"{{"token":"{TOKEN}"}}"#));
+}
+
+#[tokio::test]
+async fn without_open_access_there_is_no_open_route() {
+    let req = open_request().body(Body::empty()).unwrap();
+    let (status, body) = status_and_body(open_session(false), req).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(!body.contains(TOKEN), "{body}");
+}
+
+#[tokio::test]
+async fn open_access_still_refuses_other_sites() {
+    let foreign = open_request()
+        .header("origin", "https://evil.example")
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = status_and_body(open_session(true), foreign).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(!body.contains(TOKEN), "{body}");
+
+    let rebound = Request::post("/api/session/open")
+        .header("host", format!("evil.example:{PORT}"))
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        status_and_body(open_session(true), rebound).await.0,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn cross_site_api_requests_are_refused() {
+    for site in ["cross-site", "same-site"] {
+        let req = health()
+            .header("authorization", format!("Bearer {TOKEN}"))
+            .header("sec-fetch-site", site)
+            .body(Body::empty())
+            .unwrap();
+        let (status, body) = status_and_body(app(&[]), req).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{site}");
+        assert!(body.contains("forbidden_site"), "{body}");
+    }
+    for site in ["same-origin", "none"] {
+        let req = health()
+            .header("authorization", format!("Bearer {TOKEN}"))
+            .header("sec-fetch-site", site)
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            status_and_body(app(&[]), req).await.0,
+            StatusCode::OK,
+            "{site}"
+        );
+    }
+    // The page itself may be reached from a link on another site.
+    let page = Request::get("/")
+        .header("host", format!("127.0.0.1:{PORT}"))
+        .header("sec-fetch-site", "cross-site")
+        .body(Body::empty())
+        .unwrap();
+    assert_ne!(
+        status_and_body(app(&[]), page).await.0,
+        StatusCode::FORBIDDEN
+    );
+}

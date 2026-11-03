@@ -1,28 +1,21 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { createApiClient, exchangeLaunchCode } from "./api/client";
+import { createApiClient, exchangeLaunchCode, openSession } from "./api/client";
 import { setApi } from "./api/instance";
-import { storeToken, takeLaunchCode, takeTokenFromLocation } from "./api/token";
+import { resolveSessionToken } from "./api/token";
 import App from "./App";
 import { StartupBoundary } from "./components/StartupBoundary";
 import { startTheme } from "./lib/appTheme";
 import "./assets/fonts/fonts.css";
 import "./styles.css";
 
-/** A launch code (`#code=`) is traded for the token; `#token=` or this tab's stored token also work. */
-async function sessionToken(): Promise<string | null> {
-  const code = takeLaunchCode(window.location);
-  if (code) {
-    try {
-      const token = await exchangeLaunchCode("", code);
-      storeToken(token, window.sessionStorage);
-      return token;
-    } catch {
-      // Used or expired code: fall back to a token this tab already has, if any.
-    }
-  }
-  return takeTokenFromLocation(window.location, window.sessionStorage);
-}
+const sessionToken = () =>
+  resolveSessionToken({
+    loc: window.location,
+    storage: window.sessionStorage,
+    exchange: (code) => exchangeLaunchCode("", code),
+    open: () => openSession(""),
+  });
 
 // Resolve the OS scheme before anything renders; the saved choice is applied once the layout loads.
 startTheme();

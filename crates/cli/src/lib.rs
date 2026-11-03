@@ -135,6 +135,11 @@ struct ServeArgs {
     /// Also allow this origin to call the API (repeatable), e.g. the Vite dev server.
     #[arg(long = "dev-origin", value_name = "URL")]
     dev_origins: Vec<String>,
+    /// Ask for the session token: the page needs the printed `#token=` URL (or a launch
+    /// code) instead of opening at the plain address. Without it, any page this server
+    /// allows (its own address, `--dev-origin`) gets the token.
+    #[arg(long)]
+    require_token: bool,
 }
 
 #[derive(clap::Args)]
@@ -611,6 +616,7 @@ async fn serve(args: ServeArgs) -> Result<ExitCode, String> {
         plover_server::ServerConfig {
             port: args.port,
             dev_origins: args.dev_origins,
+            open_access: !args.require_token,
             exec: ExecOptions::default(),
             secrets: Some(plover_core::secrets::default_store()),
             native: None,
@@ -627,9 +633,15 @@ async fn serve(args: ServeArgs) -> Result<ExitCode, String> {
             .open(path)
             .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
     }
-    // The printed URL carries the token so it can be copied; the browser we open
-    // ourselves gets a single-use launch code instead, keeping the token out of history.
-    println!("plv listening on {}", running.url);
+    // With --require-token the printed URL carries the token so it can be copied;
+    // otherwise the plain address opens the app. The browser we open ourselves gets a
+    // single-use launch code either way, keeping the token out of history.
+    let printed = if args.require_token {
+        &running.url
+    } else {
+        &running.base_url
+    };
+    println!("plv listening on {printed}");
     if !args.no_open
         && let Err(e) = webbrowser::open(&running.launch_url())
     {

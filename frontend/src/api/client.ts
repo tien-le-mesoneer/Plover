@@ -235,6 +235,14 @@ export async function exchangeLaunchCode(
   return (JSON.parse(text) as SessionTokenDto).token;
 }
 
+/** The session token without a code; refused (404) unless `plv serve` runs with open access. */
+export async function openSession(baseUrl: string, fetchImpl: typeof fetch = window.fetch.bind(window)): Promise<string> {
+  const res = await fetchImpl(`${baseUrl}/api/session/open`, { method: "POST" });
+  const text = await res.text();
+  if (!res.ok) throw errorFrom(res, text);
+  return (JSON.parse(text) as SessionTokenDto).token;
+}
+
 const TERMINAL: RunEventDto["type"][] = ["finished", "cancelled", "error"];
 
 export function createApiClient(baseUrl: string, token: string, deps: Deps = {}): ApiClient {

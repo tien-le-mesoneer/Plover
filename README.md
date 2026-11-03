@@ -43,7 +43,8 @@ anyway**. `SHA256SUMS` in each release lists the checksums.
 plv run path/to/collection --env local
 plv run path/to/collection/folder/request.bru --env local --env-var token=abc
 plv serve path/to/collection          # opens the browser (single-use launch code in the URL)
-plv serve --no-open --port 4000       # prints a URL with the session token, for copying
+plv serve --no-open --port 4000       # prints http://127.0.0.1:4000/: open it, no token needed
+plv serve --require-token             # pages need the printed #token= URL (or a launch code)
 ```
 
 ```text
